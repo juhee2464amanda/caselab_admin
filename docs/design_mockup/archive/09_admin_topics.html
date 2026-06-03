@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>후보 카드 관리 — 케이스랩 admin</title>
+
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.min.css" />
+  <script src="https://unpkg.com/lucide@latest"></script>
+
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: { paper: '#FAFAF7', ink: '#0A0A0A', line: '#E5E1D5', soft: '#F4F2EC', indigo: { brand: '#1E40AF' } },
+          fontFamily: { sans: ['Pretendard', 'system-ui', '-apple-system', 'sans-serif'], num: ['ui-monospace', 'SFMono-Regular', 'Menlo', 'monospace'] },
+        },
+      },
+    };
+  </script>
+
+  <style>
+    html, body { background: #FAFAF7; color: #0A0A0A; }
+    body { font-family: 'Pretendard', system-ui, -apple-system, sans-serif; -webkit-font-smoothing: antialiased; }
+    .nav-item { display: flex; align-items: center; gap: .65rem; padding: .45rem .75rem; font-size: 13.5px; color: #4B5563; border-radius: 4px; transition: background .15s ease, color .15s ease; cursor: pointer; }
+    .nav-item:hover { background: #F4F2EC; color: #0A0A0A; }
+    .nav-item.active { background: #EEF2FF; color: #1E40AF; font-weight: 500; }
+    .nav-item .lucide { width: 15px; height: 15px; opacity: .85; }
+    .nav-section { font-size: 10.5px; letter-spacing: .14em; text-transform: uppercase; color: #9CA3AF; font-weight: 600; padding: 1.25rem .75rem .5rem; }
+
+    .panel { background: #fff; border: 1px solid #E5E1D5; border-radius: 4px; }
+    .panel-head { padding: 1rem 1.2rem; border-bottom: 1px solid #E5E1D5; display: flex; align-items: center; justify-content: space-between; }
+    .panel-title { font-size: 13.5px; font-weight: 600; }
+
+    .data-table { font-size: 13.5px; width: 100%; border-collapse: collapse; }
+    .data-table thead th { text-align: left; font-weight: 500; font-size: 11.5px; letter-spacing: .08em; text-transform: uppercase; color: #6B7280; padding: .65rem 1.2rem; border-bottom: 1px solid #E5E1D5; background: #FAFAF7; }
+    .data-table thead th.num { text-align: right; }
+    .data-table tbody td { padding: .85rem 1.2rem; border-bottom: 1px solid #F1EEE4; color: #1F2937; }
+    .data-table tbody td.num { text-align: right; font-variant-numeric: tabular-nums; }
+    .data-table tbody tr { transition: background .12s ease; }
+    .data-table tbody tr:hover { background: #FAFAF7; cursor: pointer; }
+    .data-table tbody tr:last-child td { border-bottom: 0; }
+
+    .status-public { display: inline-block; padding: 1px 7px; font-size: 11px; border-radius: 3px; background: #ECFDF5; color: #065F46; font-weight: 500; }
+    .status-hidden { display: inline-block; padding: 1px 7px; font-size: 11px; border-radius: 3px; background: #F3F4F6; color: #6B7280; font-weight: 500; }
+    .status-linked { display: inline-flex; align-items: center; gap: .3rem; padding: 1px 7px; font-size: 11px; border-radius: 3px; background: #EEF2FF; color: #1E40AF; font-weight: 500; }
+
+    .ic-btn { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border: 1px solid #E5E1D5; border-radius: 4px; background: #fff; transition: background .15s; }
+    .ic-btn:hover { background: #FAFAF7; }
+    .ic-btn .lucide { width: 14px; height: 14px; color: #4B5563; }
+    .btn-primary { display: inline-flex; align-items: center; gap: .4rem; padding: .45rem .85rem; font-size: 13px; font-weight: 500; color: #fff; background: #0A0A0A; border-radius: 4px; }
+    .btn-primary:hover { background: #1F2937; }
+
+    /* toggle switch */
+    .toggle { position: relative; display: inline-block; width: 32px; height: 18px; }
+    .toggle input { opacity: 0; width: 0; height: 0; }
+    .toggle-slider { position: absolute; cursor: pointer; inset: 0; background: #D1D5DB; border-radius: 9px; transition: .2s; }
+    .toggle-slider::before { content: ""; position: absolute; height: 14px; width: 14px; left: 2px; bottom: 2px; background: #fff; border-radius: 50%; transition: .2s; }
+    .toggle input:checked + .toggle-slider { background: #1E40AF; }
+    .toggle input:checked + .toggle-slider::before { transform: translateX(14px); }
+
+    /* vote bar */
+    .vote-bar { display: inline-flex; align-items: center; gap: .4rem; }
+    .vote-bar-track { width: 48px; height: 4px; background: #F1EEE4; border-radius: 2px; overflow: hidden; }
+    .vote-bar-fill { height: 100%; background: #1E40AF; }
+
+    /* inline add row */
+    .add-row { background: #FEFCF3; }
+    .field-input-sm { font-size: 13px; padding: .4rem .6rem; border: 1px solid #E5E1D5; border-radius: 3px; background: #fff; width: 100%; }
+    .field-input-sm:focus { outline: none; border-color: #1E40AF; }
+    .btn-sm { display: inline-flex; align-items: center; gap: .3rem; padding: .3rem .6rem; font-size: 12px; font-weight: 500; border-radius: 3px; }
+    .btn-sm-primary { background: #0A0A0A; color: #fff; }
+    .btn-sm-secondary { background: #fff; color: #6B7280; border: 1px solid #E5E1D5; }
+  </style>
+</head>
+
+<body class="bg-paper text-ink">
+  <div class="flex min-h-screen">
+
+    <!-- Sidebar -->
+    <aside class="w-[220px] shrink-0 border-r border-line bg-white flex flex-col">
+      <div class="h-14 flex items-center px-4 border-b border-line">
+        <div class="flex items-center gap-2">
+          <div class="w-6 h-6 rounded-sm bg-ink flex items-center justify-center text-white text-[10px] font-bold tracking-wider">CL</div>
+          <span class="font-bold text-[14px]">케이스랩</span>
+          <span class="text-[10px] text-gray-400 font-medium tracking-wider">ADMIN</span>
+        </div>
+      </div>
+      <nav class="flex-1 px-2 py-3 overflow-y-auto">
+        <div class="nav-section">운영</div>
+        <a class="nav-item"><i data-lucide="file-text"></i>콘텐츠</a>
+        <a class="nav-item"><i data-lucide="bar-chart-2"></i>분석</a>
+        <a class="nav-item"><i data-lucide="users"></i>가입자</a>
+        <a class="nav-item"><i data-lucide="book"></i>전자책</a>
+        <div class="nav-section">소통</div>
+        <a class="nav-item active"><i data-lucide="lightbulb"></i>후보 카드</a>
+        <a class="nav-item"><i data-lucide="message-square"></i>의견함 <span class="ml-auto text-[10.5px] font-medium text-indigo-brand bg-[#EEF2FF] px-1.5 py-0.5 rounded-sm">12</span></a>
+      </nav>
+      <div class="border-t border-line px-3 py-3 flex items-center gap-2.5">
+        <div class="w-7 h-7 rounded-full bg-soft border border-line flex items-center justify-center text-[11px] font-semibold text-gray-700">주</div>
+        <div class="min-w-0">
+          <div class="text-[12.5px] font-medium truncate">김주희</div>
+          <div class="text-[10.5px] text-gray-500 truncate">운영자</div>
+        </div>
+        <button class="ml-auto ic-btn" title="설정"><i data-lucide="more-horizontal"></i></button>
+      </div>
+    </aside>
+
+    <!-- Main -->
+    <main class="flex-1 min-w-0">
+
+      <header class="h-14 border-b border-line bg-white flex items-center px-6 gap-3">
+        <h1 class="text-[15px] font-semibold">후보 카드</h1>
+        <span class="text-[12.5px] text-gray-400">/ "이런 거 어때요" 후보 주제 관리</span>
+        <div class="ml-auto flex items-center gap-2">
+          <div class="flex border border-line rounded-sm overflow-hidden text-[12.5px]">
+            <button class="px-2.5 py-1 bg-ink text-white">전체 <span class="text-gray-400">8</span></button>
+            <button class="px-2.5 py-1 text-gray-600 hover:bg-soft">공개 <span class="text-gray-400">6</span></button>
+            <button class="px-2.5 py-1 text-gray-600 hover:bg-soft">비공개 <span class="text-gray-400">2</span></button>
+          </div>
+          <button class="btn-primary"><i data-lucide="plus" class="w-3.5 h-3.5"></i>후보 추가</button>
+        </div>
+      </header>
+
+      <div class="p-6">
+        <section class="panel">
+          <div class="panel-head">
+            <div>
+              <div class="panel-title">후보 카드 목록</div>
+              <div class="text-[11.5px] text-gray-500 mt-0.5">정렬: 투표순</div>
+            </div>
+          </div>
+
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>제목</th>
+                <th>설명</th>
+                <th class="num">투표</th>
+                <th>공개</th>
+                <th>연결된 콘텐츠</th>
+                <th>등록일</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              <!-- Inline add row -->
+              <tr class="add-row">
+                <td><input type="text" class="field-input-sm" placeholder="후보 제목" /></td>
+                <td><input type="text" class="field-input-sm" placeholder="한 줄 설명" /></td>
+                <td class="num text-gray-400">—</td>
+                <td>
+                  <label class="toggle"><input type="checkbox" checked /><span class="toggle-slider"></span></label>
+                </td>
+                <td class="text-gray-400 text-[12.5px]">—</td>
+                <td class="text-gray-400 text-[12.5px]">—</td>
+                <td>
+                  <div class="flex items-center gap-1">
+                    <button class="btn-sm btn-sm-primary">저장</button>
+                    <button class="btn-sm btn-sm-secondary">취소</button>
+                  </div>
+                </td>
+              </tr>
+
+              <!-- linked to content -->
+              <tr>
+                <td class="font-medium text-[13.5px]">제안서 작성 AI 활용법</td>
+                <td class="text-[12.5px] text-gray-600">고객사별 톤 맞추는 제안서, AI한테 초안 시키면?</td>
+                <td class="num">
+                  <span class="vote-bar">
+                    <span class="vote-bar-track"><span class="vote-bar-fill" style="width:85%"></span></span>
+                    <span class="font-medium">42</span>
+                  </span>
+                </td>
+                <td><span class="status-public">공개</span></td>
+                <td><span class="status-linked"><i data-lucide="check" class="w-3 h-3"></i>윗사람 톤에 안 맞는 결과물</span></td>
+                <td class="text-[12.5px] text-gray-600">5/10</td>
+                <td>
+                  <div class="flex items-center gap-1">
+                    <button class="ic-btn" title="수정"><i data-lucide="pencil"></i></button>
+                    <button class="ic-btn" title="더보기"><i data-lucide="more-horizontal"></i></button>
+                  </div>
+                </td>
+              </tr>
+
+              <tr>
+                <td class="font-medium text-[13.5px]">매출 데이터 AI 분석</td>
+                <td class="text-[12.5px] text-gray-600">엑셀 매출 데이터를 AI한테 던지면 뭘 알 수 있을까</td>
+                <td class="num">
+                  <span class="vote-bar">
+                    <span class="vote-bar-track"><span class="vote-bar-fill" style="width:72%"></span></span>
+                    <span class="font-medium">36</span>
+                  </span>
+                </td>
+                <td><span class="status-public">공개</span></td>
+                <td class="text-[12.5px] text-gray-400">—</td>
+                <td class="text-[12.5px] text-gray-600">5/12</td>
+                <td>
+                  <div class="flex items-center gap-1">
+                    <button class="ic-btn" title="수정"><i data-lucide="pencil"></i></button>
+                    <button class="ic-btn" title="더보기"><i data-lucide="more-horizontal"></i></button>
+                  </div>
+                </td>
+              </tr>
+
+              <tr>
+                <td class="font-medium text-[13.5px]">이메일 답변 자동화</td>
+                <td class="text-[12.5px] text-gray-600">반복되는 고객 문의 이메일, AI로 초안 만들기</td>
+                <td class="num">
+                  <span class="vote-bar">
+                    <span class="vote-bar-track"><span class="vote-bar-fill" style="width:58%"></span></span>
+                    <span class="font-medium">29</span>
+                  </span>
+                </td>
+                <td><span class="status-public">공개</span></td>
+                <td class="text-[12.5px] text-gray-400">—</td>
+                <td class="text-[12.5px] text-gray-600">5/15</td>
+                <td>
+                  <div class="flex items-center gap-1">
+                    <button class="ic-btn" title="수정"><i data-lucide="pencil"></i></button>
+                    <button class="ic-btn" title="더보기"><i data-lucide="more-horizontal"></i></button>
+                  </div>
+                </td>
+              </tr>
+
+              <tr>
+                <td class="font-medium text-[13.5px]">회의록 정리 AI 비교</td>
+                <td class="text-[12.5px] text-gray-600">Otter vs Clova Note vs GPT — 어떤 게 진짜 쓸만한지</td>
+                <td class="num">
+                  <span class="vote-bar">
+                    <span class="vote-bar-track"><span class="vote-bar-fill" style="width:44%"></span></span>
+                    <span class="font-medium">22</span>
+                  </span>
+                </td>
+                <td><span class="status-public">공개</span></td>
+                <td class="text-[12.5px] text-gray-400">—</td>
+                <td class="text-[12.5px] text-gray-600">5/18</td>
+                <td>
+                  <div class="flex items-center gap-1">
+                    <button class="ic-btn" title="수정"><i data-lucide="pencil"></i></button>
+                    <button class="ic-btn" title="더보기"><i data-lucide="more-horizontal"></i></button>
+                  </div>
+                </td>
+              </tr>
+
+              <tr>
+                <td class="font-medium text-[13.5px]">SNS 콘텐츠 기획</td>
+                <td class="text-[12.5px] text-gray-600">인스타·링크드인 글감, AI한테 브레인스토밍 시키기</td>
+                <td class="num">
+                  <span class="vote-bar">
+                    <span class="vote-bar-track"><span class="vote-bar-fill" style="width:30%"></span></span>
+                    <span class="font-medium">15</span>
+                  </span>
+                </td>
+                <td><span class="status-public">공개</span></td>
+                <td class="text-[12.5px] text-gray-400">—</td>
+                <td class="text-[12.5px] text-gray-600">5/20</td>
+                <td>
+                  <div class="flex items-center gap-1">
+                    <button class="ic-btn" title="수정"><i data-lucide="pencil"></i></button>
+                    <button class="ic-btn" title="더보기"><i data-lucide="more-horizontal"></i></button>
+                  </div>
+                </td>
+              </tr>
+
+              <!-- hidden -->
+              <tr>
+                <td class="font-medium text-[13.5px] text-gray-500">테스트 카드</td>
+                <td class="text-[12.5px] text-gray-400">테스트용 — 비공개</td>
+                <td class="num text-gray-400">
+                  <span class="vote-bar">
+                    <span class="vote-bar-track"><span class="vote-bar-fill" style="width:4%"></span></span>
+                    <span>2</span>
+                  </span>
+                </td>
+                <td><span class="status-hidden">비공개</span></td>
+                <td class="text-[12.5px] text-gray-400">—</td>
+                <td class="text-[12.5px] text-gray-400">5/22</td>
+                <td>
+                  <div class="flex items-center gap-1">
+                    <button class="ic-btn" title="수정"><i data-lucide="pencil"></i></button>
+                    <button class="ic-btn" title="삭제"><i data-lucide="trash-2"></i></button>
+                  </div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </section>
+      </div>
+    </main>
+  </div>
+
+  <script>lucide.createIcons();</script>
+</body>
+</html>

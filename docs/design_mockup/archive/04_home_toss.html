@@ -1,0 +1,489 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>케이스랩 — AI, 다들 쓰는데 나만 못 쓰는 것 같다면</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.min.css" />
+
+  <style>
+    :root {
+      --bg: #fff; --bg-sub: #f7f7f7;
+      --ink: #191f28; --gray-800: #333d4b; --gray-600: #6b7684; --gray-500: #8b95a1;
+      --gray-400: #b0b8c1; --gray-300: #d1d6db; --gray-200: #e5e8eb; --gray-100: #f2f4f6;
+      --blue: #3182f6; --blue-bg: #ebf4ff;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html { font-size: 16px; -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
+    body { font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, system-ui, sans-serif; background: var(--bg); color: var(--ink); line-height: 1.5; letter-spacing: -0.02em; }
+    .keepall { word-break: keep-all; overflow-wrap: break-word; }
+    a { color: inherit; text-decoration: none; }
+    button { font: inherit; cursor: pointer; border: none; background: none; }
+
+    /* ── GNB ── */
+    .gnb { position: sticky; top: 0; z-index: 100; background: #fff; border-bottom: 1px solid var(--gray-200); }
+    .gnb-inner { max-width: 1100px; margin: 0 auto; padding: 0 24px; display: flex; align-items: center; justify-content: space-between; height: 56px; }
+    .gnb-logo { font-size: 17px; font-weight: 800; letter-spacing: -0.04em; }
+    .gnb-logo small { font-size: 10px; font-weight: 500; color: var(--gray-400); margin-left: 5px; letter-spacing: 0.04em; vertical-align: middle; }
+    .gnb-sub-msg { font-size: 12px; font-weight: 500; color: var(--gray-400); border-left: 1px solid var(--gray-200); padding-left: 12px; display: none; letter-spacing: -0.01em; }
+    @media (min-width: 960px) { .gnb-sub-msg { display: block; } }
+    .gnb-right { display: flex; align-items: center; gap: 6px; }
+    .gnb-nav { display: none; gap: 22px; font-size: 15px; font-weight: 500; color: var(--gray-600); margin-right: 16px; }
+    .gnb-nav a:hover { color: var(--ink); }
+    @media (min-width: 768px) { .gnb-nav { display: flex; } }
+    .gnb-sub { font-size: 14px; font-weight: 600; color: #fff; background: var(--blue); padding: 7px 16px; border-radius: 8px; transition: background .15s; }
+    .gnb-sub:hover { background: #1b6ef2; }
+    .gnb-icon { width: 36px; height: 36px; display: flex; align-items: center; justify-content: center; border-radius: 8px; color: var(--gray-600); transition: background .15s; }
+    .gnb-icon:hover { background: var(--gray-100); }
+    .gnb-icon svg { width: 20px; height: 20px; }
+
+    /* ── hero carousel ── */
+    .hero { background: var(--bg-sub); border-bottom: 1px solid var(--gray-200); }
+    .hero-wrap { max-width: 1100px; margin: 0 auto; padding: 0 24px; position: relative; }
+    .hero-track { overflow: hidden; }
+    .hero-slides { display: flex; transition: transform .35s ease; }
+    .hero-slide { min-width: 100%; }
+    .hero-slide a { display: flex; flex-direction: column; gap: 20px; padding: 40px 0 36px; }
+    @media (min-width: 768px) { .hero-slide a { flex-direction: row; align-items: center; gap: 40px; padding: 48px 0 44px; } }
+    .hero-text { flex: 1; min-width: 0; }
+    .hero-thumb { width: 100%; aspect-ratio: 16/9; border-radius: 12px; overflow: hidden; background: var(--gray-200); flex-shrink: 0; }
+    @media (min-width: 768px) { .hero-thumb { width: 320px; aspect-ratio: 4/3; } }
+    .hero-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .hero-thumb .thumb-placeholder { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; font-size: 13px; color: var(--gray-400); }
+    .h-eye { display: inline-block; font-size: 12px; font-weight: 700; color: var(--blue); background: var(--blue-bg); padding: 3px 10px; border-radius: 5px; margin-bottom: 12px; }
+    .hero-text h2 { font-size: 22px; font-weight: 800; line-height: 1.35; letter-spacing: -0.03em; margin-bottom: 8px; }
+    @media (min-width: 768px) { .hero-text h2 { font-size: 28px; } }
+    .hero-text .h-desc { font-size: 15px; line-height: 1.6; color: var(--gray-600); margin-bottom: 10px; }
+    .meta { font-size: 13px; color: var(--gray-500); display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+    .meta-dot::before { content: '·'; margin: 0 1px; }
+
+    .hero-arrow { position: absolute; top: 50%; transform: translateY(-50%); width: 40px; height: 40px; border-radius: 50%; background: #fff; border: 1px solid var(--gray-200); display: flex; align-items: center; justify-content: center; color: var(--gray-600); box-shadow: 0 1px 4px rgba(0,0,0,.06); transition: all .15s; z-index: 2; }
+    .hero-arrow:hover { border-color: var(--gray-400); color: var(--ink); box-shadow: 0 2px 8px rgba(0,0,0,.1); }
+    .hero-arrow svg { width: 18px; height: 18px; }
+    .hero-prev { left: 4px; }
+    .hero-next { right: 4px; }
+    @media (min-width: 1160px) { .hero-prev { left: -8px; } .hero-next { right: -8px; } }
+    .hero-dots { display: flex; gap: 6px; justify-content: center; padding: 0 0 18px; }
+    .hero-dot { width: 6px; height: 6px; border-radius: 3px; background: var(--gray-300); transition: all .2s; }
+    .hero-dot.on { width: 20px; background: var(--blue); }
+
+    /* ── 2-col layout: main + sidebar ── */
+    .layout { max-width: 1100px; margin: 0 auto; padding: 0 24px; }
+    .layout-inner { display: flex; flex-direction: column; gap: 0; }
+    @media (min-width: 900px) {
+      .layout-inner { flex-direction: row; gap: 48px; }
+      .layout-main { flex: 1; min-width: 0; }
+      .layout-side { width: 280px; flex-shrink: 0; padding-top: 48px; }
+    }
+
+    /* ── section ── */
+    .sec-head { display: flex; align-items: center; justify-content: space-between; padding-top: 36px; margin-bottom: 0; }
+    @media (min-width: 768px) { .sec-head { padding-top: 48px; } }
+    .sec-title { font-size: 18px; font-weight: 800; letter-spacing: -0.025em; }
+    .sec-more { font-size: 13px; font-weight: 500; color: var(--blue); }
+    .sec-more:hover { text-decoration: underline; text-underline-offset: 3px; }
+
+    /* ── category tabs ── */
+    .tabs { display: flex; gap: 6px; padding: 14px 0 16px; overflow-x: auto; }
+    .tabs::-webkit-scrollbar { display: none; }
+    .tab { padding: 7px 16px; font-size: 14px; font-weight: 500; color: var(--gray-500); border: 1px solid var(--gray-200); border-radius: 20px; white-space: nowrap; transition: all .12s; }
+    .tab:hover { color: var(--gray-800); border-color: var(--gray-400); }
+    .tab.on { color: #fff; background: var(--ink); border-color: var(--ink); }
+
+    /* ── article list ── */
+    .a-item { display: block; padding: 18px 0; border-bottom: 1px solid var(--gray-200); }
+    .a-item:hover .a-title { color: var(--blue); }
+    .a-head { display: flex; align-items: center; gap: 8px; margin-bottom: 5px; }
+    .a-cat { font-size: 11px; font-weight: 700; color: var(--blue); background: var(--blue-bg); padding: 2px 7px; border-radius: 4px; }
+    .a-title { font-size: 16px; font-weight: 700; line-height: 1.4; letter-spacing: -0.02em; margin-bottom: 4px; transition: color .12s; }
+    @media (min-width: 768px) { .a-title { font-size: 17px; } }
+    .a-desc { font-size: 14px; color: var(--gray-600); line-height: 1.5; margin-bottom: 6px; display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden; }
+
+    /* ── trend grid ── */
+    .t-grid { display: grid; grid-template-columns: 1fr; gap: 0; margin-top: 10px; }
+    @media (min-width: 640px) { .t-grid { grid-template-columns: 1fr 1fr; } }
+    .t-item { display: block; padding: 16px 0; border-bottom: 1px solid var(--gray-200); }
+    @media (min-width: 640px) {
+      .t-item:nth-child(odd) { padding-right: 20px; border-right: 1px solid var(--gray-200); }
+      .t-item:nth-child(even) { padding-left: 20px; }
+    }
+    .t-item:hover .t-title { color: var(--blue); }
+    .t-num { font-size: 11px; font-weight: 700; color: var(--gray-400); margin-bottom: 4px; }
+    .t-title { font-size: 15px; font-weight: 700; line-height: 1.4; letter-spacing: -0.02em; margin-bottom: 4px; transition: color .12s; }
+    .t-desc { font-size: 13px; color: var(--gray-500); line-height: 1.45; }
+
+    /* ── vote ── */
+    .vote-list { margin-top: 10px; }
+    .v-item { display: flex; gap: 12px; padding: 14px 0; border-bottom: 1px solid var(--gray-200); align-items: flex-start; }
+    .v-btn { flex-shrink: 0; width: 44px; text-align: center; padding: 6px 0; border: 1px solid var(--gray-200); border-radius: 8px; background: var(--bg-sub); transition: all .15s; }
+    .v-btn:hover { border-color: var(--blue); color: var(--blue); background: var(--blue-bg); }
+    .v-arrow { font-size: 9px; color: var(--gray-400); display: block; }
+    .v-count { font-size: 13px; font-weight: 700; display: block; margin-top: 1px; }
+    .v-title { font-size: 14px; font-weight: 600; line-height: 1.4; letter-spacing: -0.02em; margin-bottom: 2px; }
+    .v-desc { font-size: 12px; color: var(--gray-500); line-height: 1.4; }
+
+    /* ── suggest form ── */
+    .suggest-box { margin-top: 20px; padding: 20px; background: var(--bg-sub); border: 1px solid var(--gray-200); border-radius: 12px; }
+    .suggest-head { font-size: 14px; font-weight: 700; letter-spacing: -0.02em; margin-bottom: 12px; }
+    .suggest-row { display: flex; gap: 8px; margin-bottom: 8px; }
+    .suggest-input { flex: 1; padding: 10px 14px; font-size: 14px; font-family: inherit; border: 1px solid var(--gray-200); border-radius: 8px; outline: none; background: #fff; transition: border-color .15s; letter-spacing: -0.01em; }
+    .suggest-input::placeholder { color: var(--gray-400); }
+    .suggest-input:focus { border-color: var(--blue); }
+    .suggest-submit { padding: 10px 18px; font-size: 14px; font-weight: 600; color: #fff; background: var(--blue); border: none; border-radius: 8px; white-space: nowrap; transition: background .12s; flex-shrink: 0; }
+    .suggest-submit:hover { background: #1b6ef2; }
+    .suggest-textarea { width: 100%; padding: 10px 14px; font-size: 13px; font-family: inherit; border: 1px solid var(--gray-200); border-radius: 8px; outline: none; background: #fff; resize: vertical; transition: border-color .15s; letter-spacing: -0.01em; color: var(--ink); }
+    .suggest-textarea::placeholder { color: var(--gray-400); }
+    .suggest-textarea:focus { border-color: var(--blue); }
+
+    /* ── sidebar: popular ── */
+    .side-sec { margin-bottom: 36px; }
+    .side-head { font-size: 15px; font-weight: 800; letter-spacing: -0.02em; padding-bottom: 12px; border-bottom: 2px solid var(--ink); }
+    .pop-item { display: flex; gap: 10px; padding: 11px 0; border-bottom: 1px solid var(--gray-200); align-items: baseline; }
+    .pop-item:hover .pop-title { color: var(--blue); }
+    .pop-rank { font-size: 14px; font-weight: 800; color: var(--blue); min-width: 18px; flex-shrink: 0; }
+    .pop-title { font-size: 13px; font-weight: 600; line-height: 1.4; letter-spacing: -0.02em; transition: color .12s; }
+    .pop-meta { font-size: 11px; color: var(--gray-500); margin-top: 2px; }
+
+    /* ── sidebar: ebook ── */
+    .side-ebook { padding: 24px 20px; background: var(--ink); border-radius: 12px; color: #fff; }
+    .side-ebook .ebook-label { font-size: 11px; font-weight: 600; color: var(--gray-400); letter-spacing: 0.04em; text-transform: uppercase; margin-bottom: 8px; }
+    .side-ebook .ebook-title { font-size: 15px; font-weight: 700; line-height: 1.35; letter-spacing: -0.02em; margin-bottom: 6px; }
+    .side-ebook .ebook-desc { font-size: 12px; color: var(--gray-400); line-height: 1.45; margin-bottom: 14px; }
+    .side-ebook .ebook-cta { display: inline-flex; align-items: center; gap: 4px; padding: 8px 16px; font-size: 13px; font-weight: 600; color: var(--ink); background: #fff; border-radius: 8px; transition: background .12s; }
+    .side-ebook .ebook-cta:hover { background: var(--gray-100); }
+
+    /* ── footer ── */
+    .footer { margin-top: 56px; padding: 28px 0; border-top: 1px solid var(--gray-200); }
+    .footer-inner { max-width: 1100px; margin: 0 auto; padding: 0 24px; display: flex; flex-direction: column; gap: 8px; }
+    @media (min-width: 768px) { .footer-inner { flex-direction: row; justify-content: space-between; align-items: center; } }
+    .footer-txt { font-size: 13px; color: var(--gray-500); }
+    .footer-txt strong { color: var(--ink); font-weight: 700; }
+    .footer-links { display: flex; gap: 16px; font-size: 13px; color: var(--gray-500); }
+    .footer-links a:hover { color: var(--gray-800); }
+
+    /* ── subscribe modal ── */
+    .modal-dim { display: none; position: fixed; inset: 0; z-index: 999; background: rgba(0,0,0,.45); justify-content: center; align-items: center; padding: 24px; }
+    .modal-dim.open { display: flex; }
+    .modal { background: #fff; border-radius: 16px; width: 100%; max-width: 480px; padding: 40px 36px 36px; position: relative; animation: modalUp .2s ease; }
+    @keyframes modalUp { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
+    .modal-close { position: absolute; top: 16px; right: 16px; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; border-radius: 8px; color: var(--gray-500); transition: background .12s; }
+    .modal-close:hover { background: var(--gray-100); }
+    .modal-close svg { width: 18px; height: 18px; }
+    .modal h2 { font-size: 22px; font-weight: 800; letter-spacing: -0.03em; margin-bottom: 8px; }
+    .modal .modal-desc { font-size: 15px; color: var(--gray-600); line-height: 1.5; margin-bottom: 28px; }
+    .form-label { font-size: 14px; font-weight: 600; color: var(--ink); margin-bottom: 6px; display: block; }
+    .form-input { width: 100%; padding: 12px 14px; font-size: 15px; font-family: inherit; border: 1px solid var(--gray-200); border-radius: 10px; outline: none; transition: border-color .15s; margin-bottom: 20px; color: var(--ink); }
+    .form-input::placeholder { color: var(--gray-400); }
+    .form-input:focus { border-color: var(--blue); }
+    .form-select { width: 100%; padding: 12px 14px; font-size: 15px; font-family: inherit; border: 1px solid var(--gray-200); border-radius: 10px; outline: none; transition: border-color .15s; margin-bottom: 20px; color: var(--gray-400); background: #fff; appearance: none; background-image: url("data:image/svg+xml,%3Csvg width='12' height='8' viewBox='0 0 12 8' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1.5L6 6.5L11 1.5' stroke='%23b0b8c1' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 14px center; }
+    .form-select:focus { border-color: var(--blue); }
+    .form-select.selected { color: var(--ink); }
+    .form-check { display: flex; align-items: flex-start; gap: 8px; margin-bottom: 24px; }
+    .form-check input[type="checkbox"] { width: 20px; height: 20px; margin-top: 1px; accent-color: var(--blue); flex-shrink: 0; }
+    .form-check label { font-size: 13px; color: var(--gray-600); line-height: 1.45; }
+    .form-check label a { color: var(--blue); text-decoration: underline; text-underline-offset: 2px; }
+    .form-submit { width: 100%; padding: 14px; font-size: 16px; font-weight: 700; font-family: inherit; color: #fff; background: var(--blue); border: none; border-radius: 10px; cursor: pointer; transition: background .15s; letter-spacing: -0.02em; }
+    .form-submit:hover { background: #1b6ef2; }
+  </style>
+</head>
+
+<body>
+
+  <!-- ===== GNB ===== -->
+  <header class="gnb">
+    <div class="gnb-inner">
+      <div style="display:flex;align-items:center;gap:12px">
+        <a href="#" class="gnb-logo">케이스랩<small>CASELAB</small></a>
+        <span class="gnb-sub-msg">내 일에 AI를 어떻게 쓸지, 실험하며 찾아가는 공간</span>
+      </div>
+      <div class="gnb-right">
+        <nav class="gnb-nav">
+          <a href="#">실전 케이스</a>
+          <a href="#">AI 트렌드</a>
+          <a href="#">ebook</a>
+        </nav>
+        <button class="gnb-sub" onclick="document.getElementById('subModal').classList.add('open')">구독하기</button>
+        <!-- 비로그인 -->
+        <a href="05_login.html" class="gnb-icon" title="로그인" id="gnbLoginIcon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+        </a>
+        <!-- 로그인됨 -->
+        <div id="gnbUserMenu" style="display:none;align-items:center;gap:8px">
+          <a href="06_mypage.html" style="font-size:14px;font-weight:500;color:var(--gray-600)" class="gnb-user-name">사용자</a>
+          <a href="#" style="font-size:13px;color:var(--gray-400)" onclick="signOut()">로그아웃</a>
+        </div>
+        <a href="#" class="gnb-icon" title="검색">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        </a>
+      </div>
+    </div>
+  </header>
+
+
+  <!-- ===== Hero Carousel ===== -->
+  <section class="hero">
+    <div class="hero-wrap">
+      <div class="hero-track">
+        <div class="hero-slides" id="heroSlides">
+
+          <div class="hero-slide">
+            <a href="01_content_detail.html">
+              <div class="hero-text">
+                <span class="h-eye">실전 케이스 · 기획</span>
+                <h2 class="keepall">기획서 첫 페이지가 안 풀릴 때 — '의도' 던지는 5단계</h2>
+                <p class="h-desc keepall">빈 입력칸 앞에서 막막한 이유는 AI가 부족해서가 아니라, 의도가 흐려서다.</p>
+                <div class="meta"><span>5월 22일</span><span class="meta-dot"></span><span>읽는데 8분</span></div>
+              </div>
+              <div class="hero-thumb">
+                <img src="https://images.unsplash.com/photo-1499750310107-5fef28a66643?w=640&q=80" alt="" />
+              </div>
+            </a>
+          </div>
+
+          <div class="hero-slide">
+            <a href="#">
+              <div class="hero-text">
+                <span class="h-eye">실전 케이스 · 마케팅</span>
+                <h2 class="keepall">경쟁사 분석, AI가 표면만 긁고 끝나는 이유</h2>
+                <p class="h-desc keepall">"경쟁사 5곳 분석해줘"는 거의 모두 실패한다. 사람이 먼저 좁혀야 하는 4단계.</p>
+                <div class="meta"><span>5월 18일</span><span class="meta-dot"></span><span>읽는데 7분</span></div>
+              </div>
+              <div class="hero-thumb">
+                <img src="https://images.unsplash.com/photo-1460925895917-afdab827c52f?w=640&q=80" alt="" />
+              </div>
+            </a>
+          </div>
+
+          <div class="hero-slide">
+            <a href="#">
+              <div class="hero-text">
+                <span class="h-eye">AI 트렌드 · #21</span>
+                <h2 class="keepall">Claude 메모리 기능, 실제로 일에 쓸만한가 — 1주일 실험</h2>
+                <p class="h-desc keepall">"내가 누구인지 기억"한다는 약속이 실제 업무 흐름에서 무엇을 바꾸는가.</p>
+                <div class="meta"><span>5월 21일</span><span class="meta-dot"></span><span>읽는데 5분</span></div>
+              </div>
+              <div class="hero-thumb">
+                <img src="https://images.unsplash.com/photo-1677442136019-21780ecad995?w=640&q=80" alt="" />
+              </div>
+            </a>
+          </div>
+
+        </div>
+      </div>
+      <button class="hero-arrow hero-prev" onclick="moveSlide(-1)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+      </button>
+      <button class="hero-arrow hero-next" onclick="moveSlide(1)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 6 15 12 9 18"/></svg>
+      </button>
+    </div>
+    <div class="hero-dots" id="heroDots">
+      <span class="hero-dot on"></span><span class="hero-dot"></span><span class="hero-dot"></span>
+    </div>
+  </section>
+
+
+  <!-- ===== 2-Column: Main + Sidebar ===== -->
+  <div class="layout">
+    <div class="layout-inner">
+
+      <!-- MAIN -->
+      <div class="layout-main">
+
+        <!-- 실전 케이스 + 카테고리 탭 -->
+        <div>
+          <div class="sec-head">
+            <h2 class="sec-title">실전 케이스</h2>
+            <a href="#" class="sec-more">전체 보기</a>
+          </div>
+          <div class="tabs">
+            <button class="tab on" data-cat="all">전체</button>
+            <button class="tab" data-cat="기획">기획</button>
+            <button class="tab" data-cat="마케팅">마케팅</button>
+            <button class="tab" data-cat="영업">영업</button>
+            <button class="tab" data-cat="1인사업">1인사업</button>
+          </div>
+          <div id="articleList">
+            <a href="01_content_detail.html" class="a-item" data-cat="기획">
+              <div class="a-head"><span class="a-cat">기획</span><div class="meta"><span>5월 22일</span></div></div>
+              <h3 class="a-title keepall">기획서 첫 페이지가 안 풀릴 때 — '의도' 던지는 5단계</h3>
+              <p class="a-desc keepall">빈 입력칸 앞에서 막막한 이유는 AI가 부족해서가 아니라 의도가 흐려서다.</p>
+            </a>
+            <a href="#" class="a-item" data-cat="마케팅">
+              <div class="a-head"><span class="a-cat">마케팅</span><div class="meta"><span>5월 18일</span></div></div>
+              <h3 class="a-title keepall">경쟁사 분석, AI가 표면만 긁고 끝나는 이유</h3>
+              <p class="a-desc keepall">"경쟁사 5곳 분석해줘"는 거의 모두 실패한다.</p>
+            </a>
+            <a href="#" class="a-item" data-cat="영업">
+              <div class="a-head"><span class="a-cat">영업</span><div class="meta"><span>5월 10일</span></div></div>
+              <h3 class="a-title keepall">윗사람 톤에 안 맞는 결과물 — AI에게 다시 시키는 3단계</h3>
+              <p class="a-desc keepall">"이거 윗분이 안 좋아할 거 같은데"의 95%는 톤 문제다.</p>
+            </a>
+            <a href="#" class="a-item" data-cat="1인사업">
+              <div class="a-head"><span class="a-cat">1인사업</span><div class="meta"><span>5월 6일</span></div></div>
+              <h3 class="a-title keepall">고객 인터뷰 정리 — AI에게 시킬 것·시키지 말 것</h3>
+              <p class="a-desc keepall">인터뷰 녹취 20시간을 AI에 통째로 던지면 다 비슷한 요약이 나온다.</p>
+            </a>
+          </div>
+        </div>
+
+        <!-- AI 트렌드 -->
+        <div>
+          <div class="sec-head">
+            <h2 class="sec-title">AI 트렌드</h2>
+            <a href="#" class="sec-more">전체 보기</a>
+          </div>
+          <div class="t-grid">
+            <a href="#" class="t-item"><div class="t-num">#21</div><h3 class="t-title keepall">Claude 메모리 기능, 실제로 일에 쓸만한가 — 1주일 실험</h3><p class="t-desc keepall">"내가 누구인지 기억"한다는 약속이 실제 업무 흐름에서 무엇을 바꾸는가.</p></a>
+            <a href="#" class="t-item"><div class="t-num">#20</div><h3 class="t-title keepall">Sora vs Veo, 한국어 자막 영상 만들기 실험</h3><p class="t-desc keepall">둘 다 "쉽다"고 말하는데, 실제로 시도하면 어디서 막히는가.</p></a>
+            <a href="#" class="t-item"><div class="t-num">#19</div><h3 class="t-title keepall">GPT-5 발표, 실무에서 바뀌는 건 딱 두 가지</h3><p class="t-desc keepall">기획자·마케터 입장에서 당장 달라지는 것만 정리.</p></a>
+            <a href="#" class="t-item"><div class="t-num">#18</div><h3 class="t-title keepall">Notion AI vs Notion + Claude, 어떤 조합이 빠른가</h3><p class="t-desc keepall">같은 작업을 두 방식으로 돌려봤다.</p></a>
+          </div>
+        </div>
+
+        <!-- 이런 거 어때요 — 투표 + 주제 제안 -->
+        <div>
+          <div class="sec-head">
+            <h2 class="sec-title">이런 거 다뤄주세요</h2>
+          </div>
+          <p style="font-size: 13px; color: var(--gray-500); margin: 6px 0 0;" class="keepall">궁금한 주제에 투표하거나, 직접 제안해 주세요. 표가 많은 것부터 다음 글로 나옵니다.</p>
+
+          <!-- 기존 주제 투표 -->
+          <div class="vote-list">
+            <div class="v-item"><button class="v-btn"><span class="v-arrow">▲</span><span class="v-count">52</span></button><div><div class="v-title keepall">회의록 정리, AI 안 쓰고 더 빠른 방법이 있나</div><div class="v-desc keepall">매번 AI에 던지는데 결국 직접 다시 쓰는 게 빨라서.</div></div></div>
+            <div class="v-item"><button class="v-btn"><span class="v-arrow">▲</span><span class="v-count">38</span></button><div><div class="v-title keepall">보고서 톤, 윗사람 글체에 맞추는 5단계</div><div class="v-desc keepall">윗분이 쓴 과거 보고서로 톤을 베끼는 게 맞나.</div></div></div>
+            <div class="v-item"><button class="v-btn"><span class="v-arrow">▲</span><span class="v-count">29</span></button><div><div class="v-title keepall">AI가 자꾸 거짓말할 때, 검증 프로세스</div><div class="v-desc keepall">그럴듯한데 사실관계가 어긋남.</div></div></div>
+          </div>
+
+          <!-- 주제 제안 폼 -->
+          <div class="suggest-box">
+            <div class="suggest-head">다뤄줬으면 하는 주제가 있나요?</div>
+            <form class="suggest-form" onsubmit="return false;">
+              <div class="suggest-row">
+                <input class="suggest-input" type="text" placeholder="ex) PPT 디자인, AI로 30분 안에 끝내는 법" />
+                <button type="submit" class="suggest-submit">제안하기</button>
+              </div>
+              <textarea class="suggest-textarea" rows="3" placeholder="어떤 상황에서 막히는지 한두 줄만 적어주시면 더 잘 다룰 수 있어요. (선택)"></textarea>
+            </form>
+          </div>
+        </div>
+
+      </div><!-- /layout-main -->
+
+
+      <!-- SIDEBAR -->
+      <aside class="layout-side">
+
+        <!-- 인기 있는 글 -->
+        <div class="side-sec">
+          <div class="side-head">인기 있는 글</div>
+          <a href="01_content_detail.html" class="pop-item"><span class="pop-rank">1</span><div><div class="pop-title keepall">기획서 첫 페이지가 안 풀릴 때 — '의도' 던지는 5단계</div><div class="pop-meta">기획</div></div></a>
+          <a href="#" class="pop-item"><span class="pop-rank">2</span><div><div class="pop-title keepall">윗사람 톤에 안 맞는 결과물 — AI에게 다시 시키는 3단계</div><div class="pop-meta">영업</div></div></a>
+          <a href="#" class="pop-item"><span class="pop-rank">3</span><div><div class="pop-title keepall">경쟁사 분석, AI가 표면만 긁고 끝나는 이유</div><div class="pop-meta">마케팅</div></div></a>
+          <a href="#" class="pop-item"><span class="pop-rank">4</span><div><div class="pop-title keepall">고객 인터뷰 정리 — AI에게 시킬 것·시키지 말 것</div><div class="pop-meta">1인사업</div></div></a>
+          <a href="#" class="pop-item"><span class="pop-rank">5</span><div><div class="pop-title keepall">Claude 메모리 기능, 실제로 일에 쓸만한가</div><div class="pop-meta">AI 트렌드</div></div></a>
+        </div>
+
+        <!-- ebook -->
+        <div class="side-sec">
+          <div class="side-ebook">
+            <div class="ebook-label">free ebook</div>
+            <div class="ebook-title keepall">AI, 다들 쓰는데 나만 못 쓰는 것 같다면 — 1주 실험 노트</div>
+            <div class="ebook-desc keepall">기획·마케팅·영업에서 직접 써본 AI 워크플로우 12개.</div>
+            <a href="#" class="ebook-cta">이메일로 받기 →</a>
+          </div>
+        </div>
+
+      </aside><!-- /layout-side -->
+
+    </div>
+  </div>
+
+
+  <!-- ===== Footer ===== -->
+  <footer class="footer">
+    <div class="footer-inner">
+      <div class="footer-txt keepall"><strong>케이스랩</strong> — 내 일에 AI를 어떻게 쓸지, 실험하며 찾아가는 공간.</div>
+      <nav class="footer-links">
+        <a href="#">ebook</a>
+        <a href="#">개인정보 처리방침</a>
+        <span style="color: var(--gray-400);">© 2026</span>
+      </nav>
+    </div>
+  </footer>
+
+
+  <!-- ===== Subscribe Modal ===== -->
+  <div class="modal-dim" id="subModal">
+    <div class="modal">
+      <button class="modal-close" onclick="document.getElementById('subModal').classList.remove('open')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+      <h2>콘텐츠 구독하기</h2>
+      <p class="modal-desc keepall">케이스랩 뉴스레터를 구독하고, 관심 직군의 콘텐츠를 받아보세요.</p>
+      <form onsubmit="return false;">
+        <label class="form-label" for="sub-name">이름</label>
+        <input class="form-input" id="sub-name" type="text" placeholder="ex) 김케랩" autocomplete="name" />
+        <label class="form-label" for="sub-email">이메일</label>
+        <input class="form-input" id="sub-email" type="email" placeholder="ex) you@company.com" autocomplete="email" />
+        <label class="form-label" for="sub-category">받고 싶은 소식</label>
+        <select class="form-select" id="sub-category" onchange="this.classList.toggle('selected', this.value !== '')">
+          <option value="">카테고리를 선택해 주세요.</option>
+          <option value="all">전체</option>
+          <option value="plan">기획</option>
+          <option value="marketing">마케팅</option>
+          <option value="sales">영업</option>
+          <option value="solo">1인사업</option>
+          <option value="trend">AI 트렌드</option>
+        </select>
+        <div class="form-check">
+          <input type="checkbox" id="sub-agree" />
+          <label for="sub-agree">(필수) 뉴스레터 수신을 위한 <a href="#">개인정보 수집 및 이용</a>에 동의합니다</label>
+        </div>
+        <button type="submit" class="form-submit">동의하고 구독하기</button>
+      </form>
+    </div>
+  </div>
+
+
+  <script>
+    // Hero Carousel
+    let current = 0;
+    const slides = document.getElementById('heroSlides');
+    const dots = document.getElementById('heroDots').children;
+    const total = dots.length;
+    function goSlide(i) {
+      current = (i + total) % total;
+      slides.style.transform = 'translateX(-' + (current * 100) + '%)';
+      for (let d = 0; d < dots.length; d++) dots[d].classList.toggle('on', d === current);
+    }
+    function moveSlide(dir) { goSlide(current + dir); }
+
+    // Category Tab Filter
+    document.querySelectorAll('.tab').forEach(function(tab) {
+      tab.addEventListener('click', function() {
+        document.querySelectorAll('.tab').forEach(function(t) { t.classList.remove('on'); });
+        this.classList.add('on');
+        var cat = this.getAttribute('data-cat');
+        document.querySelectorAll('#articleList .a-item').forEach(function(item) {
+          item.style.display = (cat === 'all' || item.getAttribute('data-cat') === cat) ? '' : 'none';
+        });
+      });
+    });
+
+    // Modal
+    document.getElementById('subModal').addEventListener('click', function(e) {
+      if (e.target === this) this.classList.remove('open');
+    });
+    document.addEventListener('keydown', function(e) {
+      if (e.key === 'Escape') document.getElementById('subModal').classList.remove('open');
+    });
+  </script>
+
+  <!-- Supabase: auth state -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="js/supabase-config.js"></script>
+  <script>updateGnbAuth();</script>
+
+</body>
+</html>

@@ -1,0 +1,644 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>콘텐츠 작성 — 케이스랩 admin</title>
+
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.min.css" />
+  <script src="https://unpkg.com/lucide@latest"></script>
+
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: { paper: '#FAFAF7', ink: '#0A0A0A', line: '#E5E1D5', soft: '#F4F2EC', indigo: { brand: '#1E40AF' } },
+          fontFamily: { sans: ['Pretendard', 'system-ui', '-apple-system', 'sans-serif'], num: ['ui-monospace', 'SFMono-Regular', 'Menlo', 'monospace'] },
+        },
+      },
+    };
+  </script>
+
+  <style>
+    html, body { background: #FAFAF7; color: #0A0A0A; }
+    body { font-family: 'Pretendard', system-ui, -apple-system, sans-serif; -webkit-font-smoothing: antialiased; }
+    .nav-item { display: flex; align-items: center; gap: .65rem; padding: .45rem .75rem; font-size: 13.5px; color: #4B5563; border-radius: 4px; transition: background .15s ease, color .15s ease; cursor: pointer; }
+    .nav-item:hover { background: #F4F2EC; color: #0A0A0A; }
+    .nav-item.active { background: #EEF2FF; color: #1E40AF; font-weight: 500; }
+    .nav-item .lucide { width: 15px; height: 15px; opacity: .85; }
+    .nav-section { font-size: 10.5px; letter-spacing: .14em; text-transform: uppercase; color: #9CA3AF; font-weight: 600; padding: 1.25rem .75rem .5rem; }
+
+    .ic-btn { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border: 1px solid #E5E1D5; border-radius: 4px; background: #fff; transition: background .15s; }
+    .ic-btn:hover { background: #FAFAF7; }
+    .ic-btn .lucide { width: 14px; height: 14px; color: #4B5563; }
+    .btn-secondary { display: inline-flex; align-items: center; gap: .4rem; padding: .45rem .85rem; font-size: 13px; font-weight: 500; color: #4B5563; background: #fff; border: 1px solid #E5E1D5; border-radius: 4px; }
+    .btn-secondary:hover { background: #FAFAF7; }
+    .btn-publish { display: inline-flex; align-items: center; gap: .4rem; padding: .45rem .85rem; font-size: 13px; font-weight: 500; color: #fff; background: #1E40AF; border-radius: 4px; }
+    .btn-publish:hover { background: #1E3A8A; }
+
+    .form-section { background: #fff; border: 1px solid #E5E1D5; border-radius: 4px; }
+    .form-section-head { padding: .85rem 1.2rem; border-bottom: 1px solid #E5E1D5; display: flex; align-items: center; justify-content: space-between; }
+    .form-section-title { font-size: 13.5px; font-weight: 600; }
+    .form-section-body { padding: 1.2rem; }
+
+    .field-label { font-size: 12px; color: #6B7280; font-weight: 500; margin-bottom: .35rem; display: block; }
+    .field-input { width: 100%; font-size: 13.5px; padding: .5rem .7rem; border: 1px solid #E5E1D5; border-radius: 4px; background: #fff; transition: border-color .15s; }
+    .field-input:focus { outline: none; border-color: #1E40AF; }
+    .field-input::placeholder { color: #C7C0AE; }
+    textarea.field-input { resize: vertical; min-height: 80px; line-height: 1.6; }
+    select.field-input { appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%236B7280' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right .7rem center; padding-right: 2rem; }
+
+    .chip { display: inline-flex; align-items: center; gap: .3rem; padding: .2rem .55rem; font-size: 12px; border: 1px solid #E5E1D5; border-radius: 3px; color: #4B5563; background: #FAFAF7; cursor: pointer; transition: background .12s; }
+    .chip:hover { background: #F4F2EC; }
+    .chip.on { background: #EEF2FF; border-color: #1E40AF; color: #1E40AF; }
+
+    .step-block { border: 1px solid #E5E1D5; border-radius: 4px; background: #FAFAF7; }
+    .step-head { padding: .65rem .9rem; display: flex; align-items: center; justify-content: space-between; cursor: pointer; }
+    .step-body { padding: .9rem; border-top: 1px solid #E5E1D5; background: #fff; }
+
+    .prompt-block { border: 1px dashed #D1D5DB; border-radius: 4px; padding: .7rem; background: #FAFAF7; }
+
+    .tag-chip { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; background: #EEF2FF; border-radius: 3px; font-size: 12px; font-weight: 500; color: #1E40AF; }
+    .tag-chip .tag-x { cursor: pointer; color: #93A3C0; font-size: 14px; line-height: 1; }
+    .tag-chip .tag-x:hover { color: #DC2626; }
+
+    /* Upload modal */
+    .modal-dim { display: none; position: fixed; inset: 0; z-index: 200; background: rgba(0,0,0,.3); justify-content: center; align-items: center; padding: 24px; }
+    .modal-dim.open { display: flex; }
+    .modal-box { background: #fff; border-radius: 8px; width: 100%; max-width: 520px; padding: 28px; border: 1px solid #E5E1D5; }
+    .dropzone { border: 2px dashed #D1D5DB; border-radius: 6px; padding: 36px 24px; text-align: center; cursor: pointer; transition: all .15s; }
+    .dropzone:hover, .dropzone.drag { border-color: #1E40AF; background: #EEF2FF; }
+    .up-bar { height: 4px; background: #F1EEE4; border-radius: 2px; overflow: hidden; margin: 12px 0 6px; }
+    .up-bar-fill { height: 100%; background: #1E40AF; border-radius: 2px; transition: width .3s ease; width: 0; }
+
+    /* Preview modal */
+    .preview-dim { display: none; position: fixed; inset: 0; z-index: 300; background: #fff; flex-direction: column; }
+    .preview-dim.open { display: flex; }
+    .preview-bar { display: flex; align-items: center; justify-content: space-between; padding: 10px 20px; border-bottom: 1px solid #E5E1D5; background: #FAFAF7; flex-shrink: 0; }
+    .preview-tab { padding: 5px 12px; font-size: 12.5px; font-weight: 500; color: #6B7280; border: 1px solid #E5E1D5; border-radius: 4px; background: #fff; }
+    .preview-tab:hover { border-color: #9CA3AF; }
+    .preview-tab.on { color: #1E40AF; border-color: #1E40AF; background: #EEF2FF; }
+    .preview-frame { flex: 1; overflow: auto; display: flex; justify-content: center; background: #FAFAF7; padding: 20px; }
+    .preview-device { background: #fff; box-shadow: 0 2px 16px rgba(0,0,0,.06); border-radius: 8px; overflow: hidden; width: 100%; transition: max-width .3s ease; }
+    .preview-device.desktop { max-width: 1080px; }
+    .preview-device.mobile { max-width: 390px; }
+    .preview-device iframe { width: 100%; height: 100%; border: none; min-height: calc(100vh - 100px); }
+
+    /* Toast */
+    .toast { position: fixed; top: 72px; left: 50%; transform: translateX(-50%); padding: 10px 20px; background: #0A0A0A; color: #fff; font-size: 13px; font-weight: 500; border-radius: 6px; z-index: 999; display: none; }
+    .toast.show { display: block; animation: toastIn .2s ease; }
+    @keyframes toastIn { from { opacity: 0; transform: translateX(-50%) translateY(-8px); } to { opacity: 1; transform: translateX(-50%) translateY(0); } }
+  </style>
+</head>
+
+<body class="bg-paper text-ink">
+  <div class="flex min-h-screen">
+
+    <!-- Sidebar -->
+    <aside class="w-[220px] shrink-0 border-r border-line bg-white flex flex-col">
+      <div class="h-14 flex items-center px-4 border-b border-line">
+        <a href="../user/index.html" class="flex items-center gap-2 no-underline">
+          <div class="w-6 h-6 rounded-sm bg-ink flex items-center justify-center text-white text-[10px] font-bold tracking-wider">CL</div>
+          <span class="font-bold text-[14px]">케이스랩</span>
+          <span class="text-[10px] text-gray-400 font-medium tracking-wider">ADMIN</span>
+        </a>
+      </div>
+      <nav class="flex-1 px-2 py-3 overflow-y-auto">
+        <div class="nav-section">운영</div>
+        <a class="nav-item active" href="index.html"><i data-lucide="file-text"></i>콘텐츠</a>
+        <a class="nav-item" href="analytics.html"><i data-lucide="bar-chart-2"></i>분석</a>
+        <a class="nav-item" href="users.html"><i data-lucide="users"></i>가입자</a>
+        <a class="nav-item" href="ebooks.html"><i data-lucide="book"></i>전자책</a>
+        <a class="nav-item" href="tools.html"><i data-lucide="wrench"></i>도구 관리</a>
+        <div class="nav-section">소통</div>
+        <a class="nav-item" href="topics.html"><i data-lucide="lightbulb"></i>후보 카드</a>
+        <a class="nav-item" href="opinions.html"><i data-lucide="message-square"></i>의견함 <span class="ml-auto text-[10.5px] font-medium text-indigo-brand bg-[#EEF2FF] px-1.5 py-0.5 rounded-sm">12</span></a>
+      </nav>
+      <div class="border-t border-line px-3 py-3 flex items-center gap-2.5">
+        <div class="w-7 h-7 rounded-full bg-soft border border-line flex items-center justify-center text-[11px] font-semibold text-gray-700">주</div>
+        <div class="min-w-0">
+          <div class="text-[12.5px] font-medium truncate">김주희</div>
+          <div class="text-[10.5px] text-gray-500 truncate">운영자</div>
+        </div>
+        <button class="ml-auto ic-btn" title="설정"><i data-lucide="more-horizontal"></i></button>
+      </div>
+    </aside>
+
+    <!-- Main -->
+    <main class="flex-1 min-w-0">
+
+      <!-- Top bar -->
+      <header class="h-14 border-b border-line bg-white flex items-center px-6 gap-3">
+        <a class="text-[13px] text-gray-500 hover:text-ink flex items-center gap-1" href="index.html"><i data-lucide="arrow-left" class="w-3.5 h-3.5"></i>콘텐츠</a>
+        <span class="text-gray-300">/</span>
+        <h1 class="text-[15px] font-semibold">새 콘텐츠</h1>
+        <div class="ml-auto flex items-center gap-2">
+          <button class="btn-secondary" onclick="openUploader()"><i data-lucide="upload" class="w-3.5 h-3.5"></i>파일 가져오기</button>
+          <button class="btn-secondary" onclick="openPreview()"><i data-lucide="eye" class="w-3.5 h-3.5"></i>미리보기</button>
+          <button class="btn-secondary" onclick="showToast('초안이 저장되었습니다.')">초안 저장</button>
+          <button class="btn-publish" onclick="showToast('발행되었습니다.')"><i data-lucide="send" class="w-3.5 h-3.5"></i>발행</button>
+        </div>
+      </header>
+
+      <!-- Body -->
+      <div class="p-6 max-w-[820px] mx-auto space-y-5">
+
+        <!-- Meta -->
+        <section class="form-section">
+          <div class="form-section-head">
+            <div class="form-section-title">메타 정보</div>
+          </div>
+          <div class="form-section-body space-y-4">
+
+            <div class="grid grid-cols-[1fr_140px] gap-4">
+              <div>
+                <label class="field-label">제목</label>
+                <input type="text" class="field-input" id="inTitle" placeholder="콘텐츠 제목을 입력하세요" />
+              </div>
+              <div>
+                <label class="field-label">트랙</label>
+                <select class="field-input" id="inType">
+                  <option value="case">실전 케이스</option>
+                  <option value="trend">AI 트렌드</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="grid grid-cols-2 gap-4">
+              <div>
+                <label class="field-label">영문 slug</label>
+                <input type="text" class="field-input" id="inSlug" placeholder="planning-intent-5steps" />
+                <div class="text-[11px] text-gray-400 mt-1">caselab.kr/cases/<span class="text-ink" id="slugPreview">slug</span></div>
+              </div>
+              <div>
+                <label class="field-label">회차</label>
+                <input type="number" class="field-input" id="inNum" placeholder="#01" />
+              </div>
+            </div>
+
+            <div>
+              <label class="field-label">한 줄 발췌</label>
+              <input type="text" class="field-input" id="inExcerpt" placeholder="목록·공유·OG 태그에 표시될 요약 한 줄" />
+            </div>
+
+            <div class="grid grid-cols-2 gap-4">
+              <div>
+                <label class="field-label">읽는 데 (분)</label>
+                <input type="number" class="field-input" id="inRead" placeholder="8" />
+              </div>
+              <div>
+                <label class="field-label">적용 (분)</label>
+                <input type="number" class="field-input" id="inApply" placeholder="20" />
+              </div>
+            </div>
+
+            <div>
+              <label class="field-label">직무 태그</label>
+              <div class="flex flex-wrap items-center gap-1.5 mt-1" id="jobChips">
+                <button class="chip" data-job="기획·마케팅·운영" onclick="toggleChip(this)">기획·마케팅·운영</button>
+                <button class="chip" data-job="영업" onclick="toggleChip(this)">영업</button>
+                <button class="chip" data-job="1인사업" onclick="toggleChip(this)">1인사업</button>
+                <button class="chip" data-job="전략·분석" onclick="toggleChip(this)">전략·분석</button>
+              </div>
+            </div>
+
+            <div>
+              <label class="field-label">세부 태그</label>
+              <div class="flex flex-wrap items-center gap-1.5 border border-line rounded px-2 py-1.5 min-h-[36px] cursor-text" id="tagWrap" onclick="document.getElementById('tagTyping').focus()">
+                <input type="text" id="tagTyping" placeholder="태그 입력 후 Enter" class="text-[12.5px] bg-transparent border-none outline-none flex-1 min-w-[80px] placeholder:text-gray-400" />
+              </div>
+              <div class="text-[11px] text-gray-400 mt-1">본문 입력 시 키워드 기반 자동 제안 + 직접 추가</div>
+            </div>
+
+            <div>
+              <label class="field-label">썸네일</label>
+              <div class="border border-dashed border-line rounded-sm p-4 text-center text-[12.5px] text-gray-400 bg-paper">
+                <i data-lucide="image" class="w-5 h-5 mx-auto mb-1 text-gray-300"></i>
+                클릭하거나 드래그하여 이미지 업로드
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Body: 실전 케이스 4단 구조 -->
+        <section class="form-section">
+          <div class="form-section-head">
+            <div class="form-section-title">본문 — 실전 케이스 4단</div>
+            <div class="flex items-center gap-2">
+              <span class="text-[11.5px] text-gray-500">레이아웃:</span>
+              <div class="flex border border-line rounded-sm overflow-hidden text-[12px]">
+                <button class="px-2.5 py-1 bg-ink text-white" id="layoutStructured" onclick="setLayout('structured')">구조화</button>
+                <button class="px-2.5 py-1 text-gray-600 hover:bg-soft" id="layoutFree" onclick="setLayout('free')">자유 서술</button>
+              </div>
+            </div>
+          </div>
+          <div class="form-section-body space-y-4" id="bodyStructured">
+
+            <!-- Step 1: 이 일의 본질 -->
+            <div class="step-block">
+              <div class="step-head" onclick="toggleStep(this)">
+                <div class="flex items-center gap-2">
+                  <span class="text-[11px] font-bold text-indigo-brand bg-[#EEF2FF] px-1.5 py-0.5 rounded-sm">1단계</span>
+                  <span class="text-[13.5px] font-medium">이 일의 본질</span>
+                </div>
+                <i data-lucide="chevron-down" class="w-4 h-4 text-gray-400"></i>
+              </div>
+              <div class="step-body">
+                <textarea class="field-input body-text" placeholder="이 업무의 본질을 설명하세요. 마크다운 사용 가능."></textarea>
+              </div>
+            </div>
+
+            <!-- Step 2: Framework -->
+            <div class="step-block">
+              <div class="step-head" onclick="toggleStep(this)">
+                <div class="flex items-center gap-2">
+                  <span class="text-[11px] font-bold text-indigo-brand bg-[#EEF2FF] px-1.5 py-0.5 rounded-sm">2단계</span>
+                  <span class="text-[13.5px] font-medium">일 푸는 순서 (Framework)</span>
+                </div>
+                <i data-lucide="chevron-down" class="w-4 h-4 text-gray-400"></i>
+              </div>
+              <div class="step-body space-y-3">
+                <div class="flex items-start gap-2">
+                  <div class="w-6 h-6 rounded bg-soft border border-line flex items-center justify-center text-[11px] font-bold text-gray-500 shrink-0 mt-1">1</div>
+                  <div class="flex-1 grid grid-cols-[1fr_1fr] gap-2">
+                    <input type="text" class="field-input body-text" placeholder="단계 이름" value="문제 정의" />
+                    <input type="text" class="field-input body-text" placeholder="한 줄 설명" value="핵심 질문을 뾰족하게 만든다" />
+                  </div>
+                  <button class="ic-btn mt-1" title="삭제"><i data-lucide="x"></i></button>
+                </div>
+                <div class="flex items-start gap-2">
+                  <div class="w-6 h-6 rounded bg-soft border border-line flex items-center justify-center text-[11px] font-bold text-gray-500 shrink-0 mt-1">2</div>
+                  <div class="flex-1 grid grid-cols-[1fr_1fr] gap-2">
+                    <input type="text" class="field-input body-text" placeholder="단계 이름" value="가설 수립" />
+                    <input type="text" class="field-input body-text" placeholder="한 줄 설명" value="검증할 수 있는 형태로 가설을 세운다" />
+                  </div>
+                  <button class="ic-btn mt-1" title="삭제"><i data-lucide="x"></i></button>
+                </div>
+                <div class="flex items-start gap-2">
+                  <div class="w-6 h-6 rounded bg-soft border border-line flex items-center justify-center text-[11px] font-bold text-gray-500 shrink-0 mt-1">3</div>
+                  <div class="flex-1 grid grid-cols-[1fr_1fr] gap-2">
+                    <input type="text" class="field-input body-text" placeholder="단계 이름" />
+                    <input type="text" class="field-input body-text" placeholder="한 줄 설명" />
+                  </div>
+                  <button class="ic-btn mt-1" title="삭제"><i data-lucide="x"></i></button>
+                </div>
+                <button class="text-[12.5px] text-indigo-brand font-medium flex items-center gap-1"><i data-lucide="plus" class="w-3.5 h-3.5"></i>단계 추가</button>
+              </div>
+            </div>
+
+            <!-- Step 3: 각 단계 x AI 실행 -->
+            <div class="step-block">
+              <div class="step-head" onclick="toggleStep(this)">
+                <div class="flex items-center gap-2">
+                  <span class="text-[11px] font-bold text-indigo-brand bg-[#EEF2FF] px-1.5 py-0.5 rounded-sm">3단계</span>
+                  <span class="text-[13.5px] font-medium">각 단계 x AI 실행</span>
+                </div>
+                <i data-lucide="chevron-up" class="w-4 h-4 text-gray-400"></i>
+              </div>
+              <div class="step-body space-y-4">
+                <div class="border border-line rounded-sm bg-white">
+                  <div class="px-3 py-2.5 border-b border-line bg-paper flex items-center justify-between">
+                    <div class="flex items-center gap-2">
+                      <i data-lucide="grip-vertical" class="w-3.5 h-3.5 text-gray-300 cursor-grab"></i>
+                      <span class="text-[12.5px] font-medium">실행 1: 문제 정의</span>
+                    </div>
+                    <div class="flex items-center gap-1">
+                      <button class="ic-btn" title="접기"><i data-lucide="chevron-up"></i></button>
+                      <button class="ic-btn" title="삭제"><i data-lucide="trash-2"></i></button>
+                    </div>
+                  </div>
+                  <div class="p-3 space-y-3">
+                    <div>
+                      <label class="field-label">사람이 할 일</label>
+                      <textarea class="field-input body-text" style="min-height:50px" placeholder="이 단계에서 사람이 직접 해야 할 작업"></textarea>
+                    </div>
+                    <div>
+                      <label class="field-label">AI에게 시킬 것</label>
+                      <textarea class="field-input body-text" style="min-height:50px" placeholder="AI에게 맡길 구체적 작업"></textarea>
+                    </div>
+                    <div>
+                      <label class="field-label">프롬프트</label>
+                      <div class="space-y-2">
+                        <div class="prompt-block">
+                          <input type="text" class="field-input mb-1.5 body-text" placeholder="프롬프트 라벨 (예: 핵심 질문 도출)" style="font-size:12.5px" />
+                          <textarea class="field-input font-mono text-[12.5px] body-text" style="min-height:60px" placeholder="복사될 프롬프트 본문을 입력하세요"></textarea>
+                        </div>
+                        <button class="text-[12px] text-indigo-brand font-medium flex items-center gap-1"><i data-lucide="plus" class="w-3 h-3"></i>프롬프트 추가</button>
+                      </div>
+                    </div>
+                    <div>
+                      <label class="field-label">결과 예시</label>
+                      <div class="grid grid-cols-2 gap-2">
+                        <div>
+                          <div class="text-[11px] text-green-700 font-medium mb-1">잘된 것</div>
+                          <textarea class="field-input body-text" style="min-height:50px" placeholder="좋은 결과 예시"></textarea>
+                        </div>
+                        <div>
+                          <div class="text-[11px] text-red-700 font-medium mb-1">별로인 것</div>
+                          <textarea class="field-input body-text" style="min-height:50px" placeholder="아쉬운 결과 예시"></textarea>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <button class="text-[12.5px] text-indigo-brand font-medium flex items-center gap-1"><i data-lucide="plus" class="w-3.5 h-3.5"></i>실행 단계 추가</button>
+              </div>
+            </div>
+
+            <!-- Step 4: 솔직한 후기 -->
+            <div class="step-block">
+              <div class="step-head" onclick="toggleStep(this)">
+                <div class="flex items-center gap-2">
+                  <span class="text-[11px] font-bold text-indigo-brand bg-[#EEF2FF] px-1.5 py-0.5 rounded-sm">4단계</span>
+                  <span class="text-[13.5px] font-medium">솔직한 후기</span>
+                </div>
+                <i data-lucide="chevron-down" class="w-4 h-4 text-gray-400"></i>
+              </div>
+              <div class="step-body">
+                <textarea class="field-input body-text" placeholder="솔직한 실험 후기. '별로였던 것'이 30% 이상 포함되어야 합니다."></textarea>
+              </div>
+            </div>
+
+          </div>
+
+          <!-- Free layout (hidden by default) -->
+          <div class="form-section-body hidden" id="bodyFree">
+            <textarea class="field-input font-mono text-[13px] body-text" style="min-height:400px" placeholder="마크다운으로 본문을 작성하세요.&#10;&#10;프롬프트 블록은 ```prompt 구문으로 삽입합니다."></textarea>
+          </div>
+        </section>
+
+      </div>
+    </main>
+  </div>
+
+  <!-- Toast -->
+  <div class="toast" id="toast"></div>
+
+  <!-- File Upload Modal -->
+  <div class="modal-dim" id="uploadDim" onclick="if(event.target===this)closeUploader()">
+    <div class="modal-box">
+      <div class="flex items-center justify-between mb-4">
+        <h3 class="text-[16px] font-bold">파일 가져오기</h3>
+        <button class="ic-btn" onclick="closeUploader()"><i data-lucide="x"></i></button>
+      </div>
+      <p class="text-[13px] text-gray-600 mb-4">파일을 올리면 제목, 본문, 태그를 자동 추출해서 폼에 채워넣습니다.</p>
+
+      <div class="dropzone" id="dropzone">
+        <i data-lucide="file-up" class="w-8 h-8 mx-auto mb-2 text-gray-300"></i>
+        <div class="text-[13.5px] text-gray-600">파일을 드래그하거나 클릭해서 업로드</div>
+        <div class="text-[11.5px] text-gray-400 mt-1">.md, .txt, .html 지원</div>
+        <input type="file" id="fileInput" accept=".md,.txt,.html" style="display:none" />
+      </div>
+
+      <div class="hidden items-center gap-2 p-3 bg-paper border border-line rounded-sm mt-3 text-[13px]" id="fileInfo">
+        <span class="flex-1 font-medium truncate" id="fileName">-</span>
+        <span class="text-gray-500 text-[12px]" id="fileSize">-</span>
+        <button class="text-gray-400 hover:text-red-600 text-[16px]" onclick="clearFile()">&times;</button>
+      </div>
+
+      <div class="hidden" id="uploadProgress">
+        <div class="up-bar"><div class="up-bar-fill" id="upBarFill"></div></div>
+        <div class="text-[12px] text-gray-500" id="upStatus">파일 분석 중...</div>
+      </div>
+
+      <div class="flex justify-end gap-2 mt-4">
+        <button class="btn-secondary" onclick="closeUploader()">취소</button>
+        <button class="btn-publish" id="convertBtn" onclick="convertFile()" disabled>콘텐츠로 변환</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Preview Modal -->
+  <div class="preview-dim" id="previewDim">
+    <div class="preview-bar">
+      <div class="flex items-center gap-2">
+        <span class="text-[11px] font-bold text-indigo-brand bg-[#EEF2FF] px-2 py-0.5 rounded-sm">미리보기</span>
+        <span class="text-[13px] font-medium" id="previewTitle">제목 없음</span>
+      </div>
+      <div class="flex items-center gap-2">
+        <div class="flex gap-1">
+          <button class="preview-tab on" onclick="setDevice('desktop',this)">데스크톱</button>
+          <button class="preview-tab" onclick="setDevice('mobile',this)">모바일</button>
+        </div>
+        <button class="btn-secondary" onclick="closePreview()">닫기</button>
+      </div>
+    </div>
+    <div class="preview-frame">
+      <div class="preview-device desktop" id="previewDevice">
+        <iframe id="previewIframe"></iframe>
+      </div>
+    </div>
+  </div>
+
+  <script>lucide.createIcons();if(window!==window.top){const sb=document.querySelector("aside");if(sb)sb.style.display="none";}</script>
+  <script>
+    // ── Toast ──
+    function showToast(msg){const t=document.getElementById('toast');t.textContent=msg;t.className='toast show';setTimeout(()=>t.className='toast',2500)}
+
+    // ── Step toggle (accordion) ──
+    function toggleStep(head){
+      const body=head.nextElementSibling;
+      if(body&&body.classList.contains('step-body')){body.classList.toggle('hidden')}
+    }
+
+    // ── Layout toggle ──
+    function setLayout(mode){
+      const s=document.getElementById('bodyStructured');
+      const f=document.getElementById('bodyFree');
+      const bs=document.getElementById('layoutStructured');
+      const bf=document.getElementById('layoutFree');
+      if(mode==='free'){s.classList.add('hidden');f.classList.remove('hidden');bf.classList.add('bg-ink','text-white');bf.classList.remove('text-gray-600');bs.classList.remove('bg-ink','text-white');bs.classList.add('text-gray-600')}
+      else{f.classList.add('hidden');s.classList.remove('hidden');bs.classList.add('bg-ink','text-white');bs.classList.remove('text-gray-600');bf.classList.remove('bg-ink','text-white');bf.classList.add('text-gray-600')}
+    }
+
+    // ── Job chip toggle ──
+    function toggleChip(el){el.classList.toggle('on')}
+
+    // ── Tag input ──
+    const tagWrap=document.getElementById('tagWrap');
+    const tagInput=document.getElementById('tagTyping');
+    tagInput.addEventListener('keydown',function(e){
+      if(e.key==='Enter'&&this.value.trim()){e.preventDefault();addTag(this.value.trim());this.value=''}
+      if(e.key==='Backspace'&&!this.value){const chips=tagWrap.querySelectorAll('.tag-chip');if(chips.length)chips[chips.length-1].remove()}
+    });
+    function addTag(text){
+      const existing=[...tagWrap.querySelectorAll('.tag-chip')].map(c=>c.dataset.tag);
+      if(existing.includes(text))return;
+      const chip=document.createElement('span');chip.className='tag-chip';chip.dataset.tag=text;
+      chip.innerHTML=text+'<span class="tag-x" onclick="this.parentElement.remove()">&times;</span>';
+      tagWrap.insertBefore(chip,tagInput);
+    }
+    function getTags(){return[...tagWrap.querySelectorAll('.tag-chip')].map(c=>c.dataset.tag)}
+
+    // ── Auto slug from title ──
+    const slugField=document.getElementById('inSlug');
+    const slugPreview=document.getElementById('slugPreview');
+    slugField.addEventListener('input',function(){this.dataset.manual='1';slugPreview.textContent=this.value||'slug'});
+    document.getElementById('inTitle').addEventListener('input',function(){
+      if(slugField.dataset.manual)return;
+      const title=this.value.trim();
+      if(!title){slugField.value='';slugPreview.textContent='slug';return}
+      const slug=title.toLowerCase()
+        .replace(/[''""·—–]/g,'')
+        .replace(/[^a-z0-9가-힣\s-]/g,'')
+        .replace(/\s+/g,'-')
+        .replace(/-{2,}/g,'-')
+        .replace(/^-|-$/g,'')
+        .slice(0,60);
+      slugField.value=slug;
+      slugPreview.textContent=slug||'slug';
+    });
+
+    // ── Auto-suggest jobs + tags from body text ──
+    const JOB_KEYWORDS={
+      '기획·마케팅·운영':['기획서','기획안','PRD','요구사항','마케팅','캠페인','퍼널','전환율','CTR','SEO','콘텐츠마케팅','운영'],
+      '영업':['제안서','클라이언트','미팅','영업','계약','견적','파이프라인','수주'],
+      '1인사업':['프리랜서','1인','창업','고객','브랜딩','포트폴리오','수익화','사이드프로젝트'],
+      '전략·분석':['전략','분석','데이터','경쟁사','시장조사','KPI','대시보드','리서치']
+    };
+    const TAG_KEYWORDS=['프롬프트','경쟁사분석','보고서','회의록','데이터분석','인터뷰','A/B테스트','자동화','GPT','Claude','Notion','슬랙','이메일','발표','PPT','엑셀','SQL'];
+
+    function suggestFromBody(){
+      const texts=[...document.querySelectorAll('.body-text')].map(el=>el.value).join(' ');
+      // auto-check job chips
+      document.querySelectorAll('#jobChips .chip').forEach(chip=>{
+        const job=chip.dataset.job;
+        const keywords=JOB_KEYWORDS[job]||[];
+        if(keywords.some(kw=>texts.includes(kw))&&!chip.classList.contains('on')){chip.classList.add('on')}
+      });
+      // auto-add tags
+      const existing=getTags();
+      TAG_KEYWORDS.forEach(kw=>{if(texts.includes(kw)&&!existing.includes(kw))addTag(kw)});
+      // auto read time
+      const readInput=document.getElementById('inRead');
+      if(!readInput.dataset.manual){
+        const charCount=texts.replace(/\s/g,'').length;
+        const autoMin=Math.max(1,Math.round(charCount/500));
+        readInput.value=autoMin;
+      }
+    }
+    document.getElementById('inRead').addEventListener('input',function(){this.dataset.manual='1'});
+    // debounced suggestion on body text input
+    let suggestTimer;
+    document.addEventListener('input',function(e){
+      if(e.target.classList.contains('body-text')){
+        clearTimeout(suggestTimer);
+        suggestTimer=setTimeout(suggestFromBody,500);
+      }
+    });
+
+    // ── File Upload ──
+    let uploadedFile=null;
+    const dropzone=document.getElementById('dropzone');
+    const fileInput=document.getElementById('fileInput');
+
+    function openUploader(){clearFile();document.getElementById('uploadDim').classList.add('open')}
+    function closeUploader(){document.getElementById('uploadDim').classList.remove('open')}
+
+    dropzone.addEventListener('click',()=>fileInput.click());
+    dropzone.addEventListener('dragover',e=>{e.preventDefault();dropzone.classList.add('drag')});
+    dropzone.addEventListener('dragleave',()=>dropzone.classList.remove('drag'));
+    dropzone.addEventListener('drop',e=>{e.preventDefault();dropzone.classList.remove('drag');handleFile(e.dataTransfer.files[0])});
+    fileInput.addEventListener('change',e=>{if(e.target.files[0])handleFile(e.target.files[0])});
+
+    function handleFile(file){
+      const ext=file.name.split('.').pop().toLowerCase();
+      if(!['md','txt','html'].includes(ext)){showToast('.md, .txt, .html 파일만 가능합니다.');return}
+      if(file.size>10*1024*1024){showToast('10MB 이하만 가능합니다.');return}
+      uploadedFile=file;
+      document.getElementById('fileName').textContent=file.name;
+      document.getElementById('fileSize').textContent=(file.size/1024).toFixed(0)+'KB';
+      document.getElementById('fileInfo').classList.remove('hidden');
+      document.getElementById('fileInfo').classList.add('flex');
+      document.getElementById('convertBtn').disabled=false;
+      dropzone.style.display='none';
+    }
+    function clearFile(){
+      uploadedFile=null;
+      document.getElementById('fileInfo').classList.add('hidden');
+      document.getElementById('fileInfo').classList.remove('flex');
+      document.getElementById('convertBtn').disabled=true;
+      document.getElementById('uploadProgress').classList.add('hidden');
+      dropzone.style.display='';
+      fileInput.value='';
+    }
+    async function convertFile(){
+      if(!uploadedFile)return;
+      const prog=document.getElementById('uploadProgress');
+      const bar=document.getElementById('upBarFill');
+      const status=document.getElementById('upStatus');
+      prog.classList.remove('hidden');
+
+      bar.style.width='20%';status.textContent='파일 읽는 중...';
+      const text=await new Promise(r=>{const reader=new FileReader();reader.onload=e=>r(e.target.result);reader.readAsText(uploadedFile,'UTF-8')});
+
+      bar.style.width='60%';status.textContent='내용 분석 중...';
+      await new Promise(r=>setTimeout(r,400));
+
+      bar.style.width='90%';status.textContent='제목·태그 추출 중...';
+      const lines=text.split('\n').filter(l=>l.trim());
+      let title='',body=text;
+      const h1=text.match(/^#\s+(.+)/m);
+      if(h1){title=h1[1].trim();body=text.replace(h1[0],'').trim()}
+      else if(lines.length){title=lines[0].replace(/^#+\s*/,'').trim();body=lines.slice(1).join('\n').trim()}
+      await new Promise(r=>setTimeout(r,300));
+
+      bar.style.width='100%';status.textContent='완료!';
+      await new Promise(r=>setTimeout(r,300));
+
+      closeUploader();
+      document.getElementById('inTitle').value=title;
+      document.getElementById('inTitle').dispatchEvent(new Event('input'));
+      // switch to free layout and fill body
+      setLayout('free');
+      document.querySelector('#bodyFree textarea').value=body;
+      suggestFromBody();
+      showToast('파일이 변환되었습니다. 내용을 검토하세요.');
+    }
+
+    // ── Preview ──
+    function openPreview(){
+      const title=document.getElementById('inTitle').value||'제목 없음';
+      const type=document.getElementById('inType').value==='case'?'실전 케이스':'AI 트렌드';
+      const jobs=[...document.querySelectorAll('#jobChips .chip.on')].map(c=>c.dataset.job);
+      const tags=getTags();
+      const readTime=document.getElementById('inRead').value||'0';
+      const applyTime=document.getElementById('inApply').value||'';
+      const excerpt=document.getElementById('inExcerpt').value||'';
+
+      // collect body text
+      let bodyHTML='';
+      const freeTA=document.querySelector('#bodyFree textarea');
+      if(!document.getElementById('bodyFree').classList.contains('hidden')){
+        bodyHTML=freeTA.value.replace(/\n/g,'<br>');
+      }else{
+        const texts=[...document.querySelectorAll('#bodyStructured .body-text')].map(el=>el.value).filter(Boolean);
+        bodyHTML=texts.map(t=>'<p>'+t.replace(/\n/g,'<br>')+'</p>').join('');
+      }
+
+      document.getElementById('previewTitle').textContent=title;
+      const previewHTML=`<!DOCTYPE html><html lang="ko"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.min.css"/>
+<style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:'Pretendard',sans-serif;background:#fff;color:#0A0A0A;line-height:1.65;letter-spacing:-0.02em;-webkit-font-smoothing:antialiased}.c{max-width:680px;margin:0 auto;padding:32px 24px 80px}.eyebrow{font-size:12px;font-weight:700;color:#1E40AF;margin-bottom:12px}h1{font-size:28px;font-weight:800;line-height:1.35;letter-spacing:-0.03em;margin-bottom:10px}.sub{font-size:16px;color:#6B7280;margin-bottom:16px}.meta{font-size:13px;color:#9CA3AF;margin-bottom:8px}.tags{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:32px}.tag{font-size:12px;font-weight:600;color:#1E40AF;background:#EEF2FF;padding:3px 10px;border-radius:5px}.body{font-size:16px;line-height:1.75;color:#1F2937}.body p{margin-bottom:12px}</style></head><body>
+<div class="c">
+<div class="eyebrow">${type}${jobs.length?' · '+jobs.join(' · '):''}</div>
+<h1>${title}</h1>
+${excerpt?'<p class="sub">'+excerpt+'</p>':''}
+<div class="meta">읽는데 ${readTime}분${applyTime?' · 적용 '+applyTime+'분':''}</div>
+<div class="tags">${tags.map(t=>'<span class="tag">'+t+'</span>').join('')}</div>
+<div class="body">${bodyHTML||'<p style="color:#9CA3AF">본문이 비어있습니다.</p>'}</div>
+</div></body></html>`;
+
+      document.getElementById('previewIframe').srcdoc=previewHTML;
+      document.getElementById('previewDim').classList.add('open');
+    }
+    function closePreview(){document.getElementById('previewDim').classList.remove('open')}
+    function setDevice(type,btn){
+      document.querySelectorAll('.preview-tab').forEach(t=>t.classList.remove('on'));
+      btn.classList.add('on');
+      document.getElementById('previewDevice').className='preview-device '+type;
+    }
+  </script>
+</body>
+</html>

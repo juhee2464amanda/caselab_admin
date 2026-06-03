@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>콘텐츠 작성 — 케이스랩 admin</title>
+
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.min.css" />
+  <script src="https://unpkg.com/lucide@latest"></script>
+
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: { paper: '#FAFAF7', ink: '#0A0A0A', line: '#E5E1D5', soft: '#F4F2EC', indigo: { brand: '#1E40AF' } },
+          fontFamily: { sans: ['Pretendard', 'system-ui', '-apple-system', 'sans-serif'], num: ['ui-monospace', 'SFMono-Regular', 'Menlo', 'monospace'] },
+        },
+      },
+    };
+  </script>
+
+  <style>
+    html, body { background: #FAFAF7; color: #0A0A0A; }
+    body { font-family: 'Pretendard', system-ui, -apple-system, sans-serif; -webkit-font-smoothing: antialiased; }
+    .nav-item { display: flex; align-items: center; gap: .65rem; padding: .45rem .75rem; font-size: 13.5px; color: #4B5563; border-radius: 4px; transition: background .15s ease, color .15s ease; cursor: pointer; }
+    .nav-item:hover { background: #F4F2EC; color: #0A0A0A; }
+    .nav-item.active { background: #EEF2FF; color: #1E40AF; font-weight: 500; }
+    .nav-item .lucide { width: 15px; height: 15px; opacity: .85; }
+    .nav-section { font-size: 10.5px; letter-spacing: .14em; text-transform: uppercase; color: #9CA3AF; font-weight: 600; padding: 1.25rem .75rem .5rem; }
+
+    .ic-btn { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border: 1px solid #E5E1D5; border-radius: 4px; background: #fff; transition: background .15s; }
+    .ic-btn:hover { background: #FAFAF7; }
+    .ic-btn .lucide { width: 14px; height: 14px; color: #4B5563; }
+    .btn-primary { display: inline-flex; align-items: center; gap: .4rem; padding: .45rem .85rem; font-size: 13px; font-weight: 500; color: #fff; background: #0A0A0A; border-radius: 4px; }
+    .btn-primary:hover { background: #1F2937; }
+    .btn-secondary { display: inline-flex; align-items: center; gap: .4rem; padding: .45rem .85rem; font-size: 13px; font-weight: 500; color: #4B5563; background: #fff; border: 1px solid #E5E1D5; border-radius: 4px; }
+    .btn-secondary:hover { background: #FAFAF7; }
+    .btn-publish { display: inline-flex; align-items: center; gap: .4rem; padding: .45rem .85rem; font-size: 13px; font-weight: 500; color: #fff; background: #1E40AF; border-radius: 4px; }
+    .btn-publish:hover { background: #1E3A8A; }
+
+    .form-section { background: #fff; border: 1px solid #E5E1D5; border-radius: 4px; }
+    .form-section-head { padding: .85rem 1.2rem; border-bottom: 1px solid #E5E1D5; display: flex; align-items: center; justify-content: space-between; }
+    .form-section-title { font-size: 13.5px; font-weight: 600; }
+    .form-section-body { padding: 1.2rem; }
+
+    .field-label { font-size: 12px; color: #6B7280; font-weight: 500; margin-bottom: .35rem; display: block; }
+    .field-input { width: 100%; font-size: 13.5px; padding: .5rem .7rem; border: 1px solid #E5E1D5; border-radius: 4px; background: #fff; transition: border-color .15s; }
+    .field-input:focus { outline: none; border-color: #1E40AF; }
+    .field-input::placeholder { color: #C7C0AE; }
+    textarea.field-input { resize: vertical; min-height: 80px; line-height: 1.6; }
+    select.field-input { appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%236B7280' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right .7rem center; padding-right: 2rem; }
+
+    .chip { display: inline-flex; align-items: center; gap: .3rem; padding: .2rem .55rem; font-size: 12px; border: 1px solid #E5E1D5; border-radius: 3px; color: #4B5563; background: #FAFAF7; cursor: pointer; transition: background .12s; }
+    .chip:hover { background: #F4F2EC; }
+    .chip.on { background: #EEF2FF; border-color: #1E40AF; color: #1E40AF; }
+
+    .step-block { border: 1px solid #E5E1D5; border-radius: 4px; background: #FAFAF7; }
+    .step-head { padding: .65rem .9rem; display: flex; align-items: center; justify-content: space-between; cursor: pointer; }
+    .step-body { padding: .9rem; border-top: 1px solid #E5E1D5; background: #fff; }
+
+    .prompt-block { border: 1px dashed #D1D5DB; border-radius: 4px; padding: .7rem; background: #FAFAF7; }
+  </style>
+</head>
+
+<body class="bg-paper text-ink">
+  <div class="flex min-h-screen">
+
+    <!-- Sidebar -->
+    <aside class="w-[220px] shrink-0 border-r border-line bg-white flex flex-col">
+      <div class="h-14 flex items-center px-4 border-b border-line">
+        <div class="flex items-center gap-2">
+          <div class="w-6 h-6 rounded-sm bg-ink flex items-center justify-center text-white text-[10px] font-bold tracking-wider">CL</div>
+          <span class="font-bold text-[14px]">케이스랩</span>
+          <span class="text-[10px] text-gray-400 font-medium tracking-wider">ADMIN</span>
+        </div>
+      </div>
+      <nav class="flex-1 px-2 py-3 overflow-y-auto">
+        <div class="nav-section">운영</div>
+        <a class="nav-item active"><i data-lucide="file-text"></i>콘텐츠</a>
+        <a class="nav-item"><i data-lucide="bar-chart-2"></i>분석</a>
+        <a class="nav-item"><i data-lucide="users"></i>가입자</a>
+        <a class="nav-item"><i data-lucide="book"></i>전자책</a>
+        <div class="nav-section">소통</div>
+        <a class="nav-item"><i data-lucide="lightbulb"></i>후보 카드</a>
+        <a class="nav-item"><i data-lucide="message-square"></i>의견함 <span class="ml-auto text-[10.5px] font-medium text-indigo-brand bg-[#EEF2FF] px-1.5 py-0.5 rounded-sm">12</span></a>
+      </nav>
+      <div class="border-t border-line px-3 py-3 flex items-center gap-2.5">
+        <div class="w-7 h-7 rounded-full bg-soft border border-line flex items-center justify-center text-[11px] font-semibold text-gray-700">주</div>
+        <div class="min-w-0">
+          <div class="text-[12.5px] font-medium truncate">김주희</div>
+          <div class="text-[10.5px] text-gray-500 truncate">운영자</div>
+        </div>
+        <button class="ml-auto ic-btn" title="설정"><i data-lucide="more-horizontal"></i></button>
+      </div>
+    </aside>
+
+    <!-- Main -->
+    <main class="flex-1 min-w-0">
+
+      <!-- Top bar -->
+      <header class="h-14 border-b border-line bg-white flex items-center px-6 gap-3">
+        <a class="text-[13px] text-gray-500 hover:text-ink flex items-center gap-1" href="04_admin_contents.html"><i data-lucide="arrow-left" class="w-3.5 h-3.5"></i>콘텐츠</a>
+        <span class="text-gray-300">/</span>
+        <h1 class="text-[15px] font-semibold">새 콘텐츠</h1>
+        <div class="ml-auto flex items-center gap-2">
+          <button class="btn-secondary"><i data-lucide="eye" class="w-3.5 h-3.5"></i>미리보기</button>
+          <button class="btn-secondary">초안 저장</button>
+          <button class="btn-publish"><i data-lucide="send" class="w-3.5 h-3.5"></i>발행</button>
+        </div>
+      </header>
+
+      <!-- Body -->
+      <div class="p-6 max-w-[820px] mx-auto space-y-5">
+
+        <!-- Meta -->
+        <section class="form-section">
+          <div class="form-section-head">
+            <div class="form-section-title">메타 정보</div>
+          </div>
+          <div class="form-section-body space-y-4">
+
+            <div class="grid grid-cols-[1fr_140px] gap-4">
+              <div>
+                <label class="field-label">제목</label>
+                <input type="text" class="field-input" placeholder="콘텐츠 제목을 입력하세요" />
+              </div>
+              <div>
+                <label class="field-label">트랙</label>
+                <select class="field-input">
+                  <option>실전 케이스</option>
+                  <option>AI 트렌드</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="grid grid-cols-2 gap-4">
+              <div>
+                <label class="field-label">영문 slug</label>
+                <input type="text" class="field-input" placeholder="planning-intent-5steps" />
+                <div class="text-[11px] text-gray-400 mt-1">caselab.kr/cases/<span class="text-ink">slug</span></div>
+              </div>
+              <div>
+                <label class="field-label">회차</label>
+                <input type="number" class="field-input" placeholder="#01" />
+              </div>
+            </div>
+
+            <div>
+              <label class="field-label">한 줄 발췌</label>
+              <input type="text" class="field-input" placeholder="목록·공유·OG 태그에 표시될 요약 한 줄" />
+            </div>
+
+            <div class="grid grid-cols-2 gap-4">
+              <div>
+                <label class="field-label">읽는 데 (분)</label>
+                <input type="number" class="field-input" placeholder="8" />
+              </div>
+              <div>
+                <label class="field-label">적용 (분)</label>
+                <input type="number" class="field-input" placeholder="20" />
+              </div>
+            </div>
+
+            <div>
+              <label class="field-label">직무 태그</label>
+              <div class="flex flex-wrap items-center gap-1.5 mt-1">
+                <button class="chip on">기획·마케팅·운영</button>
+                <button class="chip">영업</button>
+                <button class="chip">1인사업</button>
+                <button class="chip">전략·분석</button>
+                <div class="inline-flex items-center gap-1 border border-dashed border-gray-300 rounded-[3px] px-2 py-[2px]">
+                  <input type="text" placeholder="+ 태그 추가" class="text-[12px] bg-transparent border-none outline-none w-[72px] placeholder:text-gray-400" />
+                  <i data-lucide="plus" class="w-3 h-3 text-gray-400 cursor-pointer hover:text-indigo-brand"></i>
+                </div>
+              </div>
+              <div class="text-[11px] text-gray-400 mt-1.5">기본 태그 선택 또는 직접 입력하여 추가</div>
+            </div>
+
+            <div>
+              <label class="field-label">썸네일</label>
+              <div class="border border-dashed border-line rounded-sm p-4 text-center text-[12.5px] text-gray-400 bg-paper">
+                <i data-lucide="image" class="w-5 h-5 mx-auto mb-1 text-gray-300"></i>
+                클릭하거나 드래그하여 이미지 업로드
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Body: 실전 케이스 4단 구조 -->
+        <section class="form-section">
+          <div class="form-section-head">
+            <div class="form-section-title">본문 — 실전 케이스 4단</div>
+            <div class="flex items-center gap-2">
+              <span class="text-[11.5px] text-gray-500">레이아웃:</span>
+              <div class="flex border border-line rounded-sm overflow-hidden text-[12px]">
+                <button class="px-2.5 py-1 bg-ink text-white">구조화</button>
+                <button class="px-2.5 py-1 text-gray-600 hover:bg-soft">자유 서술</button>
+              </div>
+            </div>
+          </div>
+          <div class="form-section-body space-y-4">
+
+            <!-- Step 1: 이 일의 본질 -->
+            <div class="step-block">
+              <div class="step-head">
+                <div class="flex items-center gap-2">
+                  <span class="text-[11px] font-bold text-indigo-brand bg-[#EEF2FF] px-1.5 py-0.5 rounded-sm">1단계</span>
+                  <span class="text-[13.5px] font-medium">이 일의 본질</span>
+                </div>
+                <i data-lucide="chevron-down" class="w-4 h-4 text-gray-400"></i>
+              </div>
+              <div class="step-body">
+                <textarea class="field-input" placeholder="이 업무의 본질을 설명하세요. 마크다운 사용 가능."></textarea>
+              </div>
+            </div>
+
+            <!-- Step 2: Framework -->
+            <div class="step-block">
+              <div class="step-head">
+                <div class="flex items-center gap-2">
+                  <span class="text-[11px] font-bold text-indigo-brand bg-[#EEF2FF] px-1.5 py-0.5 rounded-sm">2단계</span>
+                  <span class="text-[13.5px] font-medium">일 푸는 순서 (Framework)</span>
+                </div>
+                <i data-lucide="chevron-down" class="w-4 h-4 text-gray-400"></i>
+              </div>
+              <div class="step-body space-y-3">
+                <!-- framework step 1 -->
+                <div class="flex items-start gap-2">
+                  <div class="w-6 h-6 rounded bg-soft border border-line flex items-center justify-center text-[11px] font-bold text-gray-500 shrink-0 mt-1">1</div>
+                  <div class="flex-1 grid grid-cols-[1fr_1fr] gap-2">
+                    <input type="text" class="field-input" placeholder="단계 이름" value="문제 정의" />
+                    <input type="text" class="field-input" placeholder="한 줄 설명" value="핵심 질문을 뾰족하게 만든다" />
+                  </div>
+                  <button class="ic-btn mt-1" title="삭제"><i data-lucide="x"></i></button>
+                </div>
+                <!-- framework step 2 -->
+                <div class="flex items-start gap-2">
+                  <div class="w-6 h-6 rounded bg-soft border border-line flex items-center justify-center text-[11px] font-bold text-gray-500 shrink-0 mt-1">2</div>
+                  <div class="flex-1 grid grid-cols-[1fr_1fr] gap-2">
+                    <input type="text" class="field-input" placeholder="단계 이름" value="가설 수립" />
+                    <input type="text" class="field-input" placeholder="한 줄 설명" value="검증할 수 있는 형태로 가설을 세운다" />
+                  </div>
+                  <button class="ic-btn mt-1" title="삭제"><i data-lucide="x"></i></button>
+                </div>
+                <!-- framework step 3 -->
+                <div class="flex items-start gap-2">
+                  <div class="w-6 h-6 rounded bg-soft border border-line flex items-center justify-center text-[11px] font-bold text-gray-500 shrink-0 mt-1">3</div>
+                  <div class="flex-1 grid grid-cols-[1fr_1fr] gap-2">
+                    <input type="text" class="field-input" placeholder="단계 이름" />
+                    <input type="text" class="field-input" placeholder="한 줄 설명" />
+                  </div>
+                  <button class="ic-btn mt-1" title="삭제"><i data-lucide="x"></i></button>
+                </div>
+                <button class="text-[12.5px] text-indigo-brand font-medium flex items-center gap-1"><i data-lucide="plus" class="w-3.5 h-3.5"></i>단계 추가</button>
+              </div>
+            </div>
+
+            <!-- Step 3: 각 단계 x AI 실행 -->
+            <div class="step-block">
+              <div class="step-head">
+                <div class="flex items-center gap-2">
+                  <span class="text-[11px] font-bold text-indigo-brand bg-[#EEF2FF] px-1.5 py-0.5 rounded-sm">3단계</span>
+                  <span class="text-[13.5px] font-medium">각 단계 x AI 실행</span>
+                </div>
+                <i data-lucide="chevron-up" class="w-4 h-4 text-gray-400"></i>
+              </div>
+              <div class="step-body space-y-4">
+
+                <!-- execution step 1 -->
+                <div class="border border-line rounded-sm bg-white">
+                  <div class="px-3 py-2.5 border-b border-line bg-paper flex items-center justify-between">
+                    <div class="flex items-center gap-2">
+                      <i data-lucide="grip-vertical" class="w-3.5 h-3.5 text-gray-300 cursor-grab"></i>
+                      <span class="text-[12.5px] font-medium">실행 1: 문제 정의</span>
+                    </div>
+                    <div class="flex items-center gap-1">
+                      <button class="ic-btn" title="접기"><i data-lucide="chevron-up"></i></button>
+                      <button class="ic-btn" title="삭제"><i data-lucide="trash-2"></i></button>
+                    </div>
+                  </div>
+                  <div class="p-3 space-y-3">
+                    <div>
+                      <label class="field-label">사람이 할 일</label>
+                      <textarea class="field-input" style="min-height:50px" placeholder="이 단계에서 사람이 직접 해야 할 작업"></textarea>
+                    </div>
+                    <div>
+                      <label class="field-label">AI에게 시킬 것</label>
+                      <textarea class="field-input" style="min-height:50px" placeholder="AI에게 맡길 구체적 작업"></textarea>
+                    </div>
+
+                    <!-- prompts -->
+                    <div>
+                      <label class="field-label">프롬프트</label>
+                      <div class="space-y-2">
+                        <div class="prompt-block">
+                          <input type="text" class="field-input mb-1.5" placeholder="프롬프트 라벨 (예: 핵심 질문 도출)" style="font-size:12.5px" />
+                          <textarea class="field-input font-mono text-[12.5px]" style="min-height:60px" placeholder="복사될 프롬프트 본문을 입력하세요"></textarea>
+                        </div>
+                        <button class="text-[12px] text-indigo-brand font-medium flex items-center gap-1"><i data-lucide="plus" class="w-3 h-3"></i>프롬프트 추가</button>
+                      </div>
+                    </div>
+
+                    <!-- result examples -->
+                    <div>
+                      <label class="field-label">결과 예시</label>
+                      <div class="grid grid-cols-2 gap-2">
+                        <div>
+                          <div class="text-[11px] text-green-700 font-medium mb-1">잘된 것</div>
+                          <textarea class="field-input" style="min-height:50px" placeholder="좋은 결과 예시"></textarea>
+                        </div>
+                        <div>
+                          <div class="text-[11px] text-red-700 font-medium mb-1">별로인 것</div>
+                          <textarea class="field-input" style="min-height:50px" placeholder="아쉬운 결과 예시"></textarea>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <button class="text-[12.5px] text-indigo-brand font-medium flex items-center gap-1"><i data-lucide="plus" class="w-3.5 h-3.5"></i>실행 단계 추가</button>
+              </div>
+            </div>
+
+            <!-- Step 4: 솔직한 후기 -->
+            <div class="step-block">
+              <div class="step-head">
+                <div class="flex items-center gap-2">
+                  <span class="text-[11px] font-bold text-indigo-brand bg-[#EEF2FF] px-1.5 py-0.5 rounded-sm">4단계</span>
+                  <span class="text-[13.5px] font-medium">솔직한 후기</span>
+                </div>
+                <i data-lucide="chevron-down" class="w-4 h-4 text-gray-400"></i>
+              </div>
+              <div class="step-body">
+                <textarea class="field-input" placeholder="솔직한 실험 후기. '별로였던 것'이 30% 이상 포함되어야 합니다."></textarea>
+              </div>
+            </div>
+
+          </div>
+        </section>
+
+      </div>
+    </main>
+  </div>
+
+  <script>lucide.createIcons();</script>
+</body>
+</html>

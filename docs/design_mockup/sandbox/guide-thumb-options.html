@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>공식 가이드 카드 — PNG 시안 비교</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.min.css" />
+  <style>
+    :root {
+      --bg: #f7f7f7; --ink: #191f28; --gray-600: #6b7684; --gray-500: #8b95a1;
+      --gray-200: #e5e8eb; --gray-100: #f2f4f6; --blue: #3182f6;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: 'Pretendard', sans-serif; background: var(--bg); color: var(--ink); padding: 40px 24px; letter-spacing: -0.02em; }
+    h1 { font-size: 22px; font-weight: 800; margin-bottom: 8px; }
+    .lead { color: var(--gray-600); font-size: 14px; margin-bottom: 40px; }
+    .options { display: grid; grid-template-columns: repeat(3, 1fr); gap: 32px; max-width: 1200px; margin: 0 auto; }
+    @media (max-width: 900px) { .options { grid-template-columns: 1fr; justify-items: start; } }
+
+    .option-title { font-size: 16px; font-weight: 800; margin-bottom: 4px; }
+    .option-desc { font-size: 13px; color: var(--gray-600); line-height: 1.5; margin-bottom: 16px; min-height: 56px; }
+
+    /* 실제 메인 카드(약 245px)와 동일하게 시뮬레이션 */
+    .preview-wrap { width: 245px; }
+    .preview-card { display: block; border: 1px solid var(--gray-200); border-radius: 14px; overflow: hidden; background: #fff; }
+    .preview-thumb { aspect-ratio: 4/3; position: relative; overflow: hidden; }
+    .preview-thumb img.thumb { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .preview-badge { position: absolute; top: 10px; left: 10px; font-size: 11px; font-weight: 700; color: #fff; background: rgba(0,0,0,.55); padding: 3px 8px; border-radius: 5px; backdrop-filter: blur(4px); z-index: 2; }
+    .preview-body { padding: 16px 16px 18px; }
+    .preview-name { font-size: 17px; font-weight: 800; letter-spacing: -0.02em; margin-bottom: 5px; }
+    .preview-meta { font-size: 13px; color: var(--gray-600); }
+
+    .file { margin-top: 10px; font-family: ui-monospace, Menlo, monospace; font-size: 11px; color: var(--gray-500); }
+
+    /* 2x 해상도로 보여주는 보조 패널 — 정확한 디테일 확인용 */
+    .x2 { margin-top: 40px; text-align: center; }
+    .x2 h2 { font-size: 16px; font-weight: 800; margin-bottom: 16px; }
+    .x2-row { display: flex; gap: 24px; justify-content: center; flex-wrap: wrap; }
+    .x2-item { width: 320px; }
+    .x2-item img { width: 100%; height: auto; border: 1px solid var(--gray-200); border-radius: 12px; display: block; }
+    .x2-item .label { font-size: 12px; color: var(--gray-600); margin-top: 6px; }
+  </style>
+</head>
+<body>
+
+  <h1>공식 가이드 카드 — 썸네일 시안 비교 (실제 PNG)</h1>
+  <p class="lead">로고 캡쳐의 흰/베이지 배경은 코너 픽셀 기준으로 투명화함 — 로고 자체(색·획·형태)는 미변형. 실제 카드 폭(약 245px) 그대로 시뮬레이션.</p>
+
+  <div class="options">
+
+    <div>
+      <div class="option-title">시안 A — 흰 배경 / 세로 중앙</div>
+      <p class="option-desc">가장 미니멀. 시리즈 카드 전체와 동일한 흰 톤. 다른 카드들 사이에서 자연스럽게 섞임.</p>
+      <div class="preview-wrap">
+        <div class="preview-card">
+          <div class="preview-thumb">
+            <span class="preview-badge">19개</span>
+            <img class="thumb" src="option-a.png" alt="시안 A" />
+          </div>
+          <div class="preview-body">
+            <h3 class="preview-name">공식 가이드</h3>
+            <p class="preview-meta">OpenAI·Anthropic 공식 문서 핵심</p>
+          </div>
+        </div>
+      </div>
+      <div class="file">option-a.png</div>
+    </div>
+
+    <div>
+      <div class="option-title">시안 B — 옅은 그레이 / 좌측 정렬</div>
+      <p class="option-desc">캔버스를 #f5f6f8로 살짝 톤 다운. 좌측 정렬이라 카드 중 한 장만 다른 결로 도드라짐. 시선 끌고 싶을 때.</p>
+      <div class="preview-wrap">
+        <div class="preview-card">
+          <div class="preview-thumb">
+            <span class="preview-badge">19개</span>
+            <img class="thumb" src="option-b.png" alt="시안 B" />
+          </div>
+          <div class="preview-body">
+            <h3 class="preview-name">공식 가이드</h3>
+            <p class="preview-meta">OpenAI·Anthropic 공식 문서 핵심</p>
+          </div>
+        </div>
+      </div>
+      <div class="file">option-b.png</div>
+    </div>
+
+    <div>
+      <div class="option-title">시안 C — 흰 배경 / 3분할</div>
+      <p class="option-desc">로고를 3등분 칸 안에 배치 + 1px 구분선. "공식 가이드 큐레이션 모음" 느낌이 가장 강함.</p>
+      <div class="preview-wrap">
+        <div class="preview-card">
+          <div class="preview-thumb">
+            <span class="preview-badge">19개</span>
+            <img class="thumb" src="option-c.png" alt="시안 C" />
+          </div>
+          <div class="preview-body">
+            <h3 class="preview-name">공식 가이드</h3>
+            <p class="preview-meta">OpenAI·Anthropic 공식 문서 핵심</p>
+          </div>
+        </div>
+      </div>
+      <div class="file">option-c.png</div>
+    </div>
+
+  </div>
+
+  <div class="x2">
+    <h2>2배 확대 — 디테일 확인용</h2>
+    <div class="x2-row">
+      <div class="x2-item"><img src="option-a.png" alt="A 확대" /><div class="label">시안 A (800×600 원본)</div></div>
+      <div class="x2-item"><img src="option-b.png" alt="B 확대" /><div class="label">시안 B (800×600 원본)</div></div>
+      <div class="x2-item"><img src="option-c.png" alt="C 확대" /><div class="label">시안 C (800×600 원본)</div></div>
+    </div>
+  </div>
+
+</body>
+</html>

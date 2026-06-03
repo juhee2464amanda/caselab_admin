@@ -1,0 +1,400 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>케이스랩 — 일잘러의 AI 실험실</title>
+  <meta name="description" content="AI, 다들 쓰는데 나만 못 쓰는 것 같다면 — 내 일에 어떻게 쓸지, 실험하며 찾아가는 공간." />
+
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.min.css" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+KR:wght@500;700;900&display=swap" rel="stylesheet" />
+  <script src="https://unpkg.com/lucide@latest"></script>
+
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            paper: '#FAFAF7',
+            ink: '#0A0A0A',
+            indigo: { brand: '#1E40AF' },
+          },
+          fontFamily: {
+            sans: ['Pretendard', 'system-ui', '-apple-system', 'sans-serif'],
+            serif: ['"Noto Serif KR"', 'serif'],
+          },
+        },
+      },
+    };
+  </script>
+
+  <style>
+    html, body { background: #FAFAF7; color: #0A0A0A; }
+    body { font-family: 'Pretendard', system-ui, -apple-system, sans-serif; -webkit-font-smoothing: antialiased; }
+    .serif { font-family: 'Noto Serif KR', serif; word-break: keep-all; }
+    .keepall { word-break: keep-all; }
+    .u-hover { transition: color .15s ease; }
+    .u-hover:hover { color: #1E40AF; text-decoration: underline; text-underline-offset: 4px; text-decoration-thickness: 1px; }
+    .em-indigo { color: #1E40AF; }
+    .eyebrow { font-size: 11px; letter-spacing: .18em; text-transform: uppercase; color: #1E40AF; font-weight: 600; }
+    .section-label { font-size: 11px; letter-spacing: .18em; text-transform: uppercase; color: #6B7280; font-weight: 600; }
+    .hair { border-top: 1px solid #E5E1D5; }
+    .hair-strong { border-top: 1px solid #0A0A0A; }
+
+    .ebook-cover {
+      background: linear-gradient(135deg, #1E40AF 0%, #1e3a8a 100%);
+      color: #FAFAF7;
+      aspect-ratio: 3 / 4;
+      display: flex; align-items: flex-end; padding: 1rem;
+      font-family: 'Noto Serif KR', serif;
+      font-weight: 700; font-size: 14px; line-height: 1.3;
+      box-shadow: 0 1px 0 rgba(0,0,0,.04), 0 6px 14px -8px rgba(30,64,175,.35);
+    }
+    .vote-btn { transition: background .15s ease, border-color .15s ease, color .15s ease; }
+    .vote-btn:hover { background: #fff; border-color: #1E40AF; color: #1E40AF; }
+
+    /* 안 B 전용: 미리보기 카드 */
+    .preview-card {
+      background: #fff;
+      border: 1px solid #E5E1D5;
+      border-radius: 4px;
+      padding: 1.25rem 1.35rem;
+      transition: border-color .15s ease, box-shadow .15s ease;
+    }
+    .preview-card:hover {
+      border-color: #1E40AF;
+      box-shadow: 0 2px 8px -2px rgba(30,64,175,.1);
+    }
+  </style>
+</head>
+
+<body class="bg-paper text-ink">
+
+  <!-- ===== 헤더 ===== -->
+  <header class="border-b border-[#E5E1D5]">
+    <div class="max-w-7xl mx-auto px-5 md:px-8 h-16 flex items-center justify-between">
+      <a href="#" class="serif text-xl font-bold tracking-tight">
+        케이스랩 <span class="text-[11px] font-sans font-medium tracking-normal text-gray-500 ml-1 align-middle hidden md:inline">CASELAB</span>
+      </a>
+      <nav class="hidden md:flex items-center gap-7 text-[14px] text-gray-700">
+        <a href="#" class="u-hover">실전 케이스</a>
+        <a href="#" class="u-hover">AI 트렌드</a>
+        <a href="#" class="u-hover">이런 거 어때요</a>
+      </nav>
+      <div class="flex items-center gap-3">
+        <a href="#" class="text-[13.5px] text-gray-700 u-hover hidden sm:inline">로그인</a>
+        <button class="md:hidden p-1 -mr-1 text-gray-700" aria-label="메뉴 열기">
+          <i data-lucide="menu" class="w-5 h-5"></i>
+        </button>
+      </div>
+    </div>
+  </header>
+
+
+  <!-- ==========================================================
+       안 B: 구조 설명형 — "여기는 이런 곳입니다" + 바로 맛보기
+       핵심: 짧은 선언 → 콘텐츠 3종을 카드로 미리 보여줘서
+             "이런 곳이구나"를 글이 아니라 콘텐츠 자체로 증명
+       ========================================================== -->
+
+  <!-- ===== 히어로: 선언 + 미리보기 카드 ===== -->
+  <section class="max-w-3xl mx-auto px-5 md:px-8 pt-20 md:pt-32 pb-6 md:pb-8">
+
+    <p class="text-[13px] text-gray-500 mb-5 keepall">
+      AI를 일에 쓰고 싶은 실무자를 위한 실험 기록
+    </p>
+
+    <h1 class="serif keepall text-[1.75rem] md:text-[3rem] lg:text-[3.5rem] font-bold leading-[1.2] mb-6">
+      써봤는데 안 됐다면,<br />쓰는 법이 아니라<br /><span class="em-indigo">쓰는 순서</span>가 빠진 거예요.
+    </h1>
+
+    <p class="keepall text-[16px] md:text-[18px] text-gray-600 leading-relaxed max-w-[560px]">
+      케이스랩은 기획·마케팅·영업 실무자가 AI를 자기 일에 직접 적용해보고,
+      <strong class="font-medium text-ink">잘된 것과 별로였던 것을 솔직하게 기록</strong>하는 곳입니다.
+    </p>
+  </section>
+
+  <!-- 미리보기 카드 3종 — "이런 콘텐츠가 있습니다" -->
+  <section class="max-w-3xl mx-auto px-5 md:px-8 pt-6 pb-16 md:pb-20">
+    <div class="grid md:grid-cols-3 gap-4">
+
+      <!-- 카드 1: 실전 케이스 -->
+      <a href="01_content_detail.html" class="preview-card block group">
+        <div class="eyebrow mb-3">실전 케이스</div>
+        <h3 class="serif keepall text-[15px] md:text-base font-bold leading-snug mb-2 group-hover:underline underline-offset-3 decoration-1">
+          기획서 첫 페이지가 안 풀릴 때 — '의도' 던지는 5단계
+        </h3>
+        <p class="text-[13px] text-gray-500 leading-relaxed keepall mb-3">
+          프롬프트 + 맥락 + 후기까지. 내 업무에 바로 대입하는 실전 가이드.
+        </p>
+        <div class="text-[12px] text-gray-400 flex items-center gap-2">
+          <span class="inline-flex items-center gap-1"><i data-lucide="book-open" class="w-3 h-3"></i>8분</span>
+          <span class="inline-flex items-center gap-1"><i data-lucide="play" class="w-3 h-3"></i>30분</span>
+        </div>
+      </a>
+
+      <!-- 카드 2: AI 트렌드 -->
+      <a href="#" class="preview-card block group">
+        <div class="eyebrow mb-3">AI 트렌드</div>
+        <h3 class="serif keepall text-[15px] md:text-base font-bold leading-snug mb-2 group-hover:underline underline-offset-3 decoration-1">
+          Claude 메모리 기능, 실제로 일에 쓸만한가
+        </h3>
+        <p class="text-[13px] text-gray-500 leading-relaxed keepall mb-3">
+          새 기능·새 도구를 실무자 관점에서 직접 써보고 정리.
+        </p>
+        <div class="text-[12px] text-gray-400 flex items-center gap-2">
+          <span class="inline-flex items-center gap-1"><i data-lucide="book-open" class="w-3 h-3"></i>5분</span>
+        </div>
+      </a>
+
+      <!-- 카드 3: 이런 거 어때요 -->
+      <div class="preview-card">
+        <div class="eyebrow mb-3">이런 거 어때요</div>
+        <h3 class="serif keepall text-[15px] md:text-base font-bold leading-snug mb-2">
+          다음에 다룰 주제, 당신이 정합니다
+        </h3>
+        <p class="text-[13px] text-gray-500 leading-relaxed keepall mb-3">
+          궁금한 주제에 투표 — 표가 쌓이면 다음 글로 나옵니다.
+        </p>
+        <div class="text-[12px] text-gray-400 inline-flex items-center gap-1">
+          <i data-lucide="message-circle" class="w-3 h-3"></i>투표 참여하기
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+
+  <!-- ===== 이번 주 큐레이션 — 톱 1편 크게 ===== -->
+  <section class="max-w-3xl mx-auto px-5 md:px-8 pb-16 md:pb-20">
+    <div class="hair-strong mb-10"></div>
+    <div class="section-label mb-8 inline-flex items-center gap-3">
+      <span>이번 주 큐레이션</span>
+      <span class="inline-block w-8 h-px bg-gray-400 align-middle"></span>
+      <span>2026년 5월 4주</span>
+    </div>
+
+    <a href="01_content_detail.html" class="block group mb-12">
+      <div class="eyebrow mb-4">실전 케이스 · 기획 · #01</div>
+      <h2 class="serif keepall text-[1.5rem] md:text-[2.5rem] font-bold leading-[1.2] mb-4 group-hover:underline underline-offset-[6px] decoration-1">
+        기획서 첫 페이지가 안 풀릴 때 — '의도' 던지는 5단계
+      </h2>
+      <p class="serif keepall text-base md:text-lg text-gray-600 leading-snug mb-4 max-w-[600px]">
+        빈 입력칸 앞에서 막막한 이유는 AI가 부족해서가 아니라, 의도가 흐려서다.
+      </p>
+      <div class="text-[13px] text-gray-500 flex flex-wrap items-center gap-x-2 gap-y-1">
+        <span class="font-medium text-gray-700">김주희</span>
+        <span aria-hidden="true">·</span>
+        <span>2026년 5월 22일</span>
+        <span aria-hidden="true">·</span>
+        <span class="inline-flex items-center gap-1"><i data-lucide="book-open" class="w-3.5 h-3.5"></i>읽는데 8분</span>
+        <span aria-hidden="true">·</span>
+        <span class="inline-flex items-center gap-1"><i data-lucide="play" class="w-3.5 h-3.5"></i>적용 30분</span>
+      </div>
+    </a>
+
+    <!-- 나머지 2편 -->
+    <div class="grid md:grid-cols-2 md:gap-10 gap-y-10">
+      <article>
+        <a href="#" class="block group">
+          <div class="eyebrow mb-3">AI 트렌드 · #21</div>
+          <h3 class="serif keepall text-xl md:text-[1.35rem] font-bold leading-snug mb-3 group-hover:underline underline-offset-4 decoration-1">
+            Claude 메모리 기능, 실제로 일에 쓸만한가 — 1주일 실험
+          </h3>
+          <p class="text-[14px] text-gray-600 leading-relaxed keepall mb-3">
+            "내가 누구인지 기억"한다는 약속이 실제 업무 흐름에서 무엇을 바꾸는가.
+          </p>
+          <div class="text-[12.5px] text-gray-500 flex flex-wrap items-center gap-x-2">
+            <span>박서연</span><span aria-hidden="true">·</span>
+            <span class="inline-flex items-center gap-1"><i data-lucide="book-open" class="w-3 h-3"></i>5분</span>
+          </div>
+        </a>
+      </article>
+
+      <article class="md:border-l md:border-[#E5E1D5] md:pl-10">
+        <a href="#" class="block group">
+          <div class="eyebrow mb-3">실전 케이스 · 마케팅 · #02</div>
+          <h3 class="serif keepall text-xl md:text-[1.35rem] font-bold leading-snug mb-3 group-hover:underline underline-offset-4 decoration-1">
+            경쟁사 분석, AI가 표면만 긁고 끝나는 이유
+          </h3>
+          <p class="text-[14px] text-gray-600 leading-relaxed keepall mb-3">
+            "경쟁사 5곳 분석해줘"는 거의 모두 실패한다. 사람이 먼저 좁히는 4단계.
+          </p>
+          <div class="text-[12.5px] text-gray-500 flex flex-wrap items-center gap-x-2">
+            <span>김주희</span><span aria-hidden="true">·</span>
+            <span class="inline-flex items-center gap-1"><i data-lucide="book-open" class="w-3 h-3"></i>7분</span>
+            <span aria-hidden="true">·</span>
+            <span class="inline-flex items-center gap-1"><i data-lucide="play" class="w-3 h-3"></i>40분</span>
+          </div>
+        </a>
+      </article>
+    </div>
+  </section>
+
+
+  <!-- ===== 최신 콘텐츠 ===== -->
+  <section class="max-w-3xl mx-auto px-5 md:px-8 pb-16 md:pb-20">
+    <div class="hair-strong mb-10"></div>
+    <div class="flex items-baseline justify-between mb-8">
+      <div class="section-label">최신 콘텐츠</div>
+      <a href="#" class="text-[13px] text-gray-600 u-hover">전체 보기 →</a>
+    </div>
+
+    <ul class="divide-y divide-[#E5E1D5]">
+      <li class="py-7">
+        <a href="01_content_detail.html" class="block group">
+          <div class="eyebrow mb-2">실전 케이스 · 기획 · #01</div>
+          <h3 class="serif keepall text-xl md:text-2xl font-bold leading-snug mb-2 group-hover:underline underline-offset-4 decoration-1">
+            기획서 첫 페이지가 안 풀릴 때 — '의도' 던지는 5단계
+          </h3>
+          <p class="text-[14.5px] text-gray-600 leading-relaxed keepall mb-2 max-w-[640px]">
+            빈 입력칸 앞에서 막막한 이유는 AI가 부족해서가 아니라 의도가 흐려서다.
+          </p>
+          <div class="text-[12.5px] text-gray-500 flex flex-wrap items-center gap-x-2">
+            <span>김주희</span><span aria-hidden="true">·</span><span>2026년 5월 22일</span>
+            <span aria-hidden="true">·</span><span class="inline-flex items-center gap-1"><i data-lucide="book-open" class="w-3 h-3"></i>8분</span>
+            <span aria-hidden="true">·</span><span class="inline-flex items-center gap-1"><i data-lucide="play" class="w-3 h-3"></i>30분</span>
+          </div>
+        </a>
+      </li>
+      <li class="py-7">
+        <a href="#" class="block group">
+          <div class="eyebrow mb-2">AI 트렌드 · #21</div>
+          <h3 class="serif keepall text-xl md:text-2xl font-bold leading-snug mb-2 group-hover:underline underline-offset-4 decoration-1">
+            Claude 메모리 기능, 실제로 일에 쓸만한가 — 1주일 실험
+          </h3>
+          <p class="text-[14.5px] text-gray-600 leading-relaxed keepall mb-2 max-w-[640px]">
+            기억한다는 약속이 실제 업무 흐름에서 무엇을 바꾸는가. 1주 켜봤다.
+          </p>
+          <div class="text-[12.5px] text-gray-500 flex flex-wrap items-center gap-x-2">
+            <span>박서연</span><span aria-hidden="true">·</span><span>2026년 5월 21일</span>
+            <span aria-hidden="true">·</span><span class="inline-flex items-center gap-1"><i data-lucide="book-open" class="w-3 h-3"></i>5분</span>
+          </div>
+        </a>
+      </li>
+      <li class="py-7">
+        <a href="#" class="block group">
+          <div class="eyebrow mb-2">실전 케이스 · 마케팅 · #02</div>
+          <h3 class="serif keepall text-xl md:text-2xl font-bold leading-snug mb-2 group-hover:underline underline-offset-4 decoration-1">
+            경쟁사 분석, AI가 표면만 긁고 끝나는 이유
+          </h3>
+          <p class="text-[14.5px] text-gray-600 leading-relaxed keepall mb-2 max-w-[640px]">
+            "경쟁사 5곳 분석해줘"는 거의 모두 실패한다. 사람이 먼저 좁히는 4단계.
+          </p>
+          <div class="text-[12.5px] text-gray-500 flex flex-wrap items-center gap-x-2">
+            <span>김주희</span><span aria-hidden="true">·</span><span>2026년 5월 18일</span>
+            <span aria-hidden="true">·</span><span class="inline-flex items-center gap-1"><i data-lucide="book-open" class="w-3 h-3"></i>7분</span>
+            <span aria-hidden="true">·</span><span class="inline-flex items-center gap-1"><i data-lucide="play" class="w-3 h-3"></i>40분</span>
+          </div>
+        </a>
+      </li>
+      <li class="py-7">
+        <a href="#" class="block group">
+          <div class="eyebrow mb-2">실전 케이스 · 영업 · #04</div>
+          <h3 class="serif keepall text-xl md:text-2xl font-bold leading-snug mb-2 group-hover:underline underline-offset-4 decoration-1">
+            윗사람 톤에 안 맞는 결과물 — AI에게 다시 시키는 3단계
+          </h3>
+          <p class="text-[14.5px] text-gray-600 leading-relaxed keepall mb-2 max-w-[640px]">
+            "이거 윗분이 안 좋아할 거 같은데"의 95%는 톤 문제다.
+          </p>
+          <div class="text-[12.5px] text-gray-500 flex flex-wrap items-center gap-x-2">
+            <span>최현수</span><span aria-hidden="true">·</span><span>2026년 5월 10일</span>
+            <span aria-hidden="true">·</span><span class="inline-flex items-center gap-1"><i data-lucide="book-open" class="w-3 h-3"></i>6분</span>
+            <span aria-hidden="true">·</span><span class="inline-flex items-center gap-1"><i data-lucide="play" class="w-3 h-3"></i>25분</span>
+          </div>
+        </a>
+      </li>
+    </ul>
+  </section>
+
+
+  <!-- ===== 이런 거 어때요 ===== -->
+  <section class="max-w-3xl mx-auto px-5 md:px-8 pb-16 md:pb-20">
+    <div class="hair-strong mb-10"></div>
+    <div class="flex items-baseline justify-between mb-3">
+      <div class="section-label">이런 거 어때요</div>
+      <a href="#" class="text-[13px] text-gray-600 u-hover">전체 보기 →</a>
+    </div>
+    <p class="text-[14.5px] text-gray-600 keepall mb-7 max-w-[560px]">
+      다뤄볼까 고민 중인 주제들. 궁금한 게 있다면 표를 눌러주세요 — 표가 많이 쌓인 것부터 다음 글로 나옵니다.
+    </p>
+
+    <ul class="divide-y divide-[#E5E1D5]">
+      <li class="py-5 flex items-start gap-4">
+        <button type="button" class="vote-btn shrink-0 w-14 text-center px-2 py-2 border border-[#E5E1D5] rounded-sm bg-[#F4F2EC]">
+          <i data-lucide="chevron-up" class="w-3.5 h-3.5 mx-auto block text-gray-500"></i>
+          <span class="block text-[13px] font-medium text-gray-700">52</span>
+        </button>
+        <div class="min-w-0">
+          <h4 class="text-[15.5px] md:text-base font-semibold leading-snug keepall mb-1">회의록 정리, AI 안 쓰고 더 빠른 방법이 있나</h4>
+          <p class="text-[13.5px] text-gray-600 keepall leading-relaxed">매번 AI에 던지는데 결국 직접 다시 쓰는 게 빨라서.</p>
+        </div>
+      </li>
+      <li class="py-5 flex items-start gap-4">
+        <button type="button" class="vote-btn shrink-0 w-14 text-center px-2 py-2 border border-[#E5E1D5] rounded-sm bg-[#F4F2EC]">
+          <i data-lucide="chevron-up" class="w-3.5 h-3.5 mx-auto block text-gray-500"></i>
+          <span class="block text-[13px] font-medium text-gray-700">38</span>
+        </button>
+        <div class="min-w-0">
+          <h4 class="text-[15.5px] md:text-base font-semibold leading-snug keepall mb-1">보고서 톤, 윗사람 글체에 맞추는 5단계</h4>
+          <p class="text-[13.5px] text-gray-600 keepall leading-relaxed">윗분이 쓴 과거 보고서를 AI에 넣어 톤을 베끼는 게 맞나.</p>
+        </div>
+      </li>
+      <li class="py-5 flex items-start gap-4">
+        <button type="button" class="vote-btn shrink-0 w-14 text-center px-2 py-2 border border-[#E5E1D5] rounded-sm bg-[#F4F2EC]">
+          <i data-lucide="chevron-up" class="w-3.5 h-3.5 mx-auto block text-gray-500"></i>
+          <span class="block text-[13px] font-medium text-gray-700">29</span>
+        </button>
+        <div class="min-w-0">
+          <h4 class="text-[15.5px] md:text-base font-semibold leading-snug keepall mb-1">AI가 자꾸 거짓말할 때, 검증 프로세스</h4>
+          <p class="text-[13.5px] text-gray-600 keepall leading-relaxed">결과물이 그럴듯한데 사실관계가 어긋남.</p>
+        </div>
+      </li>
+    </ul>
+  </section>
+
+
+  <!-- ===== 전자책 배너 ===== -->
+  <section class="max-w-3xl mx-auto px-5 md:px-8 pb-20 md:pb-28">
+    <div class="hair mb-10"></div>
+    <div class="grid md:grid-cols-[140px_minmax(0,1fr)] gap-6 md:gap-8 items-center">
+      <div class="ebook-cover serif rounded-sm max-w-[140px]">
+        AI, 다들 쓰는데<br />나만 못 쓰는 것 같다면
+      </div>
+      <div>
+        <div class="section-label mb-3">무료 전자책</div>
+        <h3 class="serif keepall text-xl md:text-2xl font-bold leading-snug mb-2">
+          AI, 다들 쓰는데 나만 못 쓰는 것 같다면 — 1주 실험 노트
+        </h3>
+        <p class="text-[14.5px] text-gray-600 keepall leading-relaxed mb-5 max-w-[520px]">
+          기획·마케팅·영업 직무에서 1주 동안 직접 써본 AI 워크플로우 12개. 잘된 것·별로인 것 그대로.
+        </p>
+        <a href="#" class="inline-flex items-center gap-2 px-5 py-2.5 text-[14px] font-medium text-white bg-ink hover:bg-indigo-brand transition-colors duration-200">
+          이메일로 받기
+          <i data-lucide="arrow-right" class="w-4 h-4"></i>
+        </a>
+      </div>
+    </div>
+  </section>
+
+
+  <!-- ===== 푸터 ===== -->
+  <footer class="border-t border-[#E5E1D5]">
+    <div class="max-w-7xl mx-auto px-5 md:px-8 py-10 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+      <p class="text-[13.5px] text-gray-600 keepall max-w-md">
+        <span class="serif font-bold text-ink">케이스랩</span> — AI, 다들 쓰는데 나만 못 쓰는 것 같다면. 내 일에 어떻게 쓸지, 실험하며 찾아가는 공간.
+      </p>
+      <nav class="flex items-center gap-5 text-[13px] text-gray-600">
+        <a href="#" class="u-hover">전자책</a>
+        <a href="#" class="u-hover">개인정보 처리방침</a>
+        <span class="text-gray-400">© 2026 Caselab</span>
+      </nav>
+    </div>
+  </footer>
+
+  <script>lucide.createIcons();</script>
+</body>
+</html>

@@ -1,0 +1,75 @@
+/* D58 (2026-06-03) — Pretendard 단일 본문/제목. */
+/* D59 (2026-06-03) — Playfair Display italic = "Caselab" 브랜드 로고 한정. */
+@import url('https://fonts.bunny.net/css?family=playfair-display:400i,700i|pretendard:400,500,600,700,800');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* D59 (2026-06-03) — user mockup index 정합 (cool white + Toss Blue) */
+    --bg: #FFFFFF;
+    --ink: #0A0A0A;
+    --accent: #3182F6;
+    --muted: #F7F7F7;
+    --border: #E5E8EB;
+  }
+
+  html {
+    color-scheme: light;
+  }
+
+  body {
+    @apply bg-bg text-ink font-sans antialiased;
+    font-feature-settings: 'ss06';
+  }
+
+  h1, h2, h3, h4 {
+    @apply font-serif;
+    letter-spacing: -0.02em;
+  }
+}
+
+@layer components {
+  .container-narrow {
+    @apply mx-auto px-4 sm:px-6 max-w-3xl;
+  }
+  .container-wide {
+    @apply mx-auto px-4 sm:px-6 lg:px-8 max-w-7xl;
+  }
+  .prose-caselab {
+    @apply max-w-none text-ink/85;
+  }
+  .prose-caselab p { @apply text-[16px] leading-[1.8] my-4; }
+  .prose-caselab a { @apply text-accent underline underline-offset-2; }
+  .prose-caselab strong { @apply font-semibold text-ink; }
+  .prose-caselab code { @apply px-1.5 py-0.5 bg-muted rounded text-[0.9em] font-mono; }
+  .prose-caselab ul { @apply list-disc pl-6 my-4 space-y-1; }
+  .prose-caselab ol { @apply list-decimal pl-6 my-4 space-y-1; }
+  .chip {
+    @apply inline-flex items-center gap-1 px-2.5 py-1 rounded-full border border-border bg-white text-xs font-medium text-ink/70;
+  }
+  .chip-active {
+    @apply bg-accent text-white border-accent;
+  }
+  .badge {
+    @apply inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-muted text-xs font-medium text-ink/80;
+  }
+  .card {
+    @apply bg-white rounded-lg border border-border shadow-card;
+  }
+}
+
+/* Hero carousel */
+.hero-slide {
+  scroll-snap-align: start;
+}
+
+/* TOC scroll-spy */
+.toc-link {
+  @apply block py-1.5 text-sm text-ink/60 hover:text-ink transition-colors;
+}
+.toc-link.active {
+  @apply text-accent font-medium;
+}

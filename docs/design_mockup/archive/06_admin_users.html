@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>가입자 — 케이스랩 admin</title>
+
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.min.css" />
+  <script src="https://unpkg.com/lucide@latest"></script>
+
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            paper:  '#FAFAF7',
+            ink:    '#0A0A0A',
+            line:   '#E5E1D5',
+            soft:   '#F4F2EC',
+            indigo: { brand: '#1E40AF' },
+          },
+          fontFamily: {
+            sans: ['Pretendard', 'system-ui', '-apple-system', 'sans-serif'],
+            num:  ['ui-monospace', 'SFMono-Regular', 'Menlo', 'monospace'],
+          },
+        },
+      },
+    };
+  </script>
+
+  <style>
+    html, body { background: #FAFAF7; color: #0A0A0A; }
+    body { font-family: 'Pretendard', system-ui, -apple-system, sans-serif; -webkit-font-smoothing: antialiased; }
+
+    .nav-item { display: flex; align-items: center; gap: .65rem; padding: .45rem .75rem; font-size: 13.5px; color: #4B5563; border-radius: 4px; transition: background .15s ease, color .15s ease; cursor: pointer; }
+    .nav-item:hover { background: #F4F2EC; color: #0A0A0A; }
+    .nav-item.active { background: #EEF2FF; color: #1E40AF; font-weight: 500; }
+    .nav-item .lucide { width: 15px; height: 15px; opacity: .85; }
+    .nav-section { font-size: 10.5px; letter-spacing: .14em; text-transform: uppercase; color: #9CA3AF; font-weight: 600; padding: 1.25rem .75rem .5rem; }
+
+    .kpi-card { background: #fff; border: 1px solid #E5E1D5; border-radius: 4px; padding: 1.1rem 1.2rem; }
+    .kpi-label { font-size: 12px; color: #6B7280; font-weight: 500; }
+    .kpi-value { font-size: 26px; font-weight: 700; letter-spacing: -.02em; font-feature-settings: "tnum"; color: #0A0A0A; margin-top: .35rem; }
+    .kpi-sub { font-size: 11.5px; color: #9CA3AF; }
+
+    .panel { background: #fff; border: 1px solid #E5E1D5; border-radius: 4px; }
+    .panel-head { padding: 1rem 1.2rem; border-bottom: 1px solid #E5E1D5; display: flex; align-items: center; justify-content: space-between; }
+    .panel-title { font-size: 13.5px; font-weight: 600; }
+
+    .data-table { font-size: 13.5px; width: 100%; border-collapse: collapse; }
+    .data-table thead th { text-align: left; font-weight: 500; font-size: 11.5px; letter-spacing: .08em; text-transform: uppercase; color: #6B7280; padding: .65rem 1.2rem; border-bottom: 1px solid #E5E1D5; background: #FAFAF7; }
+    .data-table thead th.num { text-align: right; }
+    .data-table tbody td { padding: .85rem 1.2rem; border-bottom: 1px solid #F1EEE4; color: #1F2937; }
+    .data-table tbody td.num { text-align: right; font-variant-numeric: tabular-nums; }
+    .data-table tbody tr { transition: background .12s ease; }
+    .data-table tbody tr:hover { background: #FAFAF7; cursor: pointer; }
+    .data-table tbody tr:last-child td { border-bottom: 0; }
+
+    .oauth-badge { display: inline-flex; align-items: center; gap: .3rem; padding: 1px 7px; font-size: 11px; border: 1px solid #E5E1D5; border-radius: 3px; color: #4B5563; background: #FAFAF7; }
+    .job-badge { display: inline-block; padding: 1px 7px; font-size: 11px; border-radius: 3px; background: #F3F4F6; color: #4B5563; }
+
+    .ic-btn { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border: 1px solid #E5E1D5; border-radius: 4px; background: #fff; transition: background .15s; }
+    .ic-btn:hover { background: #FAFAF7; }
+    .ic-btn .lucide { width: 14px; height: 14px; color: #4B5563; }
+
+    /* slide panel */
+    .slide-panel { position: fixed; top: 0; right: 0; width: 400px; height: 100vh; background: #fff; border-left: 1px solid #E5E1D5; box-shadow: -4px 0 24px rgba(0,0,0,.06); z-index: 50; overflow-y: auto; }
+    .slide-panel-head { padding: 1rem 1.2rem; border-bottom: 1px solid #E5E1D5; display: flex; align-items: center; justify-content: space-between; }
+    .slide-section { padding: 1rem 1.2rem; border-bottom: 1px solid #F1EEE4; }
+    .slide-label { font-size: 11.5px; color: #9CA3AF; font-weight: 500; letter-spacing: .06em; text-transform: uppercase; margin-bottom: .5rem; }
+  </style>
+</head>
+
+<body class="bg-paper text-ink">
+  <div class="flex min-h-screen">
+
+    <!-- Sidebar -->
+    <aside class="w-[220px] shrink-0 border-r border-line bg-white flex flex-col">
+      <div class="h-14 flex items-center px-4 border-b border-line">
+        <div class="flex items-center gap-2">
+          <div class="w-6 h-6 rounded-sm bg-ink flex items-center justify-center text-white text-[10px] font-bold tracking-wider">CL</div>
+          <span class="font-bold text-[14px]">케이스랩</span>
+          <span class="text-[10px] text-gray-400 font-medium tracking-wider">ADMIN</span>
+        </div>
+      </div>
+      <nav class="flex-1 px-2 py-3 overflow-y-auto">
+        <div class="nav-section">운영</div>
+        <a class="nav-item"><i data-lucide="file-text"></i>콘텐츠</a>
+        <a class="nav-item"><i data-lucide="bar-chart-2"></i>분석</a>
+        <a class="nav-item active"><i data-lucide="users"></i>가입자</a>
+        <a class="nav-item"><i data-lucide="book"></i>전자책</a>
+        <div class="nav-section">소통</div>
+        <a class="nav-item"><i data-lucide="lightbulb"></i>후보 카드</a>
+        <a class="nav-item"><i data-lucide="message-square"></i>의견함 <span class="ml-auto text-[10.5px] font-medium text-indigo-brand bg-[#EEF2FF] px-1.5 py-0.5 rounded-sm">12</span></a>
+      </nav>
+      <div class="border-t border-line px-3 py-3 flex items-center gap-2.5">
+        <div class="w-7 h-7 rounded-full bg-soft border border-line flex items-center justify-center text-[11px] font-semibold text-gray-700">주</div>
+        <div class="min-w-0">
+          <div class="text-[12.5px] font-medium truncate">김주희</div>
+          <div class="text-[10.5px] text-gray-500 truncate">운영자</div>
+        </div>
+        <button class="ml-auto ic-btn" title="설정"><i data-lucide="more-horizontal"></i></button>
+      </div>
+    </aside>
+
+    <!-- Main -->
+    <main class="flex-1 min-w-0">
+
+      <header class="h-14 border-b border-line bg-white flex items-center px-6 gap-3">
+        <h1 class="text-[15px] font-semibold">가입자</h1>
+        <span class="text-[12.5px] text-gray-400">/ 유저 목록 + 행동 분석</span>
+        <div class="ml-auto flex items-center gap-2">
+          <div class="relative">
+            <i data-lucide="search" class="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400"></i>
+            <input type="text" placeholder="이름 · 이메일 검색" class="text-[12.5px] pl-8 pr-3 py-1.5 border border-line rounded-sm bg-white focus:outline-none focus:border-indigo-brand w-52" />
+          </div>
+          <button class="ic-btn" title="직무 필터"><i data-lucide="filter"></i></button>
+          <button class="ic-btn" title="CSV 내보내기"><i data-lucide="download"></i></button>
+        </div>
+      </header>
+
+      <div class="p-6 space-y-5">
+
+        <!-- KPI row -->
+        <section class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div class="kpi-card">
+            <div class="kpi-label">총 가입자</div>
+            <div class="kpi-value">1,247</div>
+            <div class="kpi-sub mt-1">이번 달 +96명</div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-label">Google 로그인</div>
+            <div class="kpi-value">814 <span class="text-[14px] text-gray-400">65%</span></div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-label">Kakao 로그인</div>
+            <div class="kpi-value">433 <span class="text-[14px] text-gray-400">35%</span></div>
+          </div>
+        </section>
+
+        <!-- User table -->
+        <section class="panel">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>이름</th>
+                <th>이메일</th>
+                <th>직무</th>
+                <th>로그인</th>
+                <th>가입일</th>
+                <th class="num">저장</th>
+                <th class="num">조회</th>
+                <th>마지막 활동</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td class="font-medium">박지현</td>
+                <td class="text-[12.5px] text-gray-600">jihyun.park@gmail.com</td>
+                <td><span class="job-badge">기획·마케팅·운영</span></td>
+                <td><span class="oauth-badge">Google</span></td>
+                <td class="text-gray-600 text-[12.5px]">2026-04-12</td>
+                <td class="num">24</td>
+                <td class="num">87</td>
+                <td class="text-gray-600 text-[12.5px]">3시간 전</td>
+              </tr>
+              <tr>
+                <td class="font-medium">이민준</td>
+                <td class="text-[12.5px] text-gray-600">minjun.lee@company.co.kr</td>
+                <td><span class="job-badge">전략·분석</span></td>
+                <td><span class="oauth-badge">Google</span></td>
+                <td class="text-gray-600 text-[12.5px]">2026-04-15</td>
+                <td class="num">18</td>
+                <td class="num">62</td>
+                <td class="text-gray-600 text-[12.5px]">1일 전</td>
+              </tr>
+              <tr>
+                <td class="font-medium">김소연</td>
+                <td class="text-[12.5px] text-gray-600">soyeon.kim@naver.com</td>
+                <td><span class="job-badge">1인사업</span></td>
+                <td><span class="oauth-badge">Kakao</span></td>
+                <td class="text-gray-600 text-[12.5px]">2026-04-20</td>
+                <td class="num">31</td>
+                <td class="num">104</td>
+                <td class="text-gray-600 text-[12.5px]">5시간 전</td>
+              </tr>
+              <tr>
+                <td class="font-medium">최현수</td>
+                <td class="text-[12.5px] text-gray-600">hyunsu.choi@corp.com</td>
+                <td><span class="job-badge">영업</span></td>
+                <td><span class="oauth-badge">Google</span></td>
+                <td class="text-gray-600 text-[12.5px]">2026-05-01</td>
+                <td class="num">9</td>
+                <td class="num">38</td>
+                <td class="text-gray-600 text-[12.5px]">3일 전</td>
+              </tr>
+              <tr>
+                <td class="font-medium">정다은</td>
+                <td class="text-[12.5px] text-gray-600">daeun.j@startup.io</td>
+                <td><span class="job-badge">기획·마케팅·운영</span></td>
+                <td><span class="oauth-badge">Kakao</span></td>
+                <td class="text-gray-600 text-[12.5px]">2026-05-08</td>
+                <td class="num">15</td>
+                <td class="num">53</td>
+                <td class="text-gray-600 text-[12.5px]">12시간 전</td>
+              </tr>
+              <tr>
+                <td class="font-medium text-gray-500">한서윤</td>
+                <td class="text-[12.5px] text-gray-400">seoyun.h@gmail.com</td>
+                <td><span class="job-badge" style="background:#FAFAF7;color:#9CA3AF">미응답</span></td>
+                <td><span class="oauth-badge">Google</span></td>
+                <td class="text-gray-600 text-[12.5px]">2026-05-24</td>
+                <td class="num text-gray-400">0</td>
+                <td class="num text-gray-400">2</td>
+                <td class="text-gray-400 text-[12.5px]">5일 전</td>
+              </tr>
+            </tbody>
+          </table>
+
+          <div class="px-5 py-3 border-t border-line flex items-center justify-between text-[12.5px] text-gray-500">
+            <span>총 1,247명 중 6명 표시</span>
+            <div class="flex items-center gap-1">
+              <button class="ic-btn"><i data-lucide="chevron-left"></i></button>
+              <span class="px-2">1 / 208</span>
+              <button class="ic-btn"><i data-lucide="chevron-right"></i></button>
+            </div>
+          </div>
+        </section>
+      </div>
+    </main>
+
+    <!-- Slide Panel: User Detail -->
+    <div class="slide-panel">
+      <div class="slide-panel-head">
+        <h2 class="text-[14px] font-semibold">박지현</h2>
+        <button class="ic-btn" title="닫기"><i data-lucide="x"></i></button>
+      </div>
+
+      <div class="slide-section">
+        <div class="slide-label">프로필</div>
+        <div class="space-y-2 text-[13px]">
+          <div class="flex justify-between"><span class="text-gray-500">이메일</span><span>jihyun.park@gmail.com</span></div>
+          <div class="flex justify-between"><span class="text-gray-500">가입일</span><span>2026-04-12</span></div>
+          <div class="flex justify-between"><span class="text-gray-500">로그인</span><span>Google</span></div>
+          <div class="flex justify-between"><span class="text-gray-500">직무</span><span>기획·마케팅·운영</span></div>
+          <div class="flex justify-between"><span class="text-gray-500">분석 동의</span><span class="text-green-700">동의</span></div>
+        </div>
+      </div>
+
+      <div class="slide-section">
+        <div class="slide-label">저장한 콘텐츠 (24)</div>
+        <div class="space-y-2.5">
+          <div class="flex items-start justify-between text-[13px]">
+            <div>
+              <div class="font-medium">기획서 첫 페이지가 안 풀릴 때</div>
+              <div class="text-[11.5px] text-gray-400">실전 케이스 · 기획 · #01</div>
+            </div>
+            <span class="text-[11.5px] text-gray-400 whitespace-nowrap ml-3">5/22</span>
+          </div>
+          <div class="flex items-start justify-between text-[13px]">
+            <div>
+              <div class="font-medium">경쟁사 분석, AI가 표면만 긁고 끝나는 이유</div>
+              <div class="text-[11.5px] text-gray-400">실전 케이스 · 마케팅 · #02</div>
+            </div>
+            <span class="text-[11.5px] text-gray-400 whitespace-nowrap ml-3">5/19</span>
+          </div>
+          <div class="flex items-start justify-between text-[13px]">
+            <div>
+              <div class="font-medium">Claude 메모리 기능, 1주일 실험</div>
+              <div class="text-[11.5px] text-gray-400">AI 트렌드 · #21</div>
+            </div>
+            <span class="text-[11.5px] text-gray-400 whitespace-nowrap ml-3">5/21</span>
+          </div>
+        </div>
+        <button class="text-[12px] text-indigo-brand font-medium mt-3">전체 보기 →</button>
+      </div>
+
+      <div class="slide-section">
+        <div class="slide-label">최근 조회 (87)</div>
+        <div class="space-y-2.5">
+          <div class="flex items-start justify-between text-[13px]">
+            <div class="font-medium">기획서 첫 페이지가 안 풀릴 때</div>
+            <span class="text-[11.5px] text-gray-400 whitespace-nowrap ml-3">5/26 14:32</span>
+          </div>
+          <div class="flex items-start justify-between text-[13px]">
+            <div class="font-medium">윗사람 톤에 안 맞는 결과물</div>
+            <span class="text-[11.5px] text-gray-400 whitespace-nowrap ml-3">5/25 09:18</span>
+          </div>
+          <div class="flex items-start justify-between text-[13px]">
+            <div class="font-medium">Claude 메모리 기능, 1주일 실험</div>
+            <span class="text-[11.5px] text-gray-400 whitespace-nowrap ml-3">5/24 21:05</span>
+          </div>
+        </div>
+        <button class="text-[12px] text-indigo-brand font-medium mt-3">전체 보기 →</button>
+      </div>
+
+      <div class="slide-section">
+        <div class="slide-label">전자책 주문 (1)</div>
+        <div class="flex items-start justify-between text-[13px]">
+          <div>
+            <div class="font-medium">베스트 케이스 모음 Vol.1</div>
+            <div class="text-[11.5px] text-gray-400">무료 · 발송 완료</div>
+          </div>
+          <span class="text-[11.5px] text-gray-400 whitespace-nowrap ml-3">5/13</span>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <script>lucide.createIcons();</script>
+</body>
+</html>

@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>의견함 — 케이스랩 admin</title>
+
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.min.css" />
+  <script src="https://unpkg.com/lucide@latest"></script>
+
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: { paper: '#FAFAF7', ink: '#0A0A0A', line: '#E5E1D5', soft: '#F4F2EC', indigo: { brand: '#1E40AF' } },
+          fontFamily: { sans: ['Pretendard', 'system-ui', '-apple-system', 'sans-serif'], num: ['ui-monospace', 'SFMono-Regular', 'Menlo', 'monospace'] },
+        },
+      },
+    };
+  </script>
+
+  <style>
+    html, body { background: #FAFAF7; color: #0A0A0A; }
+    body { font-family: 'Pretendard', system-ui, -apple-system, sans-serif; -webkit-font-smoothing: antialiased; }
+    .nav-item { display: flex; align-items: center; gap: .65rem; padding: .45rem .75rem; font-size: 13.5px; color: #4B5563; border-radius: 4px; transition: background .15s ease, color .15s ease; cursor: pointer; }
+    .nav-item:hover { background: #F4F2EC; color: #0A0A0A; }
+    .nav-item.active { background: #EEF2FF; color: #1E40AF; font-weight: 500; }
+    .nav-item .lucide { width: 15px; height: 15px; opacity: .85; }
+    .nav-section { font-size: 10.5px; letter-spacing: .14em; text-transform: uppercase; color: #9CA3AF; font-weight: 600; padding: 1.25rem .75rem .5rem; }
+
+    .panel { background: #fff; border: 1px solid #E5E1D5; border-radius: 4px; }
+    .panel-head { padding: 1rem 1.2rem; border-bottom: 1px solid #E5E1D5; display: flex; align-items: center; justify-content: space-between; }
+    .panel-title { font-size: 13.5px; font-weight: 600; }
+
+    .ic-btn { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border: 1px solid #E5E1D5; border-radius: 4px; background: #fff; transition: background .15s; }
+    .ic-btn:hover { background: #FAFAF7; }
+    .ic-btn .lucide { width: 14px; height: 14px; color: #4B5563; }
+
+    .opinion-row { display: flex; gap: 1rem; padding: 1rem 1.2rem; border-bottom: 1px solid #F1EEE4; transition: background .12s; cursor: pointer; }
+    .opinion-row:hover { background: #FAFAF7; }
+    .opinion-row:last-child { border-bottom: 0; }
+    .opinion-row.unread { background: #FEFCF3; }
+    .opinion-row.unread:hover { background: #FDF8E8; }
+
+    .unread-dot { width: 7px; height: 7px; border-radius: 50%; background: #1E40AF; margin-top: 6px; shrink: 0; }
+    .read-dot { width: 7px; height: 7px; border-radius: 50%; background: transparent; margin-top: 6px; shrink: 0; }
+
+    .content-link { display: inline-flex; align-items: center; gap: .3rem; font-size: 11.5px; color: #1E40AF; background: #EEF2FF; padding: 1px 7px; border-radius: 3px; }
+
+    /* expanded detail */
+    .opinion-detail { background: #fff; border: 1px solid #E5E1D5; border-radius: 4px; }
+    .opinion-detail-head { padding: .85rem 1.2rem; border-bottom: 1px solid #E5E1D5; display: flex; align-items: center; justify-content: space-between; }
+    .opinion-detail-body { padding: 1.2rem; }
+  </style>
+</head>
+
+<body class="bg-paper text-ink">
+  <div class="flex min-h-screen">
+
+    <!-- Sidebar -->
+    <aside class="w-[220px] shrink-0 border-r border-line bg-white flex flex-col">
+      <div class="h-14 flex items-center px-4 border-b border-line">
+        <div class="flex items-center gap-2">
+          <div class="w-6 h-6 rounded-sm bg-ink flex items-center justify-center text-white text-[10px] font-bold tracking-wider">CL</div>
+          <span class="font-bold text-[14px]">케이스랩</span>
+          <span class="text-[10px] text-gray-400 font-medium tracking-wider">ADMIN</span>
+        </div>
+      </div>
+      <nav class="flex-1 px-2 py-3 overflow-y-auto">
+        <div class="nav-section">운영</div>
+        <a class="nav-item"><i data-lucide="file-text"></i>콘텐츠</a>
+        <a class="nav-item"><i data-lucide="bar-chart-2"></i>분석</a>
+        <a class="nav-item"><i data-lucide="users"></i>가입자</a>
+        <a class="nav-item"><i data-lucide="book"></i>전자책</a>
+        <div class="nav-section">소통</div>
+        <a class="nav-item"><i data-lucide="lightbulb"></i>후보 카드</a>
+        <a class="nav-item active"><i data-lucide="message-square"></i>의견함 <span class="ml-auto text-[10.5px] font-medium text-indigo-brand bg-[#EEF2FF] px-1.5 py-0.5 rounded-sm">12</span></a>
+      </nav>
+      <div class="border-t border-line px-3 py-3 flex items-center gap-2.5">
+        <div class="w-7 h-7 rounded-full bg-soft border border-line flex items-center justify-center text-[11px] font-semibold text-gray-700">주</div>
+        <div class="min-w-0">
+          <div class="text-[12.5px] font-medium truncate">김주희</div>
+          <div class="text-[10.5px] text-gray-500 truncate">운영자</div>
+        </div>
+        <button class="ml-auto ic-btn" title="설정"><i data-lucide="more-horizontal"></i></button>
+      </div>
+    </aside>
+
+    <!-- Main -->
+    <main class="flex-1 min-w-0">
+
+      <header class="h-14 border-b border-line bg-white flex items-center px-6 gap-3">
+        <h1 class="text-[15px] font-semibold">의견함</h1>
+        <span class="text-[12.5px] text-gray-400">/ 유저가 보낸 의견 모아보기</span>
+        <div class="ml-auto flex items-center gap-2">
+          <div class="flex border border-line rounded-sm overflow-hidden text-[12.5px]">
+            <button class="px-2.5 py-1 bg-ink text-white">전체 <span class="text-gray-400">47</span></button>
+            <button class="px-2.5 py-1 text-gray-600 hover:bg-soft">안읽음 <span class="text-gray-400">12</span></button>
+            <button class="px-2.5 py-1 text-gray-600 hover:bg-soft">읽음 <span class="text-gray-400">35</span></button>
+          </div>
+        </div>
+      </header>
+
+      <div class="p-6 space-y-5">
+
+        <div class="grid grid-cols-[1fr_400px] gap-5">
+
+          <!-- Opinion list -->
+          <section class="panel">
+            <div class="panel-head">
+              <div class="panel-title">의견 목록</div>
+              <div class="text-[11.5px] text-gray-500">최신순</div>
+            </div>
+
+            <!-- unread -->
+            <div class="opinion-row unread">
+              <div class="unread-dot shrink-0"></div>
+              <div class="flex-1 min-w-0">
+                <div class="text-[13.5px] leading-snug line-clamp-1">영업 쪽 케이스가 너무 좋았어요. 특히 톤 맞추는 3단계가 바로 써먹을 수 있었습니다. 제안서 작성하는 케이스도 다뤄주시면 정말 좋겠어요!</div>
+                <div class="flex items-center gap-2 mt-1.5">
+                  <span class="content-link"><i data-lucide="link" class="w-3 h-3"></i>윗사람 톤에 안 맞는 결과물</span>
+                  <span class="text-[11.5px] text-gray-400">sales.person@corp.com</span>
+                </div>
+              </div>
+              <div class="text-[11.5px] text-gray-400 whitespace-nowrap shrink-0">2시간 전</div>
+            </div>
+
+            <div class="opinion-row unread">
+              <div class="unread-dot shrink-0"></div>
+              <div class="flex-1 min-w-0">
+                <div class="text-[13.5px] leading-snug line-clamp-1">프롬프트 복사 기능 너무 편해요! 근데 복사할 때 어떤 AI 툴에서 쓰면 좋은지 같이 적어주시면 더 좋을 것 같아요.</div>
+                <div class="flex items-center gap-2 mt-1.5">
+                  <span class="content-link"><i data-lucide="link" class="w-3 h-3"></i>기획서 첫 페이지가 안 풀릴 때</span>
+                </div>
+              </div>
+              <div class="text-[11.5px] text-gray-400 whitespace-nowrap shrink-0">5시간 전</div>
+            </div>
+
+            <div class="opinion-row unread">
+              <div class="unread-dot shrink-0"></div>
+              <div class="flex-1 min-w-0">
+                <div class="text-[13.5px] leading-snug line-clamp-1">1인 사업자인데 매출 데이터 분석하는 케이스 있으면 좋겠습니다. 엑셀 데이터를 AI한테 던지면 뭘 알 수 있는지 궁금해요.</div>
+                <div class="flex items-center gap-2 mt-1.5">
+                  <span class="text-[11.5px] text-gray-400">soyeon.kim@naver.com</span>
+                </div>
+              </div>
+              <div class="text-[11.5px] text-gray-400 whitespace-nowrap shrink-0">1일 전</div>
+            </div>
+
+            <!-- read -->
+            <div class="opinion-row">
+              <div class="read-dot shrink-0"></div>
+              <div class="flex-1 min-w-0">
+                <div class="text-[13.5px] text-gray-600 leading-snug line-clamp-1">Claude 메모리 글 재밌게 봤어요. Gemini랑 비교해주시면 좋겠어요.</div>
+                <div class="flex items-center gap-2 mt-1.5">
+                  <span class="content-link"><i data-lucide="link" class="w-3 h-3"></i>Claude 메모리 기능, 1주일 실험</span>
+                  <span class="text-[11.5px] text-gray-400">minjun@test.com</span>
+                </div>
+              </div>
+              <div class="text-[11.5px] text-gray-400 whitespace-nowrap shrink-0">3일 전</div>
+            </div>
+
+            <div class="opinion-row">
+              <div class="read-dot shrink-0"></div>
+              <div class="flex-1 min-w-0">
+                <div class="text-[13.5px] text-gray-600 leading-snug line-clamp-1">경쟁사 분석 케이스 좋았는데 B2B SaaS 쪽 사례도 해주세요~</div>
+                <div class="flex items-center gap-2 mt-1.5">
+                  <span class="content-link"><i data-lucide="link" class="w-3 h-3"></i>경쟁사 분석, AI가 표면만 긁고</span>
+                </div>
+              </div>
+              <div class="text-[11.5px] text-gray-400 whitespace-nowrap shrink-0">5일 전</div>
+            </div>
+
+            <div class="opinion-row">
+              <div class="read-dot shrink-0"></div>
+              <div class="flex-1 min-w-0">
+                <div class="text-[13.5px] text-gray-600 leading-snug line-clamp-1">전자책 잘 받았습니다! 다음 편 기대할게요.</div>
+                <div class="flex items-center gap-2 mt-1.5">
+                  <span class="text-[11.5px] text-gray-400">reader@gmail.com</span>
+                </div>
+              </div>
+              <div class="text-[11.5px] text-gray-400 whitespace-nowrap shrink-0">6일 전</div>
+            </div>
+
+            <div class="px-5 py-3 border-t border-line flex items-center justify-between text-[12.5px] text-gray-500">
+              <span>총 47건 중 6건 표시</span>
+              <div class="flex items-center gap-1">
+                <button class="ic-btn"><i data-lucide="chevron-left"></i></button>
+                <span class="px-2">1 / 8</span>
+                <button class="ic-btn"><i data-lucide="chevron-right"></i></button>
+              </div>
+            </div>
+          </section>
+
+          <!-- Selected opinion detail -->
+          <section class="opinion-detail self-start sticky top-6">
+            <div class="opinion-detail-head">
+              <div class="text-[13px] font-medium">의견 상세</div>
+              <div class="flex items-center gap-1">
+                <button class="ic-btn" title="읽음 처리"><i data-lucide="check"></i></button>
+                <button class="ic-btn" title="삭제"><i data-lucide="trash-2"></i></button>
+              </div>
+            </div>
+            <div class="opinion-detail-body space-y-4">
+              <div>
+                <div class="text-[11.5px] text-gray-400 font-medium mb-1">접수일</div>
+                <div class="text-[13px]">2026-05-27 14:32</div>
+              </div>
+              <div>
+                <div class="text-[11.5px] text-gray-400 font-medium mb-1">연결된 콘텐츠</div>
+                <a class="text-[13px] text-indigo-brand underline underline-offset-2">윗사람 톤에 안 맞는 결과물 — AI에게 다시 시키는 3단계</a>
+              </div>
+              <div>
+                <div class="text-[11.5px] text-gray-400 font-medium mb-1">이메일</div>
+                <div class="flex items-center gap-2">
+                  <span class="text-[13px]">sales.person@corp.com</span>
+                  <a href="mailto:sales.person@corp.com" class="text-[12px] text-indigo-brand font-medium">회신하기</a>
+                </div>
+              </div>
+              <div>
+                <div class="text-[11.5px] text-gray-400 font-medium mb-1">본문</div>
+                <div class="text-[13.5px] leading-relaxed bg-paper border border-line rounded-sm p-3">
+                  영업 쪽 케이스가 너무 좋았어요. 특히 톤 맞추는 3단계가 바로 써먹을 수 있었습니다. 제안서 작성하는 케이스도 다뤄주시면 정말 좋겠어요! 저는 IT 솔루션 영업인데, 고객사별로 제안서 톤이 달라야 해서 항상 시간이 많이 걸리거든요.
+                </div>
+              </div>
+              <div class="flex items-center gap-2 pt-1">
+                <span class="text-[11.5px] font-medium text-indigo-brand bg-[#EEF2FF] px-2 py-0.5 rounded-sm">안읽음</span>
+              </div>
+            </div>
+          </section>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <script>lucide.createIcons();</script>
+</body>
+</html>

@@ -1,0 +1,483 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>분석 — 케이스랩 admin</title>
+
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.min.css" />
+  <script src="https://unpkg.com/lucide@latest"></script>
+
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            paper:  '#FAFAF7',
+            ink:    '#0A0A0A',
+            line:   '#E5E1D5',
+            soft:   '#F4F2EC',
+            indigo: { brand: '#1E40AF' },
+          },
+          fontFamily: {
+            sans: ['Pretendard', 'system-ui', '-apple-system', 'sans-serif'],
+            num:  ['ui-monospace', 'SFMono-Regular', 'Menlo', 'monospace'],
+          },
+        },
+      },
+    };
+  </script>
+
+  <style>
+    html, body { background: #FAFAF7; color: #0A0A0A; }
+    body { font-family: 'Pretendard', system-ui, -apple-system, sans-serif; -webkit-font-smoothing: antialiased; }
+
+    /* sidebar nav */
+    .nav-item {
+      display: flex; align-items: center; gap: .65rem;
+      padding: .45rem .75rem;
+      font-size: 13.5px;
+      color: #4B5563;
+      border-radius: 4px;
+      transition: background .15s ease, color .15s ease;
+      cursor: pointer;
+    }
+    .nav-item:hover { background: #F4F2EC; color: #0A0A0A; }
+    .nav-item.active { background: #EEF2FF; color: #1E40AF; font-weight: 500; }
+    .nav-item .lucide { width: 15px; height: 15px; opacity: .85; }
+    .nav-section { font-size: 10.5px; letter-spacing: .14em; text-transform: uppercase; color: #9CA3AF; font-weight: 600; padding: 1.25rem .75rem .5rem; }
+
+    /* KPI cards */
+    .kpi-card {
+      background: #fff;
+      border: 1px solid #E5E1D5;
+      border-radius: 4px;
+      padding: 1.1rem 1.2rem;
+      transition: border-color .2s ease, box-shadow .2s ease;
+    }
+    .kpi-card:hover { border-color: #C7C0AE; }
+    .kpi-label { font-size: 12px; color: #6B7280; font-weight: 500; letter-spacing: .02em; }
+    .kpi-value { font-size: 26px; font-weight: 700; letter-spacing: -.02em; font-feature-settings: "tnum"; color: #0A0A0A; margin-top: .35rem; }
+    .kpi-delta { font-size: 12px; font-weight: 500; display: inline-flex; align-items: center; gap: .15rem; }
+    .kpi-delta.up { color: #1E40AF; }
+    .kpi-delta.down { color: #9CA3AF; }
+    .kpi-sub { font-size: 11.5px; color: #9CA3AF; }
+
+    /* chart panel */
+    .panel {
+      background: #fff;
+      border: 1px solid #E5E1D5;
+      border-radius: 4px;
+    }
+    .panel-head { padding: 1rem 1.2rem; border-bottom: 1px solid #E5E1D5; display: flex; align-items: center; justify-content: space-between; }
+    .panel-title { font-size: 13.5px; font-weight: 600; }
+    .panel-body { padding: 1.1rem 1.2rem; }
+
+    /* table */
+    .data-table { font-size: 13.5px; width: 100%; border-collapse: collapse; }
+    .data-table thead th {
+      text-align: left; font-weight: 500; font-size: 11.5px; letter-spacing: .08em; text-transform: uppercase;
+      color: #6B7280; padding: .65rem 1.2rem; border-bottom: 1px solid #E5E1D5; background: #FAFAF7;
+    }
+    .data-table thead th.num { text-align: right; }
+    .data-table tbody td {
+      padding: .85rem 1.2rem; border-bottom: 1px solid #F1EEE4; color: #1F2937;
+    }
+    .data-table tbody td.num { text-align: right; font-variant-numeric: tabular-nums; font-feature-settings: "tnum"; }
+    .data-table tbody tr { transition: background .12s ease; }
+    .data-table tbody tr:hover { background: #FAFAF7; cursor: pointer; }
+    .data-table tbody tr:last-child td { border-bottom: 0; }
+
+    /* eyebrow track badge */
+    .track-badge { display: inline-block; padding: 1px 7px; font-size: 11px; border: 1px solid #E5E1D5; border-radius: 3px; color: #4B5563; background: #FAFAF7; line-height: 1.5; }
+
+    /* helpful pct mini-bar */
+    .pct-cell { display: inline-flex; align-items: center; gap: .55rem; }
+    .pct-bar  { width: 60px; height: 4px; background: #F1EEE4; border-radius: 2px; overflow: hidden; }
+    .pct-fill { height: 100%; background: #1E40AF; }
+
+    /* segmented control */
+    .seg { display: inline-flex; border: 1px solid #E5E1D5; border-radius: 4px; overflow: hidden; background: #fff; }
+    .seg button { font-size: 12.5px; padding: .35rem .7rem; color: #6B7280; border-right: 1px solid #E5E1D5; transition: background .15s, color .15s; }
+    .seg button:last-child { border-right: 0; }
+    .seg button:hover { background: #FAFAF7; }
+    .seg button.on { background: #0A0A0A; color: #fff; }
+
+    /* small icon button */
+    .ic-btn { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border: 1px solid #E5E1D5; border-radius: 4px; background: #fff; transition: background .15s; }
+    .ic-btn:hover { background: #FAFAF7; }
+    .ic-btn .lucide { width: 14px; height: 14px; color: #4B5563; }
+  </style>
+</head>
+
+<body class="bg-paper text-ink">
+
+  <div class="flex min-h-screen">
+
+    <!-- ===== Sidebar (Linear-style IA) ===== -->
+    <aside class="w-[220px] shrink-0 border-r border-line bg-white flex flex-col">
+      <!-- logo area -->
+      <div class="h-14 flex items-center px-4 border-b border-line">
+        <div class="flex items-center gap-2">
+          <div class="w-6 h-6 rounded-sm bg-ink flex items-center justify-center text-white text-[10px] font-bold tracking-wider">CL</div>
+          <span class="font-bold text-[14px]">케이스랩</span>
+          <span class="text-[10px] text-gray-400 font-medium tracking-wider">ADMIN</span>
+        </div>
+      </div>
+
+      <nav class="flex-1 px-2 py-3 overflow-y-auto">
+        <div class="nav-section">운영</div>
+        <a class="nav-item"><i data-lucide="file-text"></i>콘텐츠</a>
+        <a class="nav-item active"><i data-lucide="bar-chart-2"></i>분석</a>
+        <a class="nav-item"><i data-lucide="users"></i>가입자</a>
+        <a class="nav-item"><i data-lucide="book"></i>전자책</a>
+
+        <div class="nav-section">소통</div>
+        <a class="nav-item"><i data-lucide="lightbulb"></i>후보 카드</a>
+        <a class="nav-item"><i data-lucide="message-square"></i>의견함 <span class="ml-auto text-[10.5px] font-medium text-indigo-brand bg-[#EEF2FF] px-1.5 py-0.5 rounded-sm">12</span></a>
+      </nav>
+
+      <!-- bottom user -->
+      <div class="border-t border-line px-3 py-3 flex items-center gap-2.5">
+        <div class="w-7 h-7 rounded-full bg-soft border border-line flex items-center justify-center text-[11px] font-semibold text-gray-700">주</div>
+        <div class="min-w-0">
+          <div class="text-[12.5px] font-medium truncate">김주희</div>
+          <div class="text-[10.5px] text-gray-500 truncate">운영자</div>
+        </div>
+        <button class="ml-auto ic-btn" title="설정"><i data-lucide="more-horizontal"></i></button>
+      </div>
+    </aside>
+
+    <!-- ===== Main ===== -->
+    <main class="flex-1 min-w-0">
+
+      <!-- Top bar -->
+      <header class="h-14 border-b border-line bg-white flex items-center px-6 gap-3">
+        <h1 class="text-[15px] font-semibold">분석</h1>
+        <span class="text-[12.5px] text-gray-400">/ 콘텐츠·가입자 추세 한눈에</span>
+        <div class="ml-auto flex items-center gap-2">
+          <div class="seg" role="tablist">
+            <button>7일</button>
+            <button class="on">30일</button>
+            <button>90일</button>
+            <button>전체</button>
+          </div>
+          <button class="ic-btn" title="내보내기"><i data-lucide="download"></i></button>
+        </div>
+      </header>
+
+      <!-- Body -->
+      <div class="p-6 space-y-6">
+
+        <!-- KPI row -->
+        <section class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div class="kpi-card">
+            <div class="flex items-start justify-between">
+              <div class="kpi-label">가입자</div>
+              <i data-lucide="users" class="w-3.5 h-3.5 text-gray-400"></i>
+            </div>
+            <div class="kpi-value">1,247</div>
+            <div class="mt-1 flex items-center gap-2">
+              <span class="kpi-delta up"><i data-lucide="arrow-up" class="w-3 h-3"></i>+8.3%</span>
+              <span class="kpi-sub">지난 30일 +96명</span>
+            </div>
+          </div>
+
+          <div class="kpi-card">
+            <div class="flex items-start justify-between">
+              <div class="kpi-label">누적 조회 (PV)</div>
+              <i data-lucide="eye" class="w-3.5 h-3.5 text-gray-400"></i>
+            </div>
+            <div class="kpi-value">47,289</div>
+            <div class="mt-1 flex items-center gap-2">
+              <span class="kpi-delta up"><i data-lucide="arrow-up" class="w-3 h-3"></i>+12.1%</span>
+              <span class="kpi-sub">UV 18,420</span>
+            </div>
+          </div>
+
+          <div class="kpi-card">
+            <div class="flex items-start justify-between">
+              <div class="kpi-label">누적 저장</div>
+              <i data-lucide="bookmark" class="w-3.5 h-3.5 text-gray-400"></i>
+            </div>
+            <div class="kpi-value">2,108</div>
+            <div class="mt-1 flex items-center gap-2">
+              <span class="kpi-delta up"><i data-lucide="arrow-up" class="w-3 h-3"></i>+5.7%</span>
+              <span class="kpi-sub">PV 대비 4.46%</span>
+            </div>
+          </div>
+
+          <div class="kpi-card">
+            <div class="flex items-start justify-between">
+              <div class="kpi-label">평균 도움률</div>
+              <i data-lucide="thumbs-up" class="w-3.5 h-3.5 text-gray-400"></i>
+            </div>
+            <div class="kpi-value">87.4<span class="text-[16px] text-gray-500">%</span></div>
+            <div class="mt-1 flex items-center gap-2">
+              <span class="kpi-delta up"><i data-lucide="arrow-up" class="w-3 h-3"></i>+1.2%p</span>
+              <span class="kpi-sub">반응 318건 기준</span>
+            </div>
+          </div>
+        </section>
+
+        <!-- Chart + side stats -->
+        <section class="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_320px] gap-4">
+
+          <!-- Chart panel -->
+          <div class="panel">
+            <div class="panel-head">
+              <div>
+                <div class="panel-title">일별 조회·저장 추세</div>
+                <div class="text-[11.5px] text-gray-500 mt-0.5">2026-04-27 ~ 2026-05-26</div>
+              </div>
+              <div class="flex items-center gap-3 text-[12px] text-gray-600">
+                <span class="inline-flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-indigo-brand"></span>PV</span>
+                <span class="inline-flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-gray-400"></span>저장</span>
+              </div>
+            </div>
+            <div class="panel-body">
+              <!-- inline SVG line chart -->
+              <svg viewBox="0 0 600 200" class="w-full h-[220px]">
+                <!-- gridlines -->
+                <g stroke="#F1EEE4" stroke-width="1">
+                  <line x1="0" y1="20"  x2="600" y2="20"/>
+                  <line x1="0" y1="65"  x2="600" y2="65"/>
+                  <line x1="0" y1="110" x2="600" y2="110"/>
+                  <line x1="0" y1="155" x2="600" y2="155"/>
+                  <line x1="0" y1="200" x2="600" y2="200"/>
+                </g>
+                <!-- y labels -->
+                <g font-size="9" fill="#9CA3AF" font-family="ui-monospace, monospace">
+                  <text x="2" y="22">2000</text>
+                  <text x="2" y="67">1500</text>
+                  <text x="2" y="112">1000</text>
+                  <text x="2" y="157">500</text>
+                </g>
+                <!-- PV line -->
+                <polyline fill="none" stroke="#1E40AF" stroke-width="1.75" stroke-linejoin="round" stroke-linecap="round"
+                  points="40,160 60,145 80,135 100,150 120,120 140,110 160,128 180,95 200,85 220,98 240,70 260,82 280,60 300,72 320,55 340,68 360,50 380,62 400,42 420,55 440,38 460,50 480,30 500,42 520,28 540,38 560,22 580,32"/>
+                <!-- PV area shading -->
+                <polyline fill="rgba(30,64,175,0.06)" stroke="none"
+                  points="40,160 60,145 80,135 100,150 120,120 140,110 160,128 180,95 200,85 220,98 240,70 260,82 280,60 300,72 320,55 340,68 360,50 380,62 400,42 420,55 440,38 460,50 480,30 500,42 520,28 540,38 560,22 580,32 580,200 40,200"/>
+                <!-- Save line -->
+                <polyline fill="none" stroke="#9CA3AF" stroke-width="1.25" stroke-linejoin="round" stroke-linecap="round" stroke-dasharray="2 3"
+                  points="40,182 60,178 80,180 100,176 120,175 140,170 160,172 180,168 200,165 220,168 240,162 260,165 280,158 300,160 320,156 340,160 360,154 380,158 400,150 420,154 440,148 460,152 480,144 500,148 520,142 540,146 560,140 580,144"/>
+                <!-- x labels -->
+                <g font-size="9" fill="#9CA3AF" font-family="ui-monospace, monospace">
+                  <text x="40" y="215">4/27</text>
+                  <text x="180" y="215">5/4</text>
+                  <text x="320" y="215">5/11</text>
+                  <text x="460" y="215">5/18</text>
+                  <text x="560" y="215">5/26</text>
+                </g>
+              </svg>
+            </div>
+          </div>
+
+          <!-- Side: 트랙·직무별 -->
+          <div class="space-y-4">
+            <div class="panel">
+              <div class="panel-head">
+                <div class="panel-title">트랙별 조회</div>
+                <span class="text-[11px] text-gray-500">30일</span>
+              </div>
+              <div class="panel-body space-y-3">
+                <div>
+                  <div class="flex items-baseline justify-between text-[13px] mb-1.5">
+                    <span class="text-gray-700">실전 케이스</span>
+                    <span class="font-num text-gray-900 font-medium">31,420 <span class="text-gray-400 text-[11.5px]">66%</span></span>
+                  </div>
+                  <div class="h-1.5 bg-[#F1EEE4] rounded overflow-hidden"><div class="h-full bg-indigo-brand" style="width: 66%"></div></div>
+                </div>
+                <div>
+                  <div class="flex items-baseline justify-between text-[13px] mb-1.5">
+                    <span class="text-gray-700">AI 트렌드</span>
+                    <span class="font-num text-gray-900 font-medium">15,869 <span class="text-gray-400 text-[11.5px]">34%</span></span>
+                  </div>
+                  <div class="h-1.5 bg-[#F1EEE4] rounded overflow-hidden"><div class="h-full bg-gray-400" style="width: 34%"></div></div>
+                </div>
+              </div>
+            </div>
+
+            <div class="panel">
+              <div class="panel-head">
+                <div class="panel-title">직무별 분포</div>
+                <span class="text-[11px] text-gray-500">가입자</span>
+              </div>
+              <div class="panel-body space-y-2.5">
+                <div class="flex items-center justify-between text-[13px]"><span class="text-gray-700">기획·마케팅·운영</span><span class="font-num text-gray-900">512 <span class="text-gray-400 text-[11px]">41%</span></span></div>
+                <div class="flex items-center justify-between text-[13px]"><span class="text-gray-700">영업</span><span class="font-num text-gray-900">298 <span class="text-gray-400 text-[11px]">24%</span></span></div>
+                <div class="flex items-center justify-between text-[13px]"><span class="text-gray-700">1인 사업</span><span class="font-num text-gray-900">237 <span class="text-gray-400 text-[11px]">19%</span></span></div>
+                <div class="flex items-center justify-between text-[13px]"><span class="text-gray-700">전략·분석</span><span class="font-num text-gray-900">152 <span class="text-gray-400 text-[11px]">12%</span></span></div>
+                <div class="flex items-center justify-between text-[13px]"><span class="text-gray-400">미응답</span><span class="font-num text-gray-400">48 <span class="text-[11px]">4%</span></span></div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Content table -->
+        <section class="panel">
+          <div class="panel-head">
+            <div>
+              <div class="panel-title">콘텐츠별 성과</div>
+              <div class="text-[11.5px] text-gray-500 mt-0.5">발행 12편 · 정렬: PV 내림차순</div>
+            </div>
+            <div class="flex items-center gap-2">
+              <div class="relative">
+                <i data-lucide="search" class="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400"></i>
+                <input type="text" placeholder="제목 검색" class="text-[12.5px] pl-8 pr-3 py-1.5 border border-line rounded-sm bg-white focus:outline-none focus:border-indigo-brand w-44" />
+              </div>
+              <button class="ic-btn" title="필터"><i data-lucide="filter"></i></button>
+              <button class="ic-btn" title="컬럼"><i data-lucide="columns"></i></button>
+            </div>
+          </div>
+
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>제목</th>
+                <th>트랙</th>
+                <th>발행일</th>
+                <th class="num">PV</th>
+                <th class="num">UV</th>
+                <th class="num">저장</th>
+                <th class="num">반응</th>
+                <th>도움률</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>
+                  <div class="font-medium text-[13.5px]">기획서 첫 페이지가 안 풀릴 때 — '의도' 던지는 5단계</div>
+                  <div class="text-[11.5px] text-gray-500 mt-0.5">기획 · #01</div>
+                </td>
+                <td><span class="track-badge">실전 케이스</span></td>
+                <td class="text-gray-600 text-[12.5px]">5/22</td>
+                <td class="num font-medium">8,432</td>
+                <td class="num">3,201</td>
+                <td class="num">412</td>
+                <td class="num text-gray-600">98 / 7</td>
+                <td>
+                  <span class="pct-cell">
+                    <span class="pct-bar"><span class="pct-fill" style="width:93%"></span></span>
+                    <span class="font-num font-medium text-[12.5px]">93.3%</span>
+                  </span>
+                </td>
+                <td><button class="ic-btn"><i data-lucide="more-horizontal"></i></button></td>
+              </tr>
+              <tr>
+                <td>
+                  <div class="font-medium text-[13.5px]">Claude 메모리 기능, 실제로 일에 쓸만한가 — 1주일 실험</div>
+                  <div class="text-[11.5px] text-gray-500 mt-0.5">#21</div>
+                </td>
+                <td><span class="track-badge">AI 트렌드</span></td>
+                <td class="text-gray-600 text-[12.5px]">5/21</td>
+                <td class="num font-medium">6,118</td>
+                <td class="num">2,742</td>
+                <td class="num">287</td>
+                <td class="num text-gray-600">62 / 9</td>
+                <td>
+                  <span class="pct-cell">
+                    <span class="pct-bar"><span class="pct-fill" style="width:87%"></span></span>
+                    <span class="font-num font-medium text-[12.5px]">87.3%</span>
+                  </span>
+                </td>
+                <td><button class="ic-btn"><i data-lucide="more-horizontal"></i></button></td>
+              </tr>
+              <tr>
+                <td>
+                  <div class="font-medium text-[13.5px]">경쟁사 분석, AI가 표면만 긁고 끝나는 이유</div>
+                  <div class="text-[11.5px] text-gray-500 mt-0.5">마케팅 · #02</div>
+                </td>
+                <td><span class="track-badge">실전 케이스</span></td>
+                <td class="text-gray-600 text-[12.5px]">5/18</td>
+                <td class="num font-medium">5,940</td>
+                <td class="num">2,118</td>
+                <td class="num">301</td>
+                <td class="num text-gray-600">71 / 6</td>
+                <td>
+                  <span class="pct-cell">
+                    <span class="pct-bar"><span class="pct-fill" style="width:92%"></span></span>
+                    <span class="font-num font-medium text-[12.5px]">92.2%</span>
+                  </span>
+                </td>
+                <td><button class="ic-btn"><i data-lucide="more-horizontal"></i></button></td>
+              </tr>
+              <tr>
+                <td>
+                  <div class="font-medium text-[13.5px]">Sora vs Veo, 한국어 자막 영상 1주 만들기 실험</div>
+                  <div class="text-[11.5px] text-gray-500 mt-0.5">#20</div>
+                </td>
+                <td><span class="track-badge">AI 트렌드</span></td>
+                <td class="text-gray-600 text-[12.5px]">5/14</td>
+                <td class="num font-medium">4,510</td>
+                <td class="num">1,830</td>
+                <td class="num">196</td>
+                <td class="num text-gray-600">48 / 14</td>
+                <td>
+                  <span class="pct-cell">
+                    <span class="pct-bar"><span class="pct-fill" style="width:77%"></span></span>
+                    <span class="font-num font-medium text-[12.5px]">77.4%</span>
+                  </span>
+                </td>
+                <td><button class="ic-btn"><i data-lucide="more-horizontal"></i></button></td>
+              </tr>
+              <tr>
+                <td>
+                  <div class="font-medium text-[13.5px]">윗사람 톤에 안 맞는 결과물 — AI에게 다시 시키는 3단계</div>
+                  <div class="text-[11.5px] text-gray-500 mt-0.5">영업 · #04</div>
+                </td>
+                <td><span class="track-badge">실전 케이스</span></td>
+                <td class="text-gray-600 text-[12.5px]">5/10</td>
+                <td class="num font-medium">4,201</td>
+                <td class="num">1,624</td>
+                <td class="num">218</td>
+                <td class="num text-gray-600">55 / 4</td>
+                <td>
+                  <span class="pct-cell">
+                    <span class="pct-bar"><span class="pct-fill" style="width:93%"></span></span>
+                    <span class="font-num font-medium text-[12.5px]">93.2%</span>
+                  </span>
+                </td>
+                <td><button class="ic-btn"><i data-lucide="more-horizontal"></i></button></td>
+              </tr>
+              <tr>
+                <td>
+                  <div class="font-medium text-[13.5px]">고객 인터뷰 정리 — AI에게 시킬 것·시키지 말 것</div>
+                  <div class="text-[11.5px] text-gray-500 mt-0.5">1인사업 · #05</div>
+                </td>
+                <td><span class="track-badge">실전 케이스</span></td>
+                <td class="text-gray-600 text-[12.5px]">5/6</td>
+                <td class="num font-medium">3,876</td>
+                <td class="num">1,401</td>
+                <td class="num">182</td>
+                <td class="num text-gray-600">44 / 5</td>
+                <td>
+                  <span class="pct-cell">
+                    <span class="pct-bar"><span class="pct-fill" style="width:90%"></span></span>
+                    <span class="font-num font-medium text-[12.5px]">89.8%</span>
+                  </span>
+                </td>
+                <td><button class="ic-btn"><i data-lucide="more-horizontal"></i></button></td>
+              </tr>
+            </tbody>
+          </table>
+
+          <div class="px-5 py-3 border-t border-line flex items-center justify-between text-[12.5px] text-gray-500">
+            <span>총 12편 중 6편 표시</span>
+            <div class="flex items-center gap-1">
+              <button class="ic-btn"><i data-lucide="chevron-left"></i></button>
+              <span class="px-2">1 / 2</span>
+              <button class="ic-btn"><i data-lucide="chevron-right"></i></button>
+            </div>
+          </div>
+        </section>
+      </div>
+    </main>
+  </div>
+
+  <script>lucide.createIcons();</script>
+</body>
+</html>

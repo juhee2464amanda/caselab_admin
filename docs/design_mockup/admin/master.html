@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>케이스랩 Admin — Master</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.min.css" />
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <style>
+    html, body { margin: 0; padding: 0; height: 100%; background: #FAFAF7; color: #0A0A0A; font-family: 'Pretendard', system-ui, -apple-system, sans-serif; -webkit-font-smoothing: antialiased; }
+    .shell { display: flex; height: 100vh; }
+
+    /* Sidebar */
+    .sidebar { width: 220px; flex-shrink: 0; border-right: 1px solid #E5E1D5; background: #fff; display: flex; flex-direction: column; }
+    .logo-area { height: 56px; display: flex; align-items: center; padding: 0 16px; border-bottom: 1px solid #E5E1D5; }
+    .logo-area a { display: flex; align-items: center; gap: 8px; text-decoration: none; color: inherit; }
+    .logo-icon { width: 24px; height: 24px; border-radius: 3px; background: #0A0A0A; display: flex; align-items: center; justify-content: center; color: #fff; font-size: 10px; font-weight: 700; letter-spacing: .05em; }
+    .logo-text { font-size: 14px; font-weight: 700; }
+    .logo-badge { font-size: 10px; color: #9CA3AF; font-weight: 500; letter-spacing: .04em; }
+
+    .nav-section { font-size: 10.5px; letter-spacing: .14em; text-transform: uppercase; color: #9CA3AF; font-weight: 600; padding: 20px 12px 8px; }
+    .nav-item { display: flex; align-items: center; gap: 10px; padding: 7px 12px; margin: 0 8px; font-size: 13.5px; color: #4B5563; border-radius: 4px; cursor: pointer; transition: background .15s, color .15s; text-decoration: none; }
+    .nav-item:hover { background: #F4F2EC; color: #0A0A0A; }
+    .nav-item.active { background: #EEF2FF; color: #1E40AF; font-weight: 500; }
+    .nav-item .lucide { width: 15px; height: 15px; opacity: .85; }
+    .nav-item .badge { margin-left: auto; font-size: 10.5px; font-weight: 500; color: #1E40AF; background: #EEF2FF; padding: 1px 6px; border-radius: 3px; }
+
+    .nav-body { flex: 1; padding: 4px 0; overflow-y: auto; }
+
+    .user-area { border-top: 1px solid #E5E1D5; padding: 12px; display: flex; align-items: center; gap: 10px; }
+    .user-avatar { width: 28px; height: 28px; border-radius: 50%; background: #F4F2EC; border: 1px solid #E5E1D5; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 600; color: #4B5563; }
+    .user-info { flex: 1; min-width: 0; }
+    .user-name { font-size: 12.5px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .user-role { font-size: 10.5px; color: #6B7280; }
+
+    /* Main content */
+    .content { flex: 1; min-width: 0; }
+    .content iframe { width: 100%; height: 100%; border: none; }
+
+    /* Active page indicator */
+    .page-indicator { position: fixed; bottom: 16px; right: 16px; background: #0A0A0A; color: #fff; font-size: 12px; font-weight: 500; padding: 6px 14px; border-radius: 20px; z-index: 100; opacity: 0; transition: opacity .3s; pointer-events: none; }
+    .page-indicator.show { opacity: 1; }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <!-- Sidebar -->
+    <aside class="sidebar">
+      <div class="logo-area">
+        <a href="../user/index.html">
+          <div class="logo-icon">CL</div>
+          <span class="logo-text">케이스랩</span>
+          <span class="logo-badge">ADMIN</span>
+        </a>
+      </div>
+
+      <div class="nav-body">
+        <div class="nav-section">운영</div>
+        <a class="nav-item active" data-page="index.html" onclick="go(this)">
+          <i data-lucide="file-text"></i>콘텐츠
+        </a>
+        <a class="nav-item" data-page="analytics.html" onclick="go(this)">
+          <i data-lucide="bar-chart-2"></i>분석
+        </a>
+        <a class="nav-item" data-page="users.html" onclick="go(this)">
+          <i data-lucide="users"></i>가입자
+        </a>
+        <a class="nav-item" data-page="ebooks.html" onclick="go(this)">
+          <i data-lucide="book"></i>전자책
+        </a>
+
+        <a class="nav-item" data-page="tools.html" onclick="go(this)">
+          <i data-lucide="wrench"></i>도구 관리
+        </a>
+
+        <div class="nav-section">소통</div>
+        <a class="nav-item" data-page="topics.html" onclick="go(this)">
+          <i data-lucide="lightbulb"></i>후보 카드
+        </a>
+        <a class="nav-item" data-page="opinions.html" onclick="go(this)">
+          <i data-lucide="message-square"></i>의견함
+          <span class="badge">12</span>
+        </a>
+      </div>
+
+      <div class="user-area">
+        <div class="user-avatar">주</div>
+        <div class="user-info">
+          <div class="user-name">김주희</div>
+          <div class="user-role">운영자</div>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Main: iframe loads each page -->
+    <div class="content">
+      <iframe id="pageFrame" src="index.html"></iframe>
+    </div>
+  </div>
+
+  <div class="page-indicator" id="indicator"></div>
+
+  <script>
+    lucide.createIcons();
+
+    function go(el) {
+      const page = el.dataset.page;
+      document.getElementById('pageFrame').src = page;
+
+      // Update active state
+      document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+      el.classList.add('active');
+
+      // Show indicator
+      const ind = document.getElementById('indicator');
+      ind.textContent = el.textContent.trim();
+      ind.classList.add('show');
+      setTimeout(() => ind.classList.remove('show'), 1200);
+    }
+
+    // Listen for iframe navigation (e.g. clicking "새 콘텐츠" in index.html)
+    const frame = document.getElementById('pageFrame');
+    frame.addEventListener('load', function() {
+      try {
+        const url = frame.contentWindow.location.href;
+        const page = url.split('/').pop().split('?')[0];
+
+        // Update sidebar active state based on iframe URL
+        document.querySelectorAll('.nav-item').forEach(n => {
+          n.classList.remove('active');
+          if (n.dataset.page === page) n.classList.add('active');
+        });
+
+        // If it's new.html, highlight 콘텐츠
+        if (page === 'new.html') {
+          document.querySelector('[data-page="index.html"]').classList.add('active');
+        }
+      } catch(e) {
+        // cross-origin, ignore
+      }
+    });
+  </script>
+</body>
+</html>

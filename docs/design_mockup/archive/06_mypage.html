@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>마이페이지 — 케이스랩</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.min.css" />
+  <style>
+    :root{--bg:#fff;--bg-sub:#f7f7f7;--ink:#191f28;--gray-800:#333d4b;--gray-600:#6b7684;--gray-500:#8b95a1;--gray-400:#b0b8c1;--gray-300:#d1d6db;--gray-200:#e5e8eb;--gray-100:#f2f4f6;--blue:#3182f6;--blue-bg:#ebf4ff;--red:#f04452}
+    *{margin:0;padding:0;box-sizing:border-box}
+    html{font-size:16px;-webkit-font-smoothing:antialiased}
+    body{font-family:'Pretendard',-apple-system,BlinkMacSystemFont,system-ui,sans-serif;background:var(--bg);color:var(--ink);line-height:1.5;letter-spacing:-0.02em}
+    a{color:inherit;text-decoration:none}button{font:inherit;cursor:pointer;border:none;background:none}
+    .keepall{word-break:keep-all;overflow-wrap:break-word}
+
+    /* GNB */
+    .gnb{position:sticky;top:0;z-index:100;background:#fff;border-bottom:1px solid var(--gray-200)}
+    .gnb-inner{max-width:1100px;margin:0 auto;padding:0 24px;display:flex;align-items:center;justify-content:space-between;height:56px}
+    .gnb-logo{font-size:17px;font-weight:800;letter-spacing:-0.04em}
+    .gnb-logo small{font-size:10px;font-weight:500;color:var(--gray-400);margin-left:5px;letter-spacing:0.04em;vertical-align:middle}
+    .gnb-right{display:flex;align-items:center;gap:12px}
+    .gnb-link{font-size:14px;font-weight:500;color:var(--gray-600)}
+    .gnb-link:hover{color:var(--ink)}
+
+    /* Page */
+    .page{max-width:680px;margin:0 auto;padding:32px 24px 80px}
+
+    /* Profile card */
+    .profile-card{background:var(--bg-sub);border:1px solid var(--gray-200);border-radius:16px;padding:28px;margin-bottom:32px}
+    .profile-top{display:flex;align-items:center;gap:16px;margin-bottom:20px}
+    .avatar{width:56px;height:56px;border-radius:50%;background:var(--blue-bg);display:flex;align-items:center;justify-content:center;font-size:22px;font-weight:800;color:var(--blue);overflow:hidden;flex-shrink:0}
+    .avatar img{width:100%;height:100%;object-fit:cover}
+    .profile-info h2{font-size:20px;font-weight:800;letter-spacing:-0.03em}
+    .profile-info p{font-size:14px;color:var(--gray-500)}
+
+    /* Tabs */
+    .my-tabs{display:flex;gap:4px;border-bottom:2px solid var(--gray-200);margin-bottom:24px}
+    .my-tab{padding:10px 16px;font-size:14px;font-weight:600;color:var(--gray-500);border-bottom:2px solid transparent;margin-bottom:-2px;transition:all .12s}
+    .my-tab:hover{color:var(--gray-800)}
+    .my-tab.on{color:var(--blue);border-bottom-color:var(--blue)}
+
+    /* Tab panels */
+    .panel{display:none}
+    .panel.on{display:block}
+
+    /* Form */
+    .form-group{margin-bottom:20px}
+    .form-label{font-size:14px;font-weight:600;margin-bottom:6px;display:block}
+    .form-input{width:100%;padding:11px 14px;font-size:15px;font-family:inherit;border:1px solid var(--gray-200);border-radius:10px;outline:none;transition:border-color .15s;color:var(--ink);letter-spacing:-0.01em}
+    .form-input:focus{border-color:var(--blue)}
+    .form-input:disabled{background:var(--gray-100);color:var(--gray-500)}
+    .form-input::placeholder{color:var(--gray-400)}
+    .form-hint{font-size:12px;color:var(--gray-500);margin-top:4px}
+    .form-select{width:100%;padding:11px 14px;font-size:15px;font-family:inherit;border:1px solid var(--gray-200);border-radius:10px;outline:none;color:var(--ink);appearance:none;background:#fff url("data:image/svg+xml,%3Csvg width='12' height='8' viewBox='0 0 12 8' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1.5L6 6.5L11 1.5' stroke='%23b0b8c1' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") no-repeat right 14px center}
+
+    .btn{padding:10px 20px;font-size:14px;font-weight:600;border-radius:8px;transition:all .12s;display:inline-flex;align-items:center;gap:6px}
+    .btn-primary{color:#fff;background:var(--blue)}.btn-primary:hover{background:#1b6ef2}
+    .btn-outline{color:var(--gray-600);border:1px solid var(--gray-200)}.btn-outline:hover{border-color:var(--gray-400);color:var(--ink)}
+    .btn-danger{color:var(--red);border:1px solid var(--gray-200)}.btn-danger:hover{background:#fff5f5;border-color:var(--red)}
+    .btn-row{display:flex;gap:8px;margin-top:24px}
+
+    /* Content list */
+    .content-item{display:flex;align-items:center;justify-content:space-between;padding:14px 0;border-bottom:1px solid var(--gray-200)}
+    .content-item:hover .ci-title{color:var(--blue)}
+    .ci-body{min-width:0;flex:1}
+    .ci-cat{font-size:11px;font-weight:700;color:var(--blue);background:var(--blue-bg);padding:1px 6px;border-radius:3px;margin-bottom:4px;display:inline-block}
+    .ci-title{font-size:15px;font-weight:600;letter-spacing:-0.02em;transition:color .12s}
+    .ci-meta{font-size:12px;color:var(--gray-500);margin-top:2px}
+    .ci-remove{width:32px;height:32px;display:flex;align-items:center;justify-content:center;border-radius:6px;color:var(--gray-400);flex-shrink:0;transition:all .12s}
+    .ci-remove:hover{background:var(--gray-100);color:var(--red)}
+    .ci-remove svg{width:16px;height:16px}
+
+    .empty{text-align:center;padding:48px 0;color:var(--gray-500);font-size:14px}
+
+    /* Newsletter toggle */
+    .toggle-row{display:flex;align-items:center;justify-content:space-between;padding:14px 0;border-bottom:1px solid var(--gray-200)}
+    .toggle-label{font-size:14px;font-weight:600}
+    .toggle-desc{font-size:12px;color:var(--gray-500);margin-top:2px}
+    .toggle{width:44px;height:24px;background:var(--gray-300);border-radius:12px;position:relative;cursor:pointer;transition:background .2s;flex-shrink:0}
+    .toggle.on{background:var(--blue)}
+    .toggle::after{content:'';position:absolute;top:2px;left:2px;width:20px;height:20px;background:#fff;border-radius:50%;transition:transform .2s;box-shadow:0 1px 3px rgba(0,0,0,.15)}
+    .toggle.on::after{transform:translateX(20px)}
+
+    /* Danger zone */
+    .danger-zone{margin-top:40px;padding:20px;border:1px solid var(--gray-200);border-radius:12px}
+    .dz-title{font-size:15px;font-weight:700;color:var(--red);margin-bottom:4px}
+    .dz-desc{font-size:13px;color:var(--gray-600);margin-bottom:16px}
+
+    /* Modal */
+    .modal-dim{display:none;position:fixed;inset:0;z-index:999;background:rgba(0,0,0,.45);justify-content:center;align-items:center;padding:24px}
+    .modal-dim.open{display:flex}
+    .modal{background:#fff;border-radius:16px;width:100%;max-width:420px;padding:32px 28px 28px;text-align:center;animation:mUp .2s ease}
+    @keyframes mUp{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
+    .modal h3{font-size:18px;font-weight:800;margin-bottom:8px}
+    .modal p{font-size:14px;color:var(--gray-600);margin-bottom:20px}
+    .modal .btn-row{justify-content:center}
+
+    .toast{position:fixed;top:72px;left:50%;transform:translateX(-50%);padding:12px 24px;background:var(--ink);color:#fff;font-size:14px;font-weight:600;border-radius:10px;z-index:999;display:none}
+    .toast.show{display:block;animation:toastIn .2s ease}
+    .toast.err{background:var(--red)}
+    @keyframes toastIn{from{opacity:0;transform:translateX(-50%) translateY(-8px)}to{opacity:1;transform:translateX(-50%) translateY(0)}}
+  </style>
+</head>
+<body>
+
+  <header class="gnb">
+    <div class="gnb-inner">
+      <a href="04_home_toss.html" class="gnb-logo">케이스랩<small>CASELAB</small></a>
+      <div class="gnb-right">
+        <a href="04_home_toss.html" class="gnb-link">홈</a>
+        <a href="#" class="gnb-link" onclick="signOut()">로그아웃</a>
+      </div>
+    </div>
+  </header>
+
+  <div class="toast" id="toast"></div>
+
+  <div class="page">
+
+    <!-- Profile -->
+    <div class="profile-card">
+      <div class="profile-top">
+        <div class="avatar" id="avatar">?</div>
+        <div class="profile-info">
+          <h2 id="profileName">로딩 중...</h2>
+          <p id="profileEmail">-</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tabs -->
+    <div class="my-tabs">
+      <button class="my-tab on" data-tab="profile">프로필 수정</button>
+      <button class="my-tab" data-tab="likes">좋아요</button>
+      <button class="my-tab" data-tab="saves">저장한 글</button>
+      <button class="my-tab" data-tab="settings">설정</button>
+    </div>
+
+    <!-- Panel: Profile -->
+    <div class="panel on" id="panel-profile">
+      <form onsubmit="return false;" id="profileForm">
+        <div class="form-group">
+          <label class="form-label">이름</label>
+          <input class="form-input" id="editName" type="text" placeholder="이름" />
+        </div>
+        <div class="form-group">
+          <label class="form-label">이메일</label>
+          <input class="form-input" id="editEmail" type="email" disabled />
+          <div class="form-hint">이메일은 변경할 수 없습니다.</div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">직무</label>
+          <select class="form-select" id="editJob">
+            <option value="">선택 안 함</option>
+            <option value="기획">기획</option>
+            <option value="마케팅">마케팅</option>
+            <option value="영업">영업</option>
+            <option value="1인사업">1인사업 / 프리랜서</option>
+            <option value="기타">기타</option>
+          </select>
+        </div>
+        <div class="btn-row">
+          <button type="submit" class="btn btn-primary" id="saveProfileBtn">저장</button>
+        </div>
+      </form>
+
+      <div style="margin-top:32px;padding-top:24px;border-top:1px solid var(--gray-200)">
+        <div class="form-group">
+          <label class="form-label">비밀번호 변경</label>
+          <input class="form-input" id="newPw" type="password" placeholder="새 비밀번호 (8자 이상)" style="margin-bottom:8px" />
+          <input class="form-input" id="newPwConfirm" type="password" placeholder="새 비밀번호 확인" />
+        </div>
+        <div class="btn-row">
+          <button class="btn btn-outline" id="changePwBtn">비밀번호 변경</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Panel: Likes -->
+    <div class="panel" id="panel-likes">
+      <div id="likesList"></div>
+    </div>
+
+    <!-- Panel: Saves -->
+    <div class="panel" id="panel-saves">
+      <div id="savesList"></div>
+    </div>
+
+    <!-- Panel: Settings -->
+    <div class="panel" id="panel-settings">
+      <div class="toggle-row">
+        <div>
+          <div class="toggle-label">뉴스레터 수신</div>
+          <div class="toggle-desc">새 글, AI 트렌드 소식을 이메일로 받습니다.</div>
+        </div>
+        <div class="toggle" id="newsToggle"></div>
+      </div>
+
+      <div class="toggle-row">
+        <div>
+          <div class="toggle-label">가입일</div>
+          <div class="toggle-desc" id="joinDate">-</div>
+        </div>
+      </div>
+
+      <div class="danger-zone">
+        <div class="dz-title">회원 탈퇴</div>
+        <div class="dz-desc keepall">탈퇴하면 좋아요, 저장한 글, 프로필 정보가 모두 삭제되며 복구할 수 없습니다.</div>
+        <button class="btn btn-danger" id="deleteBtn">회원 탈퇴</button>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Delete confirm modal -->
+  <div class="modal-dim" id="deleteModal">
+    <div class="modal">
+      <h3>정말 탈퇴하시겠어요?</h3>
+      <p class="keepall">탈퇴하면 모든 데이터가 삭제되며 복구할 수 없습니다.</p>
+      <div class="btn-row">
+        <button class="btn btn-outline" onclick="document.getElementById('deleteModal').classList.remove('open')">취소</button>
+        <button class="btn btn-danger" id="confirmDeleteBtn">탈퇴하기</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="js/supabase-config.js"></script>
+  <script>
+    let currentUser = null;
+    let currentProfile = null;
+
+    function showToast(msg, isErr) {
+      const t = document.getElementById('toast');
+      t.textContent = msg;
+      t.className = 'toast show' + (isErr ? ' err' : '');
+      setTimeout(() => t.className = 'toast', 3000);
+    }
+
+    // ── Tabs ──
+    document.querySelectorAll('.my-tab').forEach(tab => {
+      tab.addEventListener('click', function() {
+        document.querySelectorAll('.my-tab').forEach(t => t.classList.remove('on'));
+        document.querySelectorAll('.panel').forEach(p => p.classList.remove('on'));
+        this.classList.add('on');
+        document.getElementById('panel-' + this.dataset.tab).classList.add('on');
+      });
+    });
+
+    // ── Init ──
+    (async function() {
+      currentUser = await getCurrentUser();
+      if (!currentUser) { window.location.href = '05_login.html'; return; }
+
+      currentProfile = await getProfile(currentUser.id);
+      if (!currentProfile) return;
+
+      // header
+      document.getElementById('profileName').textContent = currentProfile.name || '이름 없음';
+      document.getElementById('profileEmail').textContent = currentProfile.email || currentUser.email;
+      const av = document.getElementById('avatar');
+      if (currentProfile.avatar_url) {
+        av.innerHTML = '<img src="' + currentProfile.avatar_url + '" alt="" />';
+      } else {
+        av.textContent = (currentProfile.name || '?')[0];
+      }
+
+      // profile form
+      document.getElementById('editName').value = currentProfile.name || '';
+      document.getElementById('editEmail').value = currentProfile.email || currentUser.email;
+      document.getElementById('editJob').value = currentProfile.job || '';
+
+      // settings
+      const toggle = document.getElementById('newsToggle');
+      if (currentProfile.newsletter) toggle.classList.add('on');
+      document.getElementById('joinDate').textContent = new Date(currentProfile.created_at).toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric' }) + ' 가입';
+
+      // load likes & saves
+      loadLikes();
+      loadSaves();
+    })();
+
+    // ── Save profile ──
+    document.getElementById('profileForm').addEventListener('submit', async function() {
+      const name = document.getElementById('editName').value.trim();
+      const job = document.getElementById('editJob').value;
+      const { error } = await supabase.from('profiles').update({ name, job, updated_at: new Date().toISOString() }).eq('id', currentUser.id);
+      if (error) return showToast(error.message, true);
+      document.getElementById('profileName').textContent = name || '이름 없음';
+      const av = document.getElementById('avatar');
+      if (!currentProfile.avatar_url) av.textContent = (name || '?')[0];
+      showToast('프로필이 저장되었습니다.');
+    });
+
+    // ── Change password ──
+    document.getElementById('changePwBtn').addEventListener('click', async function() {
+      const pw = document.getElementById('newPw').value;
+      const pw2 = document.getElementById('newPwConfirm').value;
+      if (pw.length < 8) return showToast('비밀번호는 8자 이상이어야 합니다.', true);
+      if (pw !== pw2) return showToast('비밀번호가 일치하지 않습니다.', true);
+      const { error } = await supabase.auth.updateUser({ password: pw });
+      if (error) return showToast(error.message, true);
+      document.getElementById('newPw').value = '';
+      document.getElementById('newPwConfirm').value = '';
+      showToast('비밀번호가 변경되었습니다.');
+    });
+
+    // ── Newsletter toggle ──
+    document.getElementById('newsToggle').addEventListener('click', async function() {
+      this.classList.toggle('on');
+      const val = this.classList.contains('on');
+      await supabase.from('profiles').update({ newsletter: val }).eq('id', currentUser.id);
+    });
+
+    // ── Likes ──
+    async function loadLikes() {
+      const { data } = await supabase.from('likes').select('*').eq('user_id', currentUser.id).order('created_at', { ascending: false });
+      const el = document.getElementById('likesList');
+      if (!data || data.length === 0) { el.innerHTML = '<div class="empty">좋아요한 글이 없습니다.</div>'; return; }
+      el.innerHTML = data.map(item => contentItemHTML(item, 'like')).join('');
+    }
+
+    // ── Saves ──
+    async function loadSaves() {
+      const { data } = await supabase.from('saves').select('*').eq('user_id', currentUser.id).order('created_at', { ascending: false });
+      const el = document.getElementById('savesList');
+      if (!data || data.length === 0) { el.innerHTML = '<div class="empty">저장한 글이 없습니다.</div>'; return; }
+      el.innerHTML = data.map(item => contentItemHTML(item, 'save')).join('');
+    }
+
+    function contentItemHTML(item, type) {
+      const date = new Date(item.created_at).toLocaleDateString('ko-KR', { month: 'short', day: 'numeric' });
+      return '<div class="content-item"><div class="ci-body"><div class="ci-title">' + (item.content_title || item.content_id) + '</div><div class="ci-meta">' + date + '</div></div><button class="ci-remove" onclick="removeItem(\'' + type + '\',\'' + item.id + '\')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>';
+    }
+
+    async function removeItem(type, id) {
+      await supabase.from(type === 'like' ? 'likes' : 'saves').delete().eq('id', id);
+      if (type === 'like') loadLikes(); else loadSaves();
+    }
+
+    // ── Delete account ──
+    document.getElementById('deleteBtn').addEventListener('click', function() {
+      document.getElementById('deleteModal').classList.add('open');
+    });
+    document.getElementById('confirmDeleteBtn').addEventListener('click', async function() {
+      // Note: actual user deletion requires a Supabase Edge Function or admin API.
+      // For MVP, we mark status as 'deleted' and sign out.
+      await supabase.from('profiles').update({ status: 'deleted' }).eq('id', currentUser.id);
+      await supabase.auth.signOut();
+      window.location.href = '04_home_toss.html';
+    });
+    document.getElementById('deleteModal').addEventListener('click', function(e) {
+      if (e.target === this) this.classList.remove('open');
+    });
+  </script>
+</body>
+</html>
