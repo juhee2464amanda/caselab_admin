@@ -69,7 +69,7 @@ const NAV: { group: string; items: NavItem[] }[] = [
     group: '회원관리',
     items: [
       { href: '/admin/users', label: '가입자', icon: Users },
-      { href: '/admin/users/invite', label: 'editor 초대', icon: UserPlus, disabled: true },
+      { href: '/admin/users/invite', label: 'editor 초대', icon: UserPlus },
       { href: '/admin/opinions', label: '의견함', icon: MessageSquare },
       { href: '/admin/support', label: '1:1 문의', icon: LifeBuoy },
       { href: '/admin/faq', label: 'FAQ', icon: HelpCircle },
