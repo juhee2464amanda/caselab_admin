@@ -186,7 +186,8 @@ Playfair "Caselab" 로고 + admin 표기
 🔔 [종 드롭다운]                                  (D16 + D34)
 ```
 
-→ Phase 4에 `app/admin/{categories,utm,history,users/invite,revenue,support,faq,newsletters}/page.tsx` 신설 + `/admin/contents/curation` 큐레이션 탭.
+→ **출시 전 P0 (Day 11~13, §13·§15.6 격상)**: `app/admin/{categories,utm,history,users/invite,revenue,support,faq,newsletters}/page.tsx` 신설 + `/admin/contents/curation` 큐레이션 탭. (이전 "Phase 4" 표기는 §13/§15.6 P0 격상과 모순되어 정정.)
+→ **목업 현황 (2026-06-07)**: 위 페이지 포함 admin 목업 **21종 전부 완성·일관성 감사 PASS**. 구현은 11/23 라우트만 실동작 → 나머지 **구현 대기**. (감사 상세: `docs/design_mockup/admin/ADMIN_SESSION_NOTES.md` §7)
 
 이전 "운영 + 소통 2 그룹" 구조는 D60으로 폐기. [[04_dev_plan.md#19.1]] D60 참조.
 
@@ -198,7 +199,8 @@ Playfair "Caselab" 로고 + admin 표기
 
 ```
 /admin                            대시보드 — KPI 5종 카드 + 가드레일 카드 + 최근 변경 timeline
-/admin/contents                   목록 (탭: 발행/초안/큐레이션 + 카테고리·태그 필터)
+                                  ⚠ 현 구현은 KPI 5종(구버전). 목업 dashboard.html은 D61 7위젯 신버전 → 업그레이드 대기 (2026-06-07)
+/admin/contents                   ⭐ 전체 콘텐츠 타입 통합 목록 (contents case/trend + tools 자료실 통합, 타입+상태 필터, 2026-06-07)
 /admin/contents/curation          ⭐ D52 — Hero·Highlight·Links 12 슬롯 drag-and-drop (contents 안 탭)
 /admin/contents/new               작성 (TrackForm + 카테고리·태그 + 발행자 드롭다운 + SEO 고급 설정)
 /admin/contents/[id]              편집
@@ -1275,10 +1277,12 @@ D42 트리거(구독자 500 OR 결제 요청 10건) 도달 시:
 
 ### 14.1 Migration
 
+> ⚠ **정합 주의 (2026-06-07)**: 본 repo(`caselab_admin`)에는 `supabase/` 디렉터리·`.sql` 마이그레이션이 **존재하지 않음**. 아래 0001~0004는 remote Supabase 프로젝트에만 적용/예정이며 repo에 미추적. 로컬 추적·재현이 필요하면 `supabase/migrations/` 신설 + `supabase db pull`로 동기화할 것 (액션 아이템).
+
 | 파일 | 결정 |
 |---|---|
-| `supabase/migrations/0001_init.sql` | D17 role 확장 (이미 적용) |
-| `supabase/migrations/0002_admin_p0.sql` | D1/D3/D4/D5/D8/D11/D14/D15/D16/D17/D19 + `is_admin()` / `is_editor()` 헬퍼 |
+| `supabase/migrations/0001_init.sql` | D17 role 확장 (remote 적용, **repo 미추적**) |
+| `supabase/migrations/0002_admin_p0.sql` | D1/D3/D4/D5/D8/D11/D14/D15/D16/D17/D19 + `is_admin()` / `is_editor()` 헬퍼 (remote 적용 추정, **repo 미추적**) |
 | `supabase/migrations/0003_categories_tags_utm.sql` ⭐ NEW | D13 / D26 / D37 / D39 / D43 / D44 / utm_channel seed + **D51 faqs/support_tickets** + **D52 featured_contents.slot_type** + **D53 newsletter_campaigns** + **D54 contents.og_* 컬럼** |
 | `supabase/migrations/0004_storage_policies.sql` ⭐ NEW | **D57 Storage 7 버킷 풀 옵션** — avatars/content-images/newsletter-assets (Public) + support-files/audit-exports (Private) + 각 RLS 정책 (anyone read·editor write·admin write·본인 write 패턴 분리) |
 
@@ -1425,6 +1429,7 @@ D42 트리거(구독자 500 OR 결제 요청 10건) 도달 시:
 | 2026-06-02 | Phase A-0.2 7 영역 인터뷰 → D7/D13/D27~D49 확정 + D18/D20 폐기 | 본 세션 |
 | 2026-06-02 | `docs/06_admin_dev_plan.md` 신설 (본 문서) | 본 세션 |
 | 2026-06-02 | Phase 6 user mockup 갭 점검 → D50~D56 추가 + 영역 8 (사용자 페이지 운영) 확장 | 본 세션 |
+| 2026-06-07 | 목업 커버리지 감사 PASS(21p) + 구현 갭(11/23) 기록 + `/admin/contents` 타입 통합 뷰 결정 + §4.5/§5/§14.1 정합 정정 | 본 세션 (ADMIN_SESSION_NOTES §7) |
 
 ## 부록 B. 다른 세션에서 본 문서 활용
 
