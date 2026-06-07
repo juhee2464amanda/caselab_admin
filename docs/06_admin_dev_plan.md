@@ -198,8 +198,7 @@ Playfair "Caselab" 로고 + admin 표기
 [[docs/04_dev_plan.md]] §3 admin 라우팅 + 추가 페이지.
 
 ```
-/admin                            대시보드 — KPI 5종 카드 + 가드레일 카드 + 최근 변경 timeline
-                                  ⚠ 현 구현은 KPI 5종(구버전). 목업 dashboard.html은 D61 7위젯 신버전 → 업그레이드 대기 (2026-06-07)
+/admin                            대시보드 — D61 7위젯 구현 완료 (2026-06-07): 북극성+스파크라인 / KPI 5종 / 퍼널 / 가드레일 / 콘텐츠 Top5 / 최근 변경 / 직무·페르소나 분포
 /admin/contents                   ⭐ 전체 콘텐츠 타입 통합 목록 (contents case/trend + tools 자료실 통합, 타입+상태 필터, 2026-06-07)
 /admin/contents/curation          ⭐ D52 — Hero·Highlight·Links 12 슬롯 drag-and-drop (contents 안 탭)
 /admin/contents/new               작성 (TrackForm + 카테고리·태그 + 발행자 드롭다운 + SEO 고급 설정)
@@ -1432,6 +1431,7 @@ D42 트리거(구독자 500 OR 결제 요청 10건) 도달 시:
 | 2026-06-02 | Phase 6 user mockup 갭 점검 → D50~D56 추가 + 영역 8 (사용자 페이지 운영) 확장 | 본 세션 |
 | 2026-06-07 | 목업 커버리지 감사 PASS(21p) + 구현 갭(11/23) 기록 + `/admin/contents` 타입 통합 뷰 결정 + §4.5/§5/§14.1 정합 정정 | 본 세션 (ADMIN_SESSION_NOTES §7) |
 | 2026-06-07 | 본가 마이그레이션 0001~0009 repo 동기화 + Quick Wins(revenue·guides·prompts) + 미구현 7페이지(categories·faq·support·newsletters·utm·history·curation) 목록 구현 → 구현 18/23. 편집·발송·드래그·Builder는 다음 레이어 | 본 세션 |
+| 2026-06-07 | 대시보드 D61 7위젯 구현(북극성 스파크라인·퍼널·Top5·최근변경·직무/페르소나 분포). CSS 바+SVG SSR, get_daily_trend RPC 활용. tremor 미사용 | 본 세션 |
 
 ## 부록 B. 다른 세션에서 본 문서 활용
 
