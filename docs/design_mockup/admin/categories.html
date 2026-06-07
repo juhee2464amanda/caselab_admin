@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>콘텐츠 관리 — 케이스랩 admin</title>
+  <title>카테고리·태그 — 케이스랩 admin</title>
 
   <script src="https://cdn.tailwindcss.com"></script>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.min.css" />
@@ -101,12 +101,18 @@
     .bar-fill.warn { background: #f59e0b; }
     .bar-fill.danger { background: #dc2626; }
 
-    /* ── page-specific (콘텐츠 목록) ── */
-    .track-badge { display: inline-block; padding: 1px 7px; font-size: 11px; border: 1px solid #e5e8eb; border-radius: 3px; color: #4B5563; background: #f7f7f7; line-height: 1.5; }
-    .status-published { display: inline-block; padding: 1px 7px; font-size: 11px; border-radius: 3px; background: #ECFDF5; color: #065F46; font-weight: 500; }
-    .status-draft { display: inline-block; padding: 1px 7px; font-size: 11px; border-radius: 3px; background: #F3F4F6; color: #6B7280; font-weight: 500; }
-    .star-on { color: #F59E0B; }
-    .star-off { color: #D1D5DB; }
+    /* type tabs */
+    .type-tab { display: inline-flex; align-items: center; gap: .4rem; padding: .5rem .9rem; font-size: 13px; font-weight: 500; color: #4B5563; border-bottom: 2px solid transparent; cursor: pointer; transition: color .15s, border-color .15s; }
+    .type-tab:hover { color: #0A0A0A; }
+    .type-tab.active { color: #3182f6; border-bottom-color: #3182f6; font-weight: 600; }
+
+    /* toggle switch */
+    .switch { position: relative; display: inline-block; width: 34px; height: 20px; cursor: pointer; }
+    .switch input { display: none; }
+    .switch .track { position: absolute; inset: 0; background: #d1d6db; border-radius: 999px; transition: background .15s; }
+    .switch .knob { position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; background: #fff; border-radius: 999px; transition: transform .15s; box-shadow: 0 1px 2px rgba(0,0,0,.2); }
+    .switch input:checked + .track { background: #3182f6; }
+    .switch input:checked + .track + .knob { transform: translateX(14px); }
   </style>
 </head>
 
@@ -138,10 +144,10 @@
         <a class="nav-item" href="utm.html"><i data-lucide="link"></i>유입 (UTM)</a>
         <a class="nav-item" href="analytics-search.html"><i data-lucide="search"></i>검색 키워드</a>
         <div class="nav-section">콘텐츠</div>
-        <a class="nav-item active" href="index.html"><i data-lucide="file-text"></i>콘텐츠 목록<span class="nav-badge">3</span></a>
+        <a class="nav-item" href="index.html"><i data-lucide="file-text"></i>콘텐츠 목록<span class="nav-badge">3</span></a>
         <a class="nav-item" href="new.html"><i data-lucide="plus-square"></i>새 콘텐츠</a>
         <a class="nav-item" href="curation.html"><i data-lucide="layout-grid"></i>큐레이션</a>
-        <a class="nav-item" href="categories.html"><i data-lucide="tags"></i>카테고리·태그</a>
+        <a class="nav-item active" href="categories.html"><i data-lucide="tags"></i>카테고리·태그</a>
         <a class="nav-item" href="topics.html"><i data-lucide="lightbulb"></i>후보 카드<span class="nav-badge">4</span></a>
         <a class="nav-item" href="comments.html"><i data-lucide="message-circle"></i>댓글 모더레이션<span class="nav-badge nav-badge-warn">2</span></a>
         <a class="nav-item" href="tools.html"><i data-lucide="wrench"></i>자료실</a>
@@ -170,177 +176,237 @@
       </div>
     </aside>
 
-    <!-- Main -->
+    <!-- ════════ MAIN ════════ -->
     <main class="flex-1 min-w-0">
-
-      <!-- Top bar -->
       <header class="h-14 border-b border-line bg-white flex items-center px-6 gap-3">
-        <h1 class="text-[15px] font-semibold">콘텐츠</h1>
-        <span class="text-[12.5px] text-gray-400">/ 작성·발행·큐레이션 관리</span>
+        <h1 class="text-[15px] font-extrabold">카테고리·태그</h1>
+        <span class="text-[12.5px] text-muted">/ 콘텐츠·도구·UTM 채널 분류 + 태그 정리</span>
         <div class="ml-auto flex items-center gap-2">
-          <div class="relative">
-            <i data-lucide="search" class="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400"></i>
-            <input type="text" placeholder="제목 검색" class="text-[12.5px] pl-8 pr-3 py-1.5 border border-line rounded-sm bg-white focus:outline-none focus:border-brand w-44" />
-          </div>
-          <button class="ic-btn" title="필터"><i data-lucide="filter"></i></button>
-          <a href="new.html" class="btn-primary"><i data-lucide="plus" class="w-3.5 h-3.5"></i>새 콘텐츠</a>
+          <button class="btn-primary" id="addCatBtn"><i data-lucide="plus" class="w-3.5 h-3.5"></i>새 카테고리</button>
         </div>
       </header>
 
-      <!-- Body -->
-      <div class="p-6">
+      <div class="p-6 space-y-5">
 
-        <!-- Filter tabs -->
-        <div class="flex items-center gap-1 mb-4 text-[13px]">
-          <button class="filter-tab px-3 py-1.5 rounded-sm font-medium bg-ink text-white" data-filter="all">전체 <span class="text-gray-400 ml-1">12</span></button>
-          <button class="filter-tab px-3 py-1.5 rounded-sm text-gray-600 hover:bg-soft" data-filter="published">발행 <span class="text-gray-400 ml-1">9</span></button>
-          <button class="filter-tab px-3 py-1.5 rounded-sm text-gray-600 hover:bg-soft" data-filter="draft">초안 <span class="text-gray-400 ml-1">3</span></button>
-          <button class="filter-tab px-3 py-1.5 rounded-sm text-gray-600 hover:bg-soft" data-filter="curated">큐레이션 <span class="text-gray-400 ml-1">2</span></button>
+        <!-- type 탭 -->
+        <div class="flex items-center gap-1 border-b border-line">
+          <div class="type-tab active" data-type="content"><i data-lucide="file-text" class="w-3.5 h-3.5"></i>콘텐츠 <span class="text-muted font-normal">content_subcategory</span></div>
+          <div class="type-tab" data-type="tool"><i data-lucide="wrench" class="w-3.5 h-3.5"></i>도구 <span class="text-muted font-normal">tool_subcategory</span></div>
+          <div class="type-tab" data-type="utm"><i data-lucide="link" class="w-3.5 h-3.5"></i>UTM 채널 <span class="text-muted font-normal">utm_channel</span></div>
         </div>
 
+        <!-- ═══ 콘텐츠 탭 (활성) ═══ -->
+        <!-- parent_track: case -->
         <section class="panel">
+          <div class="panel-head">
+            <div class="flex items-center gap-2">
+              <span class="badge badge-blue">case</span>
+              <span class="panel-title">실전 케이스</span>
+              <span class="text-[11.5px] text-muted">parent_track = case · 3개 카테고리</span>
+            </div>
+          </div>
           <table class="data-table">
             <thead>
               <tr>
-                <th style="width:36px"></th>
-                <th>제목</th>
-                <th>트랙</th>
-                <th>상태</th>
-                <th>발행일</th>
-                <th class="num">조회</th>
-                <th class="num">저장</th>
+                <th>카테고리명</th>
+                <th>slug</th>
+                <th class="num">사용 콘텐츠 수</th>
+                <th>활성</th>
                 <th></th>
               </tr>
             </thead>
             <tbody>
-              <!-- Row 1: 실전 케이스 · 기획 -->
-              <tr data-track="case" data-cat="기획" data-status="published" data-curated="1">
-                <td class="text-center"><i data-lucide="star" class="w-3.5 h-3.5 star-on fill-current"></i></td>
-                <td>
-                  <div class="font-medium text-[13.5px]">기획서 첫 페이지가 안 풀릴 때 — '의도' 던지는 5단계</div>
-                  <div class="text-[11.5px] text-gray-500 mt-0.5">기획 · #01 · <span class="text-gray-400">caselab.kr/cases/planning-intent-5steps</span></div>
-                </td>
-                <td><span class="track-badge">실전 케이스</span></td>
-                <td><span class="status-published">발행</span></td>
-                <td class="text-gray-600 text-[12.5px] whitespace-nowrap">2026-05-22</td>
-                <td class="num font-medium">8,432</td>
-                <td class="num">412</td>
-                <td>
-                  <div class="flex items-center gap-1">
-                    <button class="ic-btn" title="수정"><i data-lucide="pencil"></i></button>
-                    <button class="ic-btn" title="더보기"><i data-lucide="more-horizontal"></i></button>
-                  </div>
-                </td>
-              </tr>
-              <!-- Row 2: AI 트렌드 -->
-              <tr data-track="trend" data-cat="" data-status="published" data-curated="1">
-                <td class="text-center"><i data-lucide="star" class="w-3.5 h-3.5 star-on fill-current"></i></td>
-                <td>
-                  <div class="font-medium text-[13.5px]">Claude 메모리 기능, 실제로 일에 쓸만한가 — 1주일 실험</div>
-                  <div class="text-[11.5px] text-gray-500 mt-0.5">#21 · <span class="text-gray-400">caselab.kr/ai/claude-memory-1week</span></div>
-                </td>
-                <td><span class="track-badge">AI 트렌드</span></td>
-                <td><span class="status-published">발행</span></td>
-                <td class="text-gray-600 text-[12.5px] whitespace-nowrap">2026-05-21</td>
-                <td class="num font-medium">6,118</td>
-                <td class="num">287</td>
-                <td>
-                  <div class="flex items-center gap-1">
-                    <button class="ic-btn" title="수정"><i data-lucide="pencil"></i></button>
-                    <button class="ic-btn" title="더보기"><i data-lucide="more-horizontal"></i></button>
-                  </div>
-                </td>
-              </tr>
-              <!-- Row 3: 실전 케이스 · 마케팅 -->
-              <tr data-track="case" data-cat="마케팅" data-status="published" data-curated="0">
-                <td class="text-center"><i data-lucide="star" class="w-3.5 h-3.5 star-off"></i></td>
-                <td>
-                  <div class="font-medium text-[13.5px]">경쟁사 분석, AI가 표면만 긁고 끝나는 이유</div>
-                  <div class="text-[11.5px] text-gray-500 mt-0.5">마케팅 · #02 · <span class="text-gray-400">caselab.kr/cases/competitor-analysis-depth</span></div>
-                </td>
-                <td><span class="track-badge">실전 케이스</span></td>
-                <td><span class="status-published">발행</span></td>
-                <td class="text-gray-600 text-[12.5px] whitespace-nowrap">2026-05-18</td>
-                <td class="num font-medium">5,940</td>
-                <td class="num">301</td>
-                <td>
-                  <div class="flex items-center gap-1">
-                    <button class="ic-btn" title="수정"><i data-lucide="pencil"></i></button>
-                    <button class="ic-btn" title="더보기"><i data-lucide="more-horizontal"></i></button>
-                  </div>
-                </td>
-              </tr>
-              <!-- Row 4: published -->
               <tr>
-                <td class="text-center"><i data-lucide="star" class="w-3.5 h-3.5 star-off"></i></td>
+                <td class="font-medium">AI 도구 사용기</td>
+                <td><span class="badge badge-gray">ai-tool-review</span></td>
+                <td class="num">12</td>
+                <td><label class="switch"><input type="checkbox" checked /><span class="track"></span><span class="knob"></span></label></td>
                 <td>
-                  <div class="font-medium text-[13.5px]">윗사람 톤에 안 맞는 결과물 — AI에게 다시 시키는 3단계</div>
-                  <div class="text-[11.5px] text-gray-500 mt-0.5">영업 · #04 · <span class="text-gray-400">caselab.kr/cases/tone-matching-3steps</span></div>
-                </td>
-                <td><span class="track-badge">실전 케이스</span></td>
-                <td><span class="status-published">발행</span></td>
-                <td class="text-gray-600 text-[12.5px] whitespace-nowrap">2026-05-10</td>
-                <td class="num font-medium">4,201</td>
-                <td class="num">218</td>
-                <td>
-                  <div class="flex items-center gap-1">
+                  <div class="flex items-center gap-1.5 justify-end">
                     <button class="ic-btn" title="수정"><i data-lucide="pencil"></i></button>
-                    <button class="ic-btn" title="더보기"><i data-lucide="more-horizontal"></i></button>
+                    <button class="ic-btn" title="삭제"><i data-lucide="trash-2"></i></button>
                   </div>
                 </td>
               </tr>
-              <!-- Row 5: draft -->
               <tr>
-                <td class="text-center"><i data-lucide="star" class="w-3.5 h-3.5 star-off"></i></td>
+                <td class="font-medium">워크플로우 개선</td>
+                <td><span class="badge badge-gray">workflow</span></td>
+                <td class="num">8</td>
+                <td><label class="switch"><input type="checkbox" checked /><span class="track"></span><span class="knob"></span></label></td>
                 <td>
-                  <div class="font-medium text-[13.5px] text-gray-500">보고서 요약, AI한테 시키면 진짜 시간 아낄까?</div>
-                  <div class="text-[11.5px] text-gray-400 mt-0.5">전략 · #06 · <span>caselab.kr/cases/report-summary-ai</span></div>
-                </td>
-                <td><span class="track-badge">실전 케이스</span></td>
-                <td><span class="status-draft">초안</span></td>
-                <td class="text-gray-400 text-[12.5px] whitespace-nowrap">—</td>
-                <td class="num text-gray-400">—</td>
-                <td class="num text-gray-400">—</td>
-                <td>
-                  <div class="flex items-center gap-1">
+                  <div class="flex items-center gap-1.5 justify-end">
                     <button class="ic-btn" title="수정"><i data-lucide="pencil"></i></button>
-                    <button class="ic-btn" title="더보기"><i data-lucide="more-horizontal"></i></button>
+                    <button class="ic-btn" title="삭제"><i data-lucide="trash-2"></i></button>
                   </div>
                 </td>
               </tr>
-              <!-- Row 6: draft -->
               <tr>
-                <td class="text-center"><i data-lucide="star" class="w-3.5 h-3.5 star-off"></i></td>
+                <td class="font-medium">팀 협업</td>
+                <td><span class="badge badge-gray">team-collab</span></td>
+                <td class="num">5</td>
+                <td><label class="switch"><input type="checkbox" checked /><span class="track"></span><span class="knob"></span></label></td>
                 <td>
-                  <div class="font-medium text-[13.5px] text-gray-500">GPT-5 첫 인상 — 달라진 3가지와 여전한 한계</div>
-                  <div class="text-[11.5px] text-gray-400 mt-0.5">#22 · <span>caselab.kr/ai/gpt5-first-look</span></div>
-                </td>
-                <td><span class="track-badge">AI 트렌드</span></td>
-                <td><span class="status-draft">초안</span></td>
-                <td class="text-gray-400 text-[12.5px] whitespace-nowrap">—</td>
-                <td class="num text-gray-400">—</td>
-                <td class="num text-gray-400">—</td>
-                <td>
-                  <div class="flex items-center gap-1">
+                  <div class="flex items-center gap-1.5 justify-end">
                     <button class="ic-btn" title="수정"><i data-lucide="pencil"></i></button>
-                    <button class="ic-btn" title="더보기"><i data-lucide="more-horizontal"></i></button>
+                    <button class="ic-btn" title="삭제"><i data-lucide="trash-2"></i></button>
                   </div>
                 </td>
               </tr>
             </tbody>
           </table>
+        </section>
 
-          <div class="px-5 py-3 border-t border-line flex items-center justify-between text-[12.5px] text-gray-500">
-            <span>총 12편 중 6편 표시</span>
-            <div class="flex items-center gap-1">
-              <button class="ic-btn"><i data-lucide="chevron-left"></i></button>
-              <span class="px-2">1 / 2</span>
-              <button class="ic-btn"><i data-lucide="chevron-right"></i></button>
+        <!-- parent_track: trend -->
+        <section class="panel">
+          <div class="panel-head">
+            <div class="flex items-center gap-2">
+              <span class="badge badge-green">trend</span>
+              <span class="panel-title">트렌드</span>
+              <span class="text-[11.5px] text-muted">parent_track = trend · 2개 카테고리</span>
             </div>
           </div>
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>카테고리명</th>
+                <th>slug</th>
+                <th class="num">사용 콘텐츠 수</th>
+                <th>활성</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td class="font-medium">모델 업데이트</td>
+                <td><span class="badge badge-gray">model-update</span></td>
+                <td class="num">6</td>
+                <td><label class="switch"><input type="checkbox" checked /><span class="track"></span><span class="knob"></span></label></td>
+                <td>
+                  <div class="flex items-center gap-1.5 justify-end">
+                    <button class="ic-btn" title="수정"><i data-lucide="pencil"></i></button>
+                    <button class="ic-btn" title="삭제"><i data-lucide="trash-2"></i></button>
+                  </div>
+                </td>
+              </tr>
+              <tr>
+                <td class="font-medium">활용 팁</td>
+                <td><span class="badge badge-gray">tips</span></td>
+                <td class="num">4</td>
+                <td><label class="switch"><input type="checkbox" /><span class="track"></span><span class="knob"></span></label></td>
+                <td>
+                  <div class="flex items-center gap-1.5 justify-end">
+                    <button class="ic-btn" title="수정"><i data-lucide="pencil"></i></button>
+                    <button class="ic-btn" title="삭제"><i data-lucide="trash-2"></i></button>
+                  </div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
         </section>
+
+        <!-- ═══ 태그 관리 ═══ -->
+        <section class="panel">
+          <div class="panel-head">
+            <span class="panel-title">태그 관리</span>
+            <span class="text-[11.5px] text-muted">사용 콘텐츠 수 기준 내림차순 · 총 5개</span>
+          </div>
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>태그명</th>
+                <th class="num">사용 콘텐츠 수</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><span class="badge">#프롬프트엔지니어링</span></td>
+                <td class="num">7</td>
+                <td>
+                  <div class="flex items-center gap-1.5 justify-end">
+                    <button class="btn-ghost"><i data-lucide="git-merge" class="w-3.5 h-3.5"></i>통합</button>
+                    <button class="btn-ghost"><i data-lucide="pencil" class="w-3.5 h-3.5"></i>이름변경</button>
+                  </div>
+                </td>
+              </tr>
+              <tr>
+                <td><span class="badge">#GPT-5</span></td>
+                <td class="num">4</td>
+                <td>
+                  <div class="flex items-center gap-1.5 justify-end">
+                    <button class="btn-ghost"><i data-lucide="git-merge" class="w-3.5 h-3.5"></i>통합</button>
+                    <button class="btn-ghost"><i data-lucide="pencil" class="w-3.5 h-3.5"></i>이름변경</button>
+                  </div>
+                </td>
+              </tr>
+              <tr>
+                <td><span class="badge">#자동화</span></td>
+                <td class="num">3</td>
+                <td>
+                  <div class="flex items-center gap-1.5 justify-end">
+                    <button class="btn-ghost"><i data-lucide="git-merge" class="w-3.5 h-3.5"></i>통합</button>
+                    <button class="btn-ghost"><i data-lucide="pencil" class="w-3.5 h-3.5"></i>이름변경</button>
+                  </div>
+                </td>
+              </tr>
+              <tr>
+                <td><span class="badge">#노션</span></td>
+                <td class="num">2</td>
+                <td>
+                  <div class="flex items-center gap-1.5 justify-end">
+                    <button class="btn-ghost"><i data-lucide="git-merge" class="w-3.5 h-3.5"></i>통합</button>
+                    <button class="btn-ghost"><i data-lucide="pencil" class="w-3.5 h-3.5"></i>이름변경</button>
+                  </div>
+                </td>
+              </tr>
+              <tr>
+                <td><span class="badge">#회의록</span></td>
+                <td class="num">1</td>
+                <td>
+                  <div class="flex items-center gap-1.5 justify-end">
+                    <button class="btn-ghost"><i data-lucide="git-merge" class="w-3.5 h-3.5"></i>통합</button>
+                    <button class="btn-ghost"><i data-lucide="pencil" class="w-3.5 h-3.5"></i>이름변경</button>
+                  </div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </section>
+
       </div>
     </main>
+  </div>
+
+  <!-- ═══ 새 카테고리 모달 (기본 hidden) ═══ -->
+  <div class="hidden fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4" id="catModal">
+    <div class="panel w-full max-w-md bg-white shadow-2xl">
+      <div class="panel-head">
+        <span class="panel-title">새 카테고리</span>
+        <button class="ic-btn" id="catModalClose" title="닫기"><i data-lucide="x"></i></button>
+      </div>
+      <div class="panel-body space-y-4">
+        <div>
+          <label class="block text-[12px] font-medium text-gray-600 mb-1.5">표시명 (label)</label>
+          <input type="text" placeholder="예) AI 도구 사용기" class="w-full text-[13.5px] px-3 py-2 border border-line rounded-md bg-white focus:outline-none focus:border-brand" />
+        </div>
+        <div>
+          <label class="block text-[12px] font-medium text-gray-600 mb-1.5">slug</label>
+          <input type="text" placeholder="예) ai-tool-review" class="w-full text-[13.5px] px-3 py-2 border border-line rounded-md bg-white font-num focus:outline-none focus:border-brand" />
+          <p class="text-[11px] text-muted mt-1">소문자·하이픈만 사용. URL에 노출됩니다.</p>
+        </div>
+        <div>
+          <label class="block text-[12px] font-medium text-gray-600 mb-1.5">parent_track</label>
+          <select class="w-full text-[13.5px] px-3 py-2 border border-line rounded-md bg-white focus:outline-none focus:border-brand">
+            <option value="case">case — 실전 케이스</option>
+            <option value="trend">trend — 트렌드</option>
+          </select>
+        </div>
+      </div>
+      <div class="panel-head border-t border-b-0 justify-end gap-2">
+        <button class="btn-ghost" id="catModalCancel">취소</button>
+        <button class="btn-primary"><i data-lucide="check" class="w-3.5 h-3.5"></i>저장</button>
+      </div>
+    </div>
   </div>
 
   <!-- ════════ CANONICAL FOOTER JS ════════ -->
@@ -352,49 +418,16 @@
     const bb = document.getElementById('bellBtn'), bm = document.getElementById('bellMenu');
     if (bb && bm) { bb.addEventListener('click', e => { e.stopPropagation(); bm.classList.toggle('hidden'); }); document.addEventListener('click', () => bm.classList.add('hidden')); }
   </script>
+
+  <!-- 새 카테고리 모달 토글 -->
   <script>
-    // ── Filter tabs ──
-    document.querySelectorAll('.filter-tab').forEach(tab=>{
-      tab.addEventListener('click',function(){
-        document.querySelectorAll('.filter-tab').forEach(t=>{t.classList.remove('bg-ink','text-white');t.classList.add('text-gray-600')});
-        this.classList.add('bg-ink','text-white');this.classList.remove('text-gray-600');
-        const filter=this.dataset.filter;
-        document.querySelectorAll('.data-table tbody tr').forEach(row=>{
-          if(filter==='all'){row.style.display=''}
-          else if(filter==='published'){row.style.display=row.querySelector('.status-published')?'':'none'}
-          else if(filter==='draft'){row.style.display=row.querySelector('.status-draft')?'':'none'}
-          else if(filter==='curated'){row.style.display=row.querySelector('.star-on')?'':'none'}
-        });
-      });
-    });
-
-    // ── Star toggle (curation) ──
-    document.querySelectorAll('.data-table tbody td:first-child').forEach(td=>{
-      td.style.cursor='pointer';
-      td.addEventListener('click',function(e){
-        e.stopPropagation();
-        const icon=this.querySelector('[data-lucide]');
-        if(!icon)return;
-        if(icon.classList.contains('star-on')){icon.classList.remove('star-on','fill-current');icon.classList.add('star-off')}
-        else{icon.classList.remove('star-off');icon.classList.add('star-on','fill-current')}
-        lucide.createIcons();
-      });
-    });
-
-    // ── Row click → edit ──
-    document.querySelectorAll('.data-table tbody tr').forEach(row=>{
-      row.addEventListener('click',function(){window.location.href='new.html'});
-    });
-
-    // ── Search ──
-    const searchInput=document.querySelector('input[placeholder="제목 검색"]');
-    if(searchInput){searchInput.addEventListener('input',function(){
-      const q=this.value.toLowerCase();
-      document.querySelectorAll('.data-table tbody tr').forEach(row=>{
-        const title=row.querySelector('td:nth-child(2)')?.textContent?.toLowerCase()||'';
-        row.style.display=title.includes(q)?'':'none';
-      });
-    })}
+    const cm = document.getElementById('catModal');
+    const openCm = () => cm.classList.remove('hidden');
+    const closeCm = () => cm.classList.add('hidden');
+    document.getElementById('addCatBtn')?.addEventListener('click', openCm);
+    document.getElementById('catModalClose')?.addEventListener('click', closeCm);
+    document.getElementById('catModalCancel')?.addEventListener('click', closeCm);
+    cm?.addEventListener('click', e => { if (e.target === cm) closeCm(); });
   </script>
 </body>
 </html>

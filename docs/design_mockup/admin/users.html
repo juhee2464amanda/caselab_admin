@@ -3,22 +3,26 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>가입자 — 케이스랩 admin</title>
+  <title>가입자 관리 — 케이스랩 admin</title>
 
   <script src="https://cdn.tailwindcss.com"></script>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.min.css" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@1,600;1,700&display=swap" rel="stylesheet" />
   <script src="https://unpkg.com/lucide@latest"></script>
 
+  <!-- ════════ CANONICAL HEAD — 모든 admin 페이지 공통 (D58/D59 토큰) ════════ -->
   <script>
     tailwind.config = {
       theme: {
         extend: {
           colors: {
-            paper:  '#FAFAF7',
+            paper:  '#f7f7f7',
             ink:    '#0A0A0A',
-            line:   '#E5E1D5',
-            soft:   '#F4F2EC',
-            indigo: { brand: '#1E40AF' },
+            line:   '#e5e8eb',
+            soft:   '#f2f4f6',
+            muted:  '#8b95a1',
+            brand:  { DEFAULT: '#3182f6' },
           },
           fontFamily: {
             sans: ['Pretendard', 'system-ui', '-apple-system', 'sans-serif'],
@@ -28,93 +32,162 @@
       },
     };
   </script>
-
   <style>
-    html, body { background: #FAFAF7; color: #0A0A0A; }
+    html, body { background: #f7f7f7; color: #0A0A0A; }
     body { font-family: 'Pretendard', system-ui, -apple-system, sans-serif; -webkit-font-smoothing: antialiased; }
+    .logo-text { font-family: 'Playfair Display', serif; font-style: italic; font-weight: 700; font-size: 20px; color: #0A0A0A; }
 
-    .nav-item { display: flex; align-items: center; gap: .65rem; padding: .45rem .75rem; font-size: 13.5px; color: #4B5563; border-radius: 4px; transition: background .15s ease, color .15s ease; cursor: pointer; }
-    .nav-item:hover { background: #F4F2EC; color: #0A0A0A; }
-    .nav-item.active { background: #EEF2FF; color: #1E40AF; font-weight: 500; }
+    /* sidebar nav */
+    .nav-item { display: flex; align-items: center; gap: .65rem; padding: .45rem .75rem; margin: 0 .5rem; font-size: 13.5px; color: #4B5563; border-radius: 5px; transition: background .15s ease, color .15s ease; cursor: pointer; text-decoration: none; }
+    .nav-item:hover { background: #f2f4f6; color: #0A0A0A; }
+    .nav-item.active { background: #e8f3ff; color: #3182f6; font-weight: 600; }
     .nav-item .lucide { width: 15px; height: 15px; opacity: .85; }
-    .nav-section { font-size: 10.5px; letter-spacing: .14em; text-transform: uppercase; color: #9CA3AF; font-weight: 600; padding: 1.25rem .75rem .5rem; }
+    .nav-section { font-size: 10.5px; letter-spacing: .14em; text-transform: uppercase; color: #8b95a1; font-weight: 600; padding: 1rem .75rem .4rem; }
+    .nav-badge { margin-left: auto; font-size: 10.5px; font-weight: 600; color: #3182f6; background: #e8f3ff; padding: 1px 6px; border-radius: 3px; }
+    .nav-badge-warn { color: #d97706; background: #fef3c7; }
 
-    .kpi-card { background: #fff; border: 1px solid #E5E1D5; border-radius: 4px; padding: 1.1rem 1.2rem; }
-    .kpi-label { font-size: 12px; color: #6B7280; font-weight: 500; }
-    .kpi-value { font-size: 26px; font-weight: 700; letter-spacing: -.02em; font-feature-settings: "tnum"; color: #0A0A0A; margin-top: .35rem; }
-    .kpi-sub { font-size: 11.5px; color: #9CA3AF; }
+    /* KPI cards */
+    .kpi-card { background: #fff; border: 1px solid #e5e8eb; border-radius: 8px; padding: 1.1rem 1.2rem; transition: border-color .2s ease, box-shadow .2s ease; }
+    .kpi-card:hover { border-color: #d1d6db; }
+    .kpi-label { font-size: 12px; color: #6B7280; font-weight: 500; letter-spacing: .02em; }
+    .kpi-value { font-size: 26px; font-weight: 800; letter-spacing: -.02em; font-variant-numeric: tabular-nums; color: #0A0A0A; margin-top: .35rem; }
+    .kpi-delta { font-size: 12px; font-weight: 500; display: inline-flex; align-items: center; gap: .15rem; }
+    .kpi-delta.up { color: #3182f6; }
+    .kpi-delta.down { color: #dc2626; }
+    .kpi-sub { font-size: 11.5px; color: #8b95a1; }
 
-    .panel { background: #fff; border: 1px solid #E5E1D5; border-radius: 4px; }
-    .panel-head { padding: 1rem 1.2rem; border-bottom: 1px solid #E5E1D5; display: flex; align-items: center; justify-content: space-between; }
-    .panel-title { font-size: 13.5px; font-weight: 600; }
+    /* panel */
+    .panel { background: #fff; border: 1px solid #e5e8eb; border-radius: 8px; }
+    .panel-head { padding: 1rem 1.2rem; border-bottom: 1px solid #e5e8eb; display: flex; align-items: center; justify-content: space-between; }
+    .panel-title { font-size: 13.5px; font-weight: 700; }
+    .panel-body { padding: 1.1rem 1.2rem; }
 
+    /* table */
     .data-table { font-size: 13.5px; width: 100%; border-collapse: collapse; }
-    .data-table thead th { text-align: left; font-weight: 500; font-size: 11.5px; letter-spacing: .08em; text-transform: uppercase; color: #6B7280; padding: .65rem 1.2rem; border-bottom: 1px solid #E5E1D5; background: #FAFAF7; }
+    .data-table thead th { text-align: left; font-weight: 500; font-size: 11.5px; letter-spacing: .08em; text-transform: uppercase; color: #6B7280; padding: .65rem 1.2rem; border-bottom: 1px solid #e5e8eb; background: #f7f7f7; }
     .data-table thead th.num { text-align: right; }
-    .data-table tbody td { padding: .85rem 1.2rem; border-bottom: 1px solid #F1EEE4; color: #1F2937; }
+    .data-table tbody td { padding: .85rem 1.2rem; border-bottom: 1px solid #f2f4f6; color: #1F2937; }
     .data-table tbody td.num { text-align: right; font-variant-numeric: tabular-nums; }
     .data-table tbody tr { transition: background .12s ease; }
-    .data-table tbody tr:hover { background: #FAFAF7; cursor: pointer; }
+    .data-table tbody tr:hover { background: #f7f7f7; cursor: pointer; }
     .data-table tbody tr:last-child td { border-bottom: 0; }
 
-    .oauth-badge { display: inline-flex; align-items: center; gap: .3rem; padding: 1px 7px; font-size: 11px; border: 1px solid #E5E1D5; border-radius: 3px; color: #4B5563; background: #FAFAF7; }
-    .job-badge { display: inline-block; padding: 1px 7px; font-size: 11px; border-radius: 3px; background: #F3F4F6; color: #4B5563; }
+    /* badges */
+    .badge { display: inline-block; padding: 1px 7px; font-size: 11px; border: 1px solid #e5e8eb; border-radius: 3px; color: #4B5563; background: #f7f7f7; line-height: 1.5; }
+    .badge-blue { background: #e8f3ff; color: #3182f6; border-color: transparent; font-weight: 600; }
+    .badge-green { background: #ECFDF5; color: #065F46; border-color: transparent; font-weight: 500; }
+    .badge-amber { background: #fef3c7; color: #92400e; border-color: transparent; font-weight: 500; }
+    .badge-red { background: #fee2e2; color: #991b1b; border-color: transparent; font-weight: 500; }
+    .badge-gray { background: #f2f4f6; color: #6B7280; border-color: transparent; font-weight: 500; }
 
-    .ic-btn { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border: 1px solid #E5E1D5; border-radius: 4px; background: #fff; transition: background .15s; }
-    .ic-btn:hover { background: #FAFAF7; }
+    /* buttons */
+    .ic-btn { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border: 1px solid #e5e8eb; border-radius: 6px; background: #fff; transition: background .15s; cursor: pointer; }
+    .ic-btn:hover { background: #f7f7f7; }
     .ic-btn .lucide { width: 14px; height: 14px; color: #4B5563; }
+    .btn-primary { display: inline-flex; align-items: center; gap: .4rem; padding: .45rem .85rem; font-size: 13px; font-weight: 600; color: #fff; background: #3182f6; border-radius: 6px; transition: background .15s; cursor: pointer; border: none; }
+    .btn-primary:hover { background: #1b64da; }
+    .btn-ghost { display: inline-flex; align-items: center; gap: .4rem; padding: .45rem .85rem; font-size: 13px; font-weight: 500; color: #4B5563; background: #fff; border: 1px solid #e5e8eb; border-radius: 6px; transition: background .15s; cursor: pointer; }
+    .btn-ghost:hover { background: #f7f7f7; }
 
-    /* slide panel */
-    .slide-panel { position: fixed; top: 0; right: 0; width: 400px; height: 100vh; background: #fff; border-left: 1px solid #E5E1D5; box-shadow: -4px 0 24px rgba(0,0,0,.06); z-index: 50; overflow-y: auto; }
-    .slide-panel-head { padding: 1rem 1.2rem; border-bottom: 1px solid #E5E1D5; display: flex; align-items: center; justify-content: space-between; }
-    .slide-section { padding: 1rem 1.2rem; border-bottom: 1px solid #F1EEE4; }
-    .slide-label { font-size: 11.5px; color: #9CA3AF; font-weight: 500; letter-spacing: .06em; text-transform: uppercase; margin-bottom: .5rem; }
+    /* bell */
+    .bell-btn { position: relative; display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; border: 1px solid #e5e8eb; border-radius: 6px; background: #fff; cursor: pointer; }
+    .bell-btn:hover { background: #f7f7f7; }
+    .bell-btn .lucide { width: 15px; height: 15px; color: #4B5563; }
+    .bell-dot { position: absolute; top: -5px; right: -5px; min-width: 15px; height: 15px; padding: 0 3px; border-radius: 999px; background: #3182f6; color: #fff; font-size: 9px; font-weight: 700; display: flex; align-items: center; justify-content: center; }
+
+    /* guardrail / progress bars */
+    .bar-track { height: 6px; border-radius: 999px; background: #f2f4f6; overflow: hidden; }
+    .bar-fill { height: 100%; border-radius: 999px; background: #3182f6; }
+    .bar-fill.warn { background: #f59e0b; }
+    .bar-fill.danger { background: #dc2626; }
+
+    /* users-specific (re-themed to new tokens) */
+    .oauth-badge { display: inline-flex; align-items: center; gap: .3rem; padding: 1px 7px; font-size: 11px; border: 1px solid #e5e8eb; border-radius: 3px; color: #4B5563; background: #f7f7f7; }
+    .job-badge { display: inline-block; padding: 1px 7px; font-size: 11px; border-radius: 3px; background: #f2f4f6; color: #4B5563; }
+
+    /* slide-over panel (NOT an <aside> — must survive iframe sidebar-hide) */
+    .slide-backdrop { position: fixed; inset: 0; background: rgba(10,10,10,.28); z-index: 40; opacity: 0; transition: opacity .2s ease; }
+    .slide-panel { position: fixed; top: 0; right: 0; width: 380px; max-width: 92vw; height: 100vh; background: #fff; border-left: 1px solid #e5e8eb; box-shadow: -4px 0 24px rgba(0,0,0,.08); z-index: 50; overflow-y: auto; transform: translateX(100%); transition: transform .25s ease; }
+    .slide-panel.open { transform: translateX(0); }
+    .slide-panel-head { position: sticky; top: 0; background: #fff; padding: 1rem 1.2rem; border-bottom: 1px solid #e5e8eb; display: flex; align-items: center; justify-content: space-between; z-index: 1; }
+    .slide-section { padding: 1rem 1.2rem; border-bottom: 1px solid #f2f4f6; }
+    .slide-label { font-size: 11.5px; color: #8b95a1; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; margin-bottom: .6rem; }
+    .slide-input { width: 100%; font-size: 13px; padding: .45rem .6rem; border: 1px solid #e5e8eb; border-radius: 6px; background: #fff; }
+    .slide-input:focus { outline: none; border-color: #3182f6; }
+    .tl-dot { width: 7px; height: 7px; border-radius: 999px; background: #3182f6; flex-shrink: 0; margin-top: 5px; }
   </style>
 </head>
 
 <body class="bg-paper text-ink">
   <div class="flex min-h-screen">
 
-    <!-- Sidebar -->
-    <aside class="w-[220px] shrink-0 border-r border-line bg-white flex flex-col">
-      <div class="h-14 flex items-center px-4 border-b border-line">
-        <a href="../user/index.html" class="flex items-center gap-2 no-underline">
-          <div class="w-6 h-6 rounded-sm bg-ink flex items-center justify-center text-white text-[10px] font-bold tracking-wider">CL</div>
-          <span class="font-bold text-[14px]">케이스랩</span>
-          <span class="text-[10px] text-gray-400 font-medium tracking-wider">ADMIN</span></a>
+    <!-- ════════ CANONICAL SIDEBAR (D60 5 카테고리) — active만 페이지별로 변경 ════════ -->
+    <aside class="w-[232px] shrink-0 border-r border-line bg-white flex flex-col">
+      <div class="h-14 flex items-center gap-2 px-4 border-b border-line">
+        <a href="../user/index.html" class="flex items-center gap-1.5 no-underline flex-1 min-w-0">
+          <span class="logo-text">Caselab</span>
+          <span class="text-[10px] text-muted font-semibold tracking-wider">ADMIN</span>
+        </a>
+        <div class="relative">
+          <button class="bell-btn" id="bellBtn" title="알림"><i data-lucide="bell"></i><span class="bell-dot">5</span></button>
+          <div class="hidden absolute right-0 top-9 w-72 bg-white border border-line rounded-lg shadow-xl z-50 overflow-hidden" id="bellMenu">
+            <div class="px-3.5 py-2.5 border-b border-line text-[12.5px] font-semibold flex justify-between items-center">알림 <a href="history.html" class="text-[11px] text-brand no-underline">전체</a></div>
+            <a href="opinions.html" class="flex gap-2.5 px-3.5 py-2.5 border-b border-soft text-[12.5px] text-gray-800 no-underline hover:bg-paper"><i data-lucide="message-square" class="w-4 h-4 text-brand shrink-0 mt-px"></i>답장 안 한 의견 <b>12건</b><span class="ml-auto text-[11px] text-muted">방금</span></a>
+            <a href="comments.html" class="flex gap-2.5 px-3.5 py-2.5 border-b border-soft text-[12.5px] text-gray-800 no-underline hover:bg-paper"><i data-lucide="flag" class="w-4 h-4 text-amber-600 shrink-0 mt-px"></i>신고 댓글 <b>2건</b><span class="ml-auto text-[11px] text-muted">1시간</span></a>
+            <a href="ebooks.html" class="flex gap-2.5 px-3.5 py-2.5 border-b border-soft text-[12.5px] text-gray-800 no-underline hover:bg-paper"><i data-lucide="alert-triangle" class="w-4 h-4 text-red-600 shrink-0 mt-px"></i>발송 실패 <b>1건</b><span class="ml-auto text-[11px] text-muted">2시간</span></a>
+            <a href="topics.html" class="flex gap-2.5 px-3.5 py-2.5 text-[12.5px] text-gray-800 no-underline hover:bg-paper"><i data-lucide="lightbulb" class="w-4 h-4 text-brand shrink-0 mt-px"></i>열린 후보 <b>4건</b><span class="ml-auto text-[11px] text-muted">오늘</span></a>
+          </div>
         </div>
       </div>
-      <nav class="flex-1 px-2 py-3 overflow-y-auto">
-        <div class="nav-section">운영</div>
-        <a class="nav-item" href="index.html"><i data-lucide="file-text"></i>콘텐츠</a>
-        <a class="nav-item" href="analytics.html"><i data-lucide="bar-chart-2"></i>분석</a>
-        <a class="nav-item active" href="users.html"><i data-lucide="users"></i>가입자</a>
+      <nav class="flex-1 py-2 overflow-y-auto">
+        <div class="nav-section">분석</div>
+        <a class="nav-item" href="dashboard.html"><i data-lucide="layout-dashboard"></i>대시보드</a>
+        <a class="nav-item" href="analytics.html"><i data-lucide="bar-chart-2"></i>상세 분석</a>
+        <a class="nav-item" href="utm.html"><i data-lucide="link"></i>유입 (UTM)</a>
+        <a class="nav-item" href="analytics-search.html"><i data-lucide="search"></i>검색 키워드</a>
+        <div class="nav-section">콘텐츠</div>
+        <a class="nav-item" href="index.html"><i data-lucide="file-text"></i>콘텐츠 목록<span class="nav-badge">3</span></a>
+        <a class="nav-item" href="new.html"><i data-lucide="plus-square"></i>새 콘텐츠</a>
+        <a class="nav-item" href="curation.html"><i data-lucide="layout-grid"></i>큐레이션</a>
+        <a class="nav-item" href="categories.html"><i data-lucide="tags"></i>카테고리·태그</a>
+        <a class="nav-item" href="topics.html"><i data-lucide="lightbulb"></i>후보 카드<span class="nav-badge">4</span></a>
+        <a class="nav-item" href="comments.html"><i data-lucide="message-circle"></i>댓글 모더레이션<span class="nav-badge nav-badge-warn">2</span></a>
+        <a class="nav-item" href="tools.html"><i data-lucide="wrench"></i>자료실</a>
         <a class="nav-item" href="ebooks.html"><i data-lucide="book"></i>전자책</a>
-        <a class="nav-item" href="tools.html"><i data-lucide="wrench"></i>도구 관리</a>
-        <div class="nav-section">소통</div>
-        <a class="nav-item" href="topics.html"><i data-lucide="lightbulb"></i>후보 카드</a>
-        <a class="nav-item" href="opinions.html"><i data-lucide="message-square"></i>의견함 <span class="ml-auto text-[10.5px] font-medium text-indigo-brand bg-[#EEF2FF] px-1.5 py-0.5 rounded-sm">12</span></a>
+        <div class="nav-section">회원관리</div>
+        <a class="nav-item active" href="users.html"><i data-lucide="users"></i>가입자</a>
+        <a class="nav-item" href="users-invite.html"><i data-lucide="user-plus"></i>editor 초대</a>
+        <a class="nav-item" href="opinions.html"><i data-lucide="message-square"></i>의견함<span class="nav-badge">12</span></a>
+        <a class="nav-item" href="support.html"><i data-lucide="life-buoy"></i>1:1 문의<span class="nav-badge">3</span></a>
+        <a class="nav-item" href="faq.html"><i data-lucide="help-circle"></i>FAQ</a>
+        <a class="nav-item" href="newsletters.html"><i data-lucide="mail"></i>뉴스레터</a>
+        <div class="nav-section">매출</div>
+        <a class="nav-item" href="revenue.html"><i data-lucide="trending-up"></i>수익 대시보드</a>
+        <a class="nav-item" href="ebooks.html"><i data-lucide="package"></i>주문·발송</a>
+        <div class="nav-section">운영</div>
+        <a class="nav-item" href="history.html"><i data-lucide="history"></i>History</a>
+        <a class="nav-item" href="settings.html"><i data-lucide="settings"></i>설정</a>
       </nav>
       <div class="border-t border-line px-3 py-3 flex items-center gap-2.5">
         <div class="w-7 h-7 rounded-full bg-soft border border-line flex items-center justify-center text-[11px] font-semibold text-gray-700">주</div>
         <div class="min-w-0">
           <div class="text-[12.5px] font-medium truncate">김주희</div>
-          <div class="text-[10.5px] text-gray-500 truncate">운영자</div>
+          <div class="text-[10.5px] text-muted truncate">운영자 (admin)</div>
         </div>
         <button class="ml-auto ic-btn" title="설정"><i data-lucide="more-horizontal"></i></button>
       </div>
     </aside>
 
-    <!-- Main -->
+    <!-- ════════ MAIN ════════ -->
     <main class="flex-1 min-w-0">
 
       <header class="h-14 border-b border-line bg-white flex items-center px-6 gap-3">
-        <h1 class="text-[15px] font-semibold">가입자</h1>
-        <span class="text-[12.5px] text-gray-400">/ 유저 목록 + 행동 분석</span>
+        <h1 class="text-[15px] font-extrabold">가입자</h1>
+        <span class="text-[12.5px] text-muted">/ 유저 목록 + 행동 분석</span>
         <div class="ml-auto flex items-center gap-2">
           <div class="relative">
-            <i data-lucide="search" class="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400"></i>
-            <input type="text" placeholder="이름 · 이메일 검색" class="text-[12.5px] pl-8 pr-3 py-1.5 border border-line rounded-sm bg-white focus:outline-none focus:border-indigo-brand w-52" />
+            <i data-lucide="search" class="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted"></i>
+            <input type="text" placeholder="이름 · 이메일 검색" class="text-[12.5px] pl-8 pr-3 py-1.5 border border-line rounded-md bg-white focus:outline-none focus:border-brand w-52" />
           </div>
           <button class="ic-btn" title="직무 필터"><i data-lucide="filter"></i></button>
           <button class="ic-btn" title="CSV 내보내기"><i data-lucide="download"></i></button>
@@ -132,11 +205,11 @@
           </div>
           <div class="kpi-card">
             <div class="kpi-label">Google 로그인</div>
-            <div class="kpi-value">814 <span class="text-[14px] text-gray-400">65%</span></div>
+            <div class="kpi-value">814 <span class="text-[14px] text-muted">65%</span></div>
           </div>
           <div class="kpi-card">
             <div class="kpi-label">Kakao 로그인</div>
-            <div class="kpi-value">433 <span class="text-[14px] text-gray-400">35%</span></div>
+            <div class="kpi-value">433 <span class="text-[14px] text-muted">35%</span></div>
           </div>
         </section>
 
@@ -156,7 +229,7 @@
               </tr>
             </thead>
             <tbody>
-              <tr>
+              <tr class="user-row" data-name="박지현">
                 <td class="font-medium">박지현</td>
                 <td class="text-[12.5px] text-gray-600">jihyun.park@gmail.com</td>
                 <td><span class="job-badge">기획·마케팅·운영</span></td>
@@ -166,7 +239,7 @@
                 <td class="num">87</td>
                 <td class="text-gray-600 text-[12.5px]">3시간 전</td>
               </tr>
-              <tr>
+              <tr class="user-row" data-name="이민준">
                 <td class="font-medium">이민준</td>
                 <td class="text-[12.5px] text-gray-600">minjun.lee@company.co.kr</td>
                 <td><span class="job-badge">전략·분석</span></td>
@@ -176,7 +249,7 @@
                 <td class="num">62</td>
                 <td class="text-gray-600 text-[12.5px]">1일 전</td>
               </tr>
-              <tr>
+              <tr class="user-row" data-name="김소연">
                 <td class="font-medium">김소연</td>
                 <td class="text-[12.5px] text-gray-600">soyeon.kim@naver.com</td>
                 <td><span class="job-badge">1인사업</span></td>
@@ -186,7 +259,7 @@
                 <td class="num">104</td>
                 <td class="text-gray-600 text-[12.5px]">5시간 전</td>
               </tr>
-              <tr>
+              <tr class="user-row" data-name="최현수">
                 <td class="font-medium">최현수</td>
                 <td class="text-[12.5px] text-gray-600">hyunsu.choi@corp.com</td>
                 <td><span class="job-badge">영업</span></td>
@@ -196,7 +269,7 @@
                 <td class="num">38</td>
                 <td class="text-gray-600 text-[12.5px]">3일 전</td>
               </tr>
-              <tr>
+              <tr class="user-row" data-name="정다은">
                 <td class="font-medium">정다은</td>
                 <td class="text-[12.5px] text-gray-600">daeun.j@startup.io</td>
                 <td><span class="job-badge">기획·마케팅·운영</span></td>
@@ -206,10 +279,10 @@
                 <td class="num">53</td>
                 <td class="text-gray-600 text-[12.5px]">12시간 전</td>
               </tr>
-              <tr>
+              <tr class="user-row" data-name="한서윤">
                 <td class="font-medium text-gray-500">한서윤</td>
                 <td class="text-[12.5px] text-gray-400">seoyun.h@gmail.com</td>
-                <td><span class="job-badge" style="background:#FAFAF7;color:#9CA3AF">미응답</span></td>
+                <td><span class="job-badge" style="background:#f7f7f7;color:#8b95a1">미응답</span></td>
                 <td><span class="oauth-badge">Google</span></td>
                 <td class="text-gray-600 text-[12.5px]">2026-05-24</td>
                 <td class="num text-gray-400">0</td>
@@ -230,86 +303,142 @@
         </section>
       </div>
     </main>
+  </div>
 
-    <!-- Slide Panel: User Detail -->
-    <div class="slide-panel">
-      <div class="slide-panel-head">
-        <h2 class="text-[14px] font-semibold">박지현</h2>
-        <button class="ic-btn" title="닫기"><i data-lucide="x"></i></button>
+  <!-- ════════ SLIDE-OVER PANEL — 사용자 상세 (계획서 §7.3.4 D6) ════════ -->
+  <!-- NOTE: <div> NOT <aside> — iframe sidebar-hide만 첫 aside를 숨기므로 패널은 div로 둔다 -->
+  <div class="slide-backdrop hidden" id="userBackdrop"></div>
+  <div class="slide-panel hidden" id="userPanel">
+    <div class="slide-panel-head">
+      <div class="flex items-center gap-2.5 min-w-0">
+        <div class="w-8 h-8 rounded-full bg-soft border border-line flex items-center justify-center text-[12px] font-semibold text-gray-700" id="upAvatar">박</div>
+        <h2 class="text-[14px] font-bold truncate" id="upName">박지현</h2>
       </div>
+      <button class="ic-btn" title="닫기" id="userPanelClose"><i data-lucide="x"></i></button>
+    </div>
 
-      <div class="slide-section">
-        <div class="slide-label">프로필</div>
-        <div class="space-y-2 text-[13px]">
-          <div class="flex justify-between"><span class="text-gray-500">이메일</span><span>jihyun.park@gmail.com</span></div>
-          <div class="flex justify-between"><span class="text-gray-500">가입일</span><span>2026-04-12</span></div>
-          <div class="flex justify-between"><span class="text-gray-500">로그인</span><span>Google</span></div>
-          <div class="flex justify-between"><span class="text-gray-500">직무</span><span>기획·마케팅·운영</span></div>
-          <div class="flex justify-between"><span class="text-gray-500">분석 동의</span><span class="text-green-700">동의</span></div>
+    <!-- 프로필 기본 -->
+    <div class="slide-section">
+      <div class="slide-label">프로필</div>
+      <div class="space-y-2 text-[13px]">
+        <div class="flex justify-between"><span class="text-gray-500">이메일</span><span id="upEmail">jihyun.park@gmail.com</span></div>
+        <div class="flex justify-between"><span class="text-gray-500">OAuth provider</span><span class="oauth-badge" id="upProvider">Google</span></div>
+        <div class="flex justify-between"><span class="text-gray-500">가입일</span><span id="upJoined">2026-04-12</span></div>
+        <div class="flex justify-between"><span class="text-gray-500">persona</span><span class="badge badge-blue" id="upPersona">A · 마케팅</span></div>
+      </div>
+    </div>
+
+    <!-- persona 수동 override -->
+    <div class="slide-section">
+      <div class="slide-label">Persona 수동 override</div>
+      <div class="flex items-center gap-2">
+        <select class="slide-input flex-1" id="upPersonaSelect">
+          <option value="A">A · 마케팅</option>
+          <option value="B">B · 전략·분석</option>
+          <option value="C">C · 1인 사업</option>
+          <option value="D">D · 영업</option>
+          <option value="E">E · 스타트업</option>
+        </select>
+        <button class="btn-primary"><i data-lucide="check" class="w-3.5 h-3.5"></i>저장</button>
+      </div>
+      <p class="text-[11px] text-muted mt-1.5">자동 분류를 운영자가 직접 덮어씁니다.</p>
+    </div>
+
+    <!-- admin_note 운영자 메모 -->
+    <div class="slide-section">
+      <div class="slide-label">운영자 메모 (admin_note)</div>
+      <textarea class="slide-input" rows="3" placeholder="이 사용자에 대한 내부 메모…">마케팅 직군, 저장률 높음. 뉴스레터 반응 좋은 편.</textarea>
+      <div class="flex justify-end mt-2">
+        <button class="btn-ghost"><i data-lucide="save" class="w-3.5 h-3.5"></i>메모 저장</button>
+      </div>
+    </div>
+
+    <!-- 행동 timeline -->
+    <div class="slide-section">
+      <div class="slide-label">행동 timeline (조회·복사·저장)</div>
+      <div class="space-y-3">
+        <div class="flex gap-2.5 text-[13px]"><span class="tl-dot"></span><div><div><b>저장</b> · 기획서 첫 페이지가 안 풀릴 때</div><div class="text-[11.5px] text-muted">5/26 14:32</div></div></div>
+        <div class="flex gap-2.5 text-[13px]"><span class="tl-dot" style="background:#8b95a1"></span><div><div><b>복사</b> · 경쟁사 분석 프롬프트</div><div class="text-[11.5px] text-muted">5/25 09:18</div></div></div>
+        <div class="flex gap-2.5 text-[13px]"><span class="tl-dot" style="background:#cbd2d9"></span><div><div><b>조회</b> · Claude 메모리 1주일 실험</div><div class="text-[11.5px] text-muted">5/24 21:05</div></div></div>
+        <div class="flex gap-2.5 text-[13px]"><span class="tl-dot" style="background:#cbd2d9"></span><div><div><b>조회</b> · 윗사람 톤에 안 맞는 결과물</div><div class="text-[11.5px] text-muted">5/24 18:40</div></div></div>
+      </div>
+      <button class="text-[12px] text-brand font-medium mt-3">전체 활동 보기 →</button>
+    </div>
+
+    <!-- 구매 이력 (전자책 주문) -->
+    <div class="slide-section">
+      <div class="slide-label">구매 이력 · 전자책 주문 (1)</div>
+      <div class="flex items-start justify-between text-[13px]">
+        <div>
+          <div class="font-medium">베스트 케이스 모음 Vol.1</div>
+          <div class="text-[11.5px] text-muted">무료 · <span class="badge badge-green">발송 완료</span></div>
         </div>
+        <span class="text-[11.5px] text-muted whitespace-nowrap ml-3">5/13</span>
       </div>
+    </div>
 
-      <div class="slide-section">
-        <div class="slide-label">저장한 콘텐츠 (24)</div>
-        <div class="space-y-2.5">
-          <div class="flex items-start justify-between text-[13px]">
-            <div>
-              <div class="font-medium">기획서 첫 페이지가 안 풀릴 때</div>
-              <div class="text-[11.5px] text-gray-400">실전 케이스 · 기획 · #01</div>
-            </div>
-            <span class="text-[11.5px] text-gray-400 whitespace-nowrap ml-3">5/22</span>
-          </div>
-          <div class="flex items-start justify-between text-[13px]">
-            <div>
-              <div class="font-medium">경쟁사 분석, AI가 표면만 긁고 끝나는 이유</div>
-              <div class="text-[11.5px] text-gray-400">실전 케이스 · 마케팅 · #02</div>
-            </div>
-            <span class="text-[11.5px] text-gray-400 whitespace-nowrap ml-3">5/19</span>
-          </div>
-          <div class="flex items-start justify-between text-[13px]">
-            <div>
-              <div class="font-medium">Claude 메모리 기능, 1주일 실험</div>
-              <div class="text-[11.5px] text-gray-400">AI 트렌드 · #21</div>
-            </div>
-            <span class="text-[11.5px] text-gray-400 whitespace-nowrap ml-3">5/21</span>
-          </div>
+    <!-- 의견·댓글 작성 이력 -->
+    <div class="slide-section">
+      <div class="slide-label">의견·댓글 작성 이력 (3)</div>
+      <div class="space-y-2.5 text-[13px]">
+        <div class="flex items-start justify-between">
+          <div><span class="badge badge-blue">의견</span> 프롬프트 더 짧게 정리해주세요</div>
+          <span class="text-[11.5px] text-muted whitespace-nowrap ml-3">5/20</span>
         </div>
-        <button class="text-[12px] text-indigo-brand font-medium mt-3">전체 보기 →</button>
-      </div>
-
-      <div class="slide-section">
-        <div class="slide-label">최근 조회 (87)</div>
-        <div class="space-y-2.5">
-          <div class="flex items-start justify-between text-[13px]">
-            <div class="font-medium">기획서 첫 페이지가 안 풀릴 때</div>
-            <span class="text-[11.5px] text-gray-400 whitespace-nowrap ml-3">5/26 14:32</span>
-          </div>
-          <div class="flex items-start justify-between text-[13px]">
-            <div class="font-medium">윗사람 톤에 안 맞는 결과물</div>
-            <span class="text-[11.5px] text-gray-400 whitespace-nowrap ml-3">5/25 09:18</span>
-          </div>
-          <div class="flex items-start justify-between text-[13px]">
-            <div class="font-medium">Claude 메모리 기능, 1주일 실험</div>
-            <span class="text-[11.5px] text-gray-400 whitespace-nowrap ml-3">5/24 21:05</span>
-          </div>
+        <div class="flex items-start justify-between">
+          <div><span class="badge badge-gray">댓글</span> 이 케이스 진짜 도움 됐어요</div>
+          <span class="text-[11.5px] text-muted whitespace-nowrap ml-3">5/18</span>
         </div>
-        <button class="text-[12px] text-indigo-brand font-medium mt-3">전체 보기 →</button>
-      </div>
-
-      <div class="slide-section">
-        <div class="slide-label">전자책 주문 (1)</div>
-        <div class="flex items-start justify-between text-[13px]">
-          <div>
-            <div class="font-medium">베스트 케이스 모음 Vol.1</div>
-            <div class="text-[11.5px] text-gray-400">무료 · 발송 완료</div>
-          </div>
-          <span class="text-[11.5px] text-gray-400 whitespace-nowrap ml-3">5/13</span>
+        <div class="flex items-start justify-between">
+          <div><span class="badge badge-gray">댓글</span> 다음 편도 기대합니다</div>
+          <span class="text-[11.5px] text-muted whitespace-nowrap ml-3">5/11</span>
         </div>
       </div>
     </div>
 
+    <!-- 활동 로그(audit) 일부 -->
+    <div class="slide-section">
+      <div class="slide-label">활동 로그 (audit)</div>
+      <div class="space-y-2.5 text-[12.5px]">
+        <div class="flex gap-2.5"><i data-lucide="log-in" class="w-4 h-4 text-brand shrink-0 mt-px"></i><div>Google 로그인<div class="text-[11px] text-muted">5/26 14:30 · IP 211.xx.xx.10</div></div></div>
+        <div class="flex gap-2.5"><i data-lucide="user-check" class="w-4 h-4 text-green-600 shrink-0 mt-px"></i><div>persona override → A (by 김주희)<div class="text-[11px] text-muted">5/15 11:02</div></div></div>
+        <div class="flex gap-2.5"><i data-lucide="mail" class="w-4 h-4 text-muted shrink-0 mt-px"></i><div>뉴스레터 구독 동의<div class="text-[11px] text-muted">4/12 09:20</div></div></div>
+      </div>
+    </div>
   </div>
 
-  <script>lucide.createIcons();if(window!==window.top){const sb=document.querySelector("aside");if(sb)sb.style.display="none";}</script>
+  <!-- ════════ CANONICAL FOOTER JS (+ users page scripts merged) ════════ -->
+  <script>
+    lucide.createIcons();
+    // iframe(master.html) 안에서는 자체 사이드바 숨김 (첫 aside만)
+    if (window !== window.top) { const sb = document.querySelector('aside'); if (sb) sb.style.display = 'none'; }
+    // bell dropdown (standalone 보기용)
+    const bb = document.getElementById('bellBtn'), bm = document.getElementById('bellMenu');
+    if (bb && bm) { bb.addEventListener('click', e => { e.stopPropagation(); bm.classList.toggle('hidden'); }); document.addEventListener('click', () => bm.classList.add('hidden')); }
+
+    // ── 사용자 슬라이드 패널 ──
+    const panel = document.getElementById('userPanel');
+    const backdrop = document.getElementById('userBackdrop');
+    function openUserPanel(name) {
+      if (name) {
+        document.getElementById('upName').textContent = name;
+        document.getElementById('upAvatar').textContent = name.charAt(0);
+      }
+      backdrop.classList.remove('hidden');
+      panel.classList.remove('hidden');
+      requestAnimationFrame(() => { backdrop.style.opacity = '1'; panel.classList.add('open'); });
+    }
+    function closeUserPanel() {
+      backdrop.style.opacity = '0';
+      panel.classList.remove('open');
+      setTimeout(() => { backdrop.classList.add('hidden'); panel.classList.add('hidden'); }, 250);
+    }
+    document.querySelectorAll('.user-row').forEach(row => {
+      row.addEventListener('click', () => openUserPanel(row.dataset.name));
+    });
+    document.getElementById('userPanelClose').addEventListener('click', closeUserPanel);
+    backdrop.addEventListener('click', closeUserPanel);
+    document.addEventListener('keydown', e => { if (e.key === 'Escape') closeUserPanel(); });
+  </script>
 </body>
 </html>

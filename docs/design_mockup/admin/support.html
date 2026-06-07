@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>콘텐츠 관리 — 케이스랩 admin</title>
+  <title>1:1 문의 — 케이스랩 admin</title>
 
   <script src="https://cdn.tailwindcss.com"></script>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.min.css" />
@@ -101,12 +101,21 @@
     .bar-fill.warn { background: #f59e0b; }
     .bar-fill.danger { background: #dc2626; }
 
-    /* ── page-specific (콘텐츠 목록) ── */
-    .track-badge { display: inline-block; padding: 1px 7px; font-size: 11px; border: 1px solid #e5e8eb; border-radius: 3px; color: #4B5563; background: #f7f7f7; line-height: 1.5; }
-    .status-published { display: inline-block; padding: 1px 7px; font-size: 11px; border-radius: 3px; background: #ECFDF5; color: #065F46; font-weight: 500; }
-    .status-draft { display: inline-block; padding: 1px 7px; font-size: 11px; border-radius: 3px; background: #F3F4F6; color: #6B7280; font-weight: 500; }
-    .star-on { color: #F59E0B; }
-    .star-off { color: #D1D5DB; }
+    /* status tabs */
+    .tab { display: inline-flex; align-items: center; gap: .4rem; padding: .5rem .9rem; font-size: 13px; font-weight: 500; color: #4B5563; border-bottom: 2px solid transparent; cursor: pointer; transition: color .15s, border-color .15s; }
+    .tab:hover { color: #0A0A0A; }
+    .tab.active { color: #3182f6; font-weight: 600; border-bottom-color: #3182f6; }
+    .tab .tab-count { font-size: 10.5px; font-weight: 700; padding: 0 6px; border-radius: 999px; background: #e8f3ff; color: #3182f6; }
+
+    /* ticket list */
+    .ticket-item { padding: .9rem 1.2rem; border-bottom: 1px solid #f2f4f6; cursor: pointer; transition: background .12s; }
+    .ticket-item:hover { background: #f7f7f7; }
+    .ticket-item.active { background: #f5faff; border-left: 3px solid #3182f6; padding-left: calc(1.2rem - 3px); }
+    .ticket-item:last-child { border-bottom: 0; }
+
+    /* reply textarea */
+    .reply-area { width: 100%; min-height: 120px; padding: .75rem .85rem; font-size: 13.5px; border: 1px solid #e5e8eb; border-radius: 6px; resize: vertical; outline: none; transition: border-color .15s; font-family: inherit; }
+    .reply-area:focus { border-color: #3182f6; }
   </style>
 </head>
 
@@ -138,7 +147,7 @@
         <a class="nav-item" href="utm.html"><i data-lucide="link"></i>유입 (UTM)</a>
         <a class="nav-item" href="analytics-search.html"><i data-lucide="search"></i>검색 키워드</a>
         <div class="nav-section">콘텐츠</div>
-        <a class="nav-item active" href="index.html"><i data-lucide="file-text"></i>콘텐츠 목록<span class="nav-badge">3</span></a>
+        <a class="nav-item" href="index.html"><i data-lucide="file-text"></i>콘텐츠 목록<span class="nav-badge">3</span></a>
         <a class="nav-item" href="new.html"><i data-lucide="plus-square"></i>새 콘텐츠</a>
         <a class="nav-item" href="curation.html"><i data-lucide="layout-grid"></i>큐레이션</a>
         <a class="nav-item" href="categories.html"><i data-lucide="tags"></i>카테고리·태그</a>
@@ -150,7 +159,7 @@
         <a class="nav-item" href="users.html"><i data-lucide="users"></i>가입자</a>
         <a class="nav-item" href="users-invite.html"><i data-lucide="user-plus"></i>editor 초대</a>
         <a class="nav-item" href="opinions.html"><i data-lucide="message-square"></i>의견함<span class="nav-badge">12</span></a>
-        <a class="nav-item" href="support.html"><i data-lucide="life-buoy"></i>1:1 문의<span class="nav-badge">3</span></a>
+        <a class="nav-item active" href="support.html"><i data-lucide="life-buoy"></i>1:1 문의<span class="nav-badge">3</span></a>
         <a class="nav-item" href="faq.html"><i data-lucide="help-circle"></i>FAQ</a>
         <a class="nav-item" href="newsletters.html"><i data-lucide="mail"></i>뉴스레터</a>
         <div class="nav-section">매출</div>
@@ -170,175 +179,103 @@
       </div>
     </aside>
 
-    <!-- Main -->
+    <!-- ════════ MAIN ════════ -->
     <main class="flex-1 min-w-0">
-
-      <!-- Top bar -->
       <header class="h-14 border-b border-line bg-white flex items-center px-6 gap-3">
-        <h1 class="text-[15px] font-semibold">콘텐츠</h1>
-        <span class="text-[12.5px] text-gray-400">/ 작성·발행·큐레이션 관리</span>
+        <h1 class="text-[15px] font-extrabold">1:1 문의</h1>
+        <span class="text-[12.5px] text-muted">/ 사용자 문의 답변 (Brevo 발송)</span>
         <div class="ml-auto flex items-center gap-2">
-          <div class="relative">
-            <i data-lucide="search" class="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400"></i>
-            <input type="text" placeholder="제목 검색" class="text-[12.5px] pl-8 pr-3 py-1.5 border border-line rounded-sm bg-white focus:outline-none focus:border-brand w-44" />
-          </div>
-          <button class="ic-btn" title="필터"><i data-lucide="filter"></i></button>
-          <a href="new.html" class="btn-primary"><i data-lucide="plus" class="w-3.5 h-3.5"></i>새 콘텐츠</a>
+          <button class="btn-ghost"><i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i>새로고침</button>
         </div>
       </header>
 
-      <!-- Body -->
-      <div class="p-6">
+      <div class="p-6 space-y-5">
 
-        <!-- Filter tabs -->
-        <div class="flex items-center gap-1 mb-4 text-[13px]">
-          <button class="filter-tab px-3 py-1.5 rounded-sm font-medium bg-ink text-white" data-filter="all">전체 <span class="text-gray-400 ml-1">12</span></button>
-          <button class="filter-tab px-3 py-1.5 rounded-sm text-gray-600 hover:bg-soft" data-filter="published">발행 <span class="text-gray-400 ml-1">9</span></button>
-          <button class="filter-tab px-3 py-1.5 rounded-sm text-gray-600 hover:bg-soft" data-filter="draft">초안 <span class="text-gray-400 ml-1">3</span></button>
-          <button class="filter-tab px-3 py-1.5 rounded-sm text-gray-600 hover:bg-soft" data-filter="curated">큐레이션 <span class="text-gray-400 ml-1">2</span></button>
+        <!-- 상태 탭 -->
+        <div class="flex items-center gap-1 border-b border-line">
+          <span class="tab active"><i data-lucide="inbox" class="w-3.5 h-3.5"></i>대기 <span class="tab-count">3</span></span>
+          <span class="tab"><i data-lucide="check" class="w-3.5 h-3.5"></i>답변완료</span>
+          <span class="tab"><i data-lucide="archive" class="w-3.5 h-3.5"></i>종결</span>
         </div>
 
-        <section class="panel">
-          <table class="data-table">
-            <thead>
-              <tr>
-                <th style="width:36px"></th>
-                <th>제목</th>
-                <th>트랙</th>
-                <th>상태</th>
-                <th>발행일</th>
-                <th class="num">조회</th>
-                <th class="num">저장</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody>
-              <!-- Row 1: 실전 케이스 · 기획 -->
-              <tr data-track="case" data-cat="기획" data-status="published" data-curated="1">
-                <td class="text-center"><i data-lucide="star" class="w-3.5 h-3.5 star-on fill-current"></i></td>
-                <td>
-                  <div class="font-medium text-[13.5px]">기획서 첫 페이지가 안 풀릴 때 — '의도' 던지는 5단계</div>
-                  <div class="text-[11.5px] text-gray-500 mt-0.5">기획 · #01 · <span class="text-gray-400">caselab.kr/cases/planning-intent-5steps</span></div>
-                </td>
-                <td><span class="track-badge">실전 케이스</span></td>
-                <td><span class="status-published">발행</span></td>
-                <td class="text-gray-600 text-[12.5px] whitespace-nowrap">2026-05-22</td>
-                <td class="num font-medium">8,432</td>
-                <td class="num">412</td>
-                <td>
-                  <div class="flex items-center gap-1">
-                    <button class="ic-btn" title="수정"><i data-lucide="pencil"></i></button>
-                    <button class="ic-btn" title="더보기"><i data-lucide="more-horizontal"></i></button>
-                  </div>
-                </td>
-              </tr>
-              <!-- Row 2: AI 트렌드 -->
-              <tr data-track="trend" data-cat="" data-status="published" data-curated="1">
-                <td class="text-center"><i data-lucide="star" class="w-3.5 h-3.5 star-on fill-current"></i></td>
-                <td>
-                  <div class="font-medium text-[13.5px]">Claude 메모리 기능, 실제로 일에 쓸만한가 — 1주일 실험</div>
-                  <div class="text-[11.5px] text-gray-500 mt-0.5">#21 · <span class="text-gray-400">caselab.kr/ai/claude-memory-1week</span></div>
-                </td>
-                <td><span class="track-badge">AI 트렌드</span></td>
-                <td><span class="status-published">발행</span></td>
-                <td class="text-gray-600 text-[12.5px] whitespace-nowrap">2026-05-21</td>
-                <td class="num font-medium">6,118</td>
-                <td class="num">287</td>
-                <td>
-                  <div class="flex items-center gap-1">
-                    <button class="ic-btn" title="수정"><i data-lucide="pencil"></i></button>
-                    <button class="ic-btn" title="더보기"><i data-lucide="more-horizontal"></i></button>
-                  </div>
-                </td>
-              </tr>
-              <!-- Row 3: 실전 케이스 · 마케팅 -->
-              <tr data-track="case" data-cat="마케팅" data-status="published" data-curated="0">
-                <td class="text-center"><i data-lucide="star" class="w-3.5 h-3.5 star-off"></i></td>
-                <td>
-                  <div class="font-medium text-[13.5px]">경쟁사 분석, AI가 표면만 긁고 끝나는 이유</div>
-                  <div class="text-[11.5px] text-gray-500 mt-0.5">마케팅 · #02 · <span class="text-gray-400">caselab.kr/cases/competitor-analysis-depth</span></div>
-                </td>
-                <td><span class="track-badge">실전 케이스</span></td>
-                <td><span class="status-published">발행</span></td>
-                <td class="text-gray-600 text-[12.5px] whitespace-nowrap">2026-05-18</td>
-                <td class="num font-medium">5,940</td>
-                <td class="num">301</td>
-                <td>
-                  <div class="flex items-center gap-1">
-                    <button class="ic-btn" title="수정"><i data-lucide="pencil"></i></button>
-                    <button class="ic-btn" title="더보기"><i data-lucide="more-horizontal"></i></button>
-                  </div>
-                </td>
-              </tr>
-              <!-- Row 4: published -->
-              <tr>
-                <td class="text-center"><i data-lucide="star" class="w-3.5 h-3.5 star-off"></i></td>
-                <td>
-                  <div class="font-medium text-[13.5px]">윗사람 톤에 안 맞는 결과물 — AI에게 다시 시키는 3단계</div>
-                  <div class="text-[11.5px] text-gray-500 mt-0.5">영업 · #04 · <span class="text-gray-400">caselab.kr/cases/tone-matching-3steps</span></div>
-                </td>
-                <td><span class="track-badge">실전 케이스</span></td>
-                <td><span class="status-published">발행</span></td>
-                <td class="text-gray-600 text-[12.5px] whitespace-nowrap">2026-05-10</td>
-                <td class="num font-medium">4,201</td>
-                <td class="num">218</td>
-                <td>
-                  <div class="flex items-center gap-1">
-                    <button class="ic-btn" title="수정"><i data-lucide="pencil"></i></button>
-                    <button class="ic-btn" title="더보기"><i data-lucide="more-horizontal"></i></button>
-                  </div>
-                </td>
-              </tr>
-              <!-- Row 5: draft -->
-              <tr>
-                <td class="text-center"><i data-lucide="star" class="w-3.5 h-3.5 star-off"></i></td>
-                <td>
-                  <div class="font-medium text-[13.5px] text-gray-500">보고서 요약, AI한테 시키면 진짜 시간 아낄까?</div>
-                  <div class="text-[11.5px] text-gray-400 mt-0.5">전략 · #06 · <span>caselab.kr/cases/report-summary-ai</span></div>
-                </td>
-                <td><span class="track-badge">실전 케이스</span></td>
-                <td><span class="status-draft">초안</span></td>
-                <td class="text-gray-400 text-[12.5px] whitespace-nowrap">—</td>
-                <td class="num text-gray-400">—</td>
-                <td class="num text-gray-400">—</td>
-                <td>
-                  <div class="flex items-center gap-1">
-                    <button class="ic-btn" title="수정"><i data-lucide="pencil"></i></button>
-                    <button class="ic-btn" title="더보기"><i data-lucide="more-horizontal"></i></button>
-                  </div>
-                </td>
-              </tr>
-              <!-- Row 6: draft -->
-              <tr>
-                <td class="text-center"><i data-lucide="star" class="w-3.5 h-3.5 star-off"></i></td>
-                <td>
-                  <div class="font-medium text-[13.5px] text-gray-500">GPT-5 첫 인상 — 달라진 3가지와 여전한 한계</div>
-                  <div class="text-[11.5px] text-gray-400 mt-0.5">#22 · <span>caselab.kr/ai/gpt5-first-look</span></div>
-                </td>
-                <td><span class="track-badge">AI 트렌드</span></td>
-                <td><span class="status-draft">초안</span></td>
-                <td class="text-gray-400 text-[12.5px] whitespace-nowrap">—</td>
-                <td class="num text-gray-400">—</td>
-                <td class="num text-gray-400">—</td>
-                <td>
-                  <div class="flex items-center gap-1">
-                    <button class="ic-btn" title="수정"><i data-lucide="pencil"></i></button>
-                    <button class="ic-btn" title="더보기"><i data-lucide="more-horizontal"></i></button>
-                  </div>
-                </td>
-              </tr>
-            </tbody>
-          </table>
+        <!-- 2단 레이아웃: 좌측 목록 / 우측 상세+답장 -->
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-5 items-start">
 
-          <div class="px-5 py-3 border-t border-line flex items-center justify-between text-[12.5px] text-gray-500">
-            <span>총 12편 중 6편 표시</span>
-            <div class="flex items-center gap-1">
-              <button class="ic-btn"><i data-lucide="chevron-left"></i></button>
-              <span class="px-2">1 / 2</span>
-              <button class="ic-btn"><i data-lucide="chevron-right"></i></button>
+          <!-- 좌측: 티켓 목록 -->
+          <section class="panel lg:col-span-1 overflow-hidden">
+            <div class="panel-head"><span class="panel-title">문의 목록</span><span class="text-[11.5px] text-muted">대기 3건</span></div>
+            <div>
+              <!-- 선택된 티켓 -->
+              <div class="ticket-item active">
+                <div class="flex items-start justify-between gap-2 mb-1">
+                  <span class="text-[13.5px] font-semibold leading-snug">전자책 재발송 요청</span>
+                  <span class="badge badge-amber shrink-0">대기</span>
+                </div>
+                <div class="flex items-center justify-between text-[11.5px] text-muted">
+                  <span>이수민</span>
+                  <span class="tabular-nums">2026-06-07 09:12</span>
+                </div>
+              </div>
+              <div class="ticket-item">
+                <div class="flex items-start justify-between gap-2 mb-1">
+                  <span class="text-[13.5px] font-medium leading-snug">결제 문의 — 영수증 발급</span>
+                  <span class="badge badge-amber shrink-0">대기</span>
+                </div>
+                <div class="flex items-center justify-between text-[11.5px] text-muted">
+                  <span>박정호</span>
+                  <span class="tabular-nums">2026-06-06 21:40</span>
+                </div>
+              </div>
+              <div class="ticket-item">
+                <div class="flex items-start justify-between gap-2 mb-1">
+                  <span class="text-[13.5px] font-medium leading-snug">콘텐츠 오류 제보</span>
+                  <span class="badge badge-amber shrink-0">대기</span>
+                </div>
+                <div class="flex items-center justify-between text-[11.5px] text-muted">
+                  <span>최지원</span>
+                  <span class="tabular-nums">2026-06-06 14:05</span>
+                </div>
+              </div>
             </div>
-          </div>
-        </section>
+          </section>
+
+          <!-- 우측: 선택된 티켓 상세 + 답장 폼 -->
+          <section class="panel lg:col-span-2">
+            <div class="panel-head">
+              <span class="panel-title">전자책 재발송 요청</span>
+              <span class="badge badge-amber">대기</span>
+            </div>
+            <div class="panel-body space-y-4">
+              <!-- 작성자 / 메타 -->
+              <div class="flex items-center gap-3 pb-3 border-b border-soft">
+                <div class="w-9 h-9 rounded-full bg-soft border border-line flex items-center justify-center text-[12px] font-semibold text-gray-700">이</div>
+                <div class="min-w-0">
+                  <div class="text-[13px] font-semibold">이수민</div>
+                  <div class="text-[11.5px] text-muted">soomin.lee@example.com · 2026-06-07 09:12</div>
+                </div>
+              </div>
+              <!-- 본문 -->
+              <div class="text-[13.5px] leading-relaxed text-gray-800">
+                안녕하세요. 어제 'AI 기획 실전 가이드' 전자책을 결제했는데, 입력한 이메일로 다운로드 링크가 도착하지 않았습니다.
+                스팸함도 확인해봤지만 없었어요. 동일한 이메일(soomin.lee@example.com)로 재발송 부탁드립니다. 감사합니다.
+              </div>
+
+              <!-- 답장 폼 -->
+              <div class="pt-4 border-t border-line space-y-2">
+                <label class="text-[12.5px] font-semibold flex items-center gap-1.5"><i data-lucide="reply" class="w-3.5 h-3.5 text-brand"></i>답장</label>
+                <textarea class="reply-area" placeholder="답장 내용을 입력하세요..."></textarea>
+                <div class="flex items-center justify-between">
+                  <span class="text-[11.5px] text-muted flex items-center gap-1.5"><i data-lucide="info" class="w-3.5 h-3.5"></i>답장은 Brevo로 이메일 발송됩니다.</span>
+                  <div class="flex items-center gap-2">
+                    <button class="btn-ghost"><i data-lucide="archive" class="w-3.5 h-3.5"></i>종결</button>
+                    <button class="btn-primary"><i data-lucide="send" class="w-3.5 h-3.5"></i>답장 발송</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </section>
+
+        </div>
       </div>
     </main>
   </div>
@@ -351,50 +288,6 @@
     // bell dropdown (standalone 보기용)
     const bb = document.getElementById('bellBtn'), bm = document.getElementById('bellMenu');
     if (bb && bm) { bb.addEventListener('click', e => { e.stopPropagation(); bm.classList.toggle('hidden'); }); document.addEventListener('click', () => bm.classList.add('hidden')); }
-  </script>
-  <script>
-    // ── Filter tabs ──
-    document.querySelectorAll('.filter-tab').forEach(tab=>{
-      tab.addEventListener('click',function(){
-        document.querySelectorAll('.filter-tab').forEach(t=>{t.classList.remove('bg-ink','text-white');t.classList.add('text-gray-600')});
-        this.classList.add('bg-ink','text-white');this.classList.remove('text-gray-600');
-        const filter=this.dataset.filter;
-        document.querySelectorAll('.data-table tbody tr').forEach(row=>{
-          if(filter==='all'){row.style.display=''}
-          else if(filter==='published'){row.style.display=row.querySelector('.status-published')?'':'none'}
-          else if(filter==='draft'){row.style.display=row.querySelector('.status-draft')?'':'none'}
-          else if(filter==='curated'){row.style.display=row.querySelector('.star-on')?'':'none'}
-        });
-      });
-    });
-
-    // ── Star toggle (curation) ──
-    document.querySelectorAll('.data-table tbody td:first-child').forEach(td=>{
-      td.style.cursor='pointer';
-      td.addEventListener('click',function(e){
-        e.stopPropagation();
-        const icon=this.querySelector('[data-lucide]');
-        if(!icon)return;
-        if(icon.classList.contains('star-on')){icon.classList.remove('star-on','fill-current');icon.classList.add('star-off')}
-        else{icon.classList.remove('star-off');icon.classList.add('star-on','fill-current')}
-        lucide.createIcons();
-      });
-    });
-
-    // ── Row click → edit ──
-    document.querySelectorAll('.data-table tbody tr').forEach(row=>{
-      row.addEventListener('click',function(){window.location.href='new.html'});
-    });
-
-    // ── Search ──
-    const searchInput=document.querySelector('input[placeholder="제목 검색"]');
-    if(searchInput){searchInput.addEventListener('input',function(){
-      const q=this.value.toLowerCase();
-      document.querySelectorAll('.data-table tbody tr').forEach(row=>{
-        const title=row.querySelector('td:nth-child(2)')?.textContent?.toLowerCase()||'';
-        row.style.display=title.includes(q)?'':'none';
-      });
-    })}
   </script>
 </body>
 </html>

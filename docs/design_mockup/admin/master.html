@@ -5,96 +5,127 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>케이스랩 Admin — Master</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.min.css" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@1,600;1,700&display=swap" rel="stylesheet" />
   <script src="https://unpkg.com/lucide@latest"></script>
   <style>
-    html, body { margin: 0; padding: 0; height: 100%; background: #FAFAF7; color: #0A0A0A; font-family: 'Pretendard', system-ui, -apple-system, sans-serif; -webkit-font-smoothing: antialiased; }
+    /* ── Canonical tokens (D59 통일: 토스블루 #3182f6 / bg #fff·#f7f7f7 / border #e5e8eb / muted #8b95a1) ── */
+    html, body { margin: 0; padding: 0; height: 100%; background: #f7f7f7; color: #0A0A0A; font-family: 'Pretendard', system-ui, -apple-system, sans-serif; -webkit-font-smoothing: antialiased; }
     .shell { display: flex; height: 100vh; }
 
     /* Sidebar */
-    .sidebar { width: 220px; flex-shrink: 0; border-right: 1px solid #E5E1D5; background: #fff; display: flex; flex-direction: column; }
-    .logo-area { height: 56px; display: flex; align-items: center; padding: 0 16px; border-bottom: 1px solid #E5E1D5; }
-    .logo-area a { display: flex; align-items: center; gap: 8px; text-decoration: none; color: inherit; }
-    .logo-icon { width: 24px; height: 24px; border-radius: 3px; background: #0A0A0A; display: flex; align-items: center; justify-content: center; color: #fff; font-size: 10px; font-weight: 700; letter-spacing: .05em; }
-    .logo-text { font-size: 14px; font-weight: 700; }
-    .logo-badge { font-size: 10px; color: #9CA3AF; font-weight: 500; letter-spacing: .04em; }
+    .sidebar { width: 232px; flex-shrink: 0; border-right: 1px solid #e5e8eb; background: #fff; display: flex; flex-direction: column; }
+    .logo-area { height: 56px; display: flex; align-items: center; gap: 8px; padding: 0 16px; border-bottom: 1px solid #e5e8eb; }
+    .logo-area a { display: flex; align-items: center; gap: 6px; text-decoration: none; color: inherit; flex: 1; min-width: 0; }
+    .logo-text { font-family: 'Playfair Display', serif; font-style: italic; font-weight: 700; font-size: 20px; color: #0A0A0A; }
+    .logo-badge { font-size: 10px; color: #8b95a1; font-weight: 600; letter-spacing: .06em; }
 
-    .nav-section { font-size: 10.5px; letter-spacing: .14em; text-transform: uppercase; color: #9CA3AF; font-weight: 600; padding: 20px 12px 8px; }
-    .nav-item { display: flex; align-items: center; gap: 10px; padding: 7px 12px; margin: 0 8px; font-size: 13.5px; color: #4B5563; border-radius: 4px; cursor: pointer; transition: background .15s, color .15s; text-decoration: none; }
-    .nav-item:hover { background: #F4F2EC; color: #0A0A0A; }
-    .nav-item.active { background: #EEF2FF; color: #1E40AF; font-weight: 500; }
+    .nav-section { font-size: 10.5px; letter-spacing: .14em; text-transform: uppercase; color: #8b95a1; font-weight: 600; padding: 16px 12px 6px; }
+    .nav-item { display: flex; align-items: center; gap: 10px; padding: 7px 12px; margin: 0 8px; font-size: 13.5px; color: #4B5563; border-radius: 5px; cursor: pointer; transition: background .15s, color .15s; text-decoration: none; }
+    .nav-item:hover { background: #f2f4f6; color: #0A0A0A; }
+    .nav-item.active { background: #e8f3ff; color: #3182f6; font-weight: 600; }
     .nav-item .lucide { width: 15px; height: 15px; opacity: .85; }
-    .nav-item .badge { margin-left: auto; font-size: 10.5px; font-weight: 500; color: #1E40AF; background: #EEF2FF; padding: 1px 6px; border-radius: 3px; }
+    .nav-badge { margin-left: auto; font-size: 10.5px; font-weight: 600; color: #3182f6; background: #e8f3ff; padding: 1px 6px; border-radius: 3px; }
+    .nav-badge-warn { color: #d97706; background: #fef3c7; }
 
-    .nav-body { flex: 1; padding: 4px 0; overflow-y: auto; }
+    .nav-body { flex: 1; padding: 4px 0 12px; overflow-y: auto; }
 
-    .user-area { border-top: 1px solid #E5E1D5; padding: 12px; display: flex; align-items: center; gap: 10px; }
-    .user-avatar { width: 28px; height: 28px; border-radius: 50%; background: #F4F2EC; border: 1px solid #E5E1D5; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 600; color: #4B5563; }
+    .user-area { border-top: 1px solid #e5e8eb; padding: 12px; display: flex; align-items: center; gap: 10px; }
+    .user-avatar { width: 28px; height: 28px; border-radius: 50%; background: #f2f4f6; border: 1px solid #e5e8eb; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 600; color: #4B5563; }
     .user-info { flex: 1; min-width: 0; }
     .user-name { font-size: 12.5px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .user-role { font-size: 10.5px; color: #6B7280; }
+    .user-role { font-size: 10.5px; color: #8b95a1; }
+
+    /* Bell */
+    .bell-btn { position: relative; display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; border: 1px solid #e5e8eb; border-radius: 6px; background: #fff; cursor: pointer; }
+    .bell-btn:hover { background: #f7f7f7; }
+    .bell-btn .lucide { width: 15px; height: 15px; color: #4B5563; }
+    .bell-dot { position: absolute; top: -5px; right: -5px; min-width: 15px; height: 15px; padding: 0 3px; border-radius: 999px; background: #3182f6; color: #fff; font-size: 9px; font-weight: 700; display: flex; align-items: center; justify-content: center; }
+    .bell-menu { position: absolute; right: 0; top: 36px; width: 280px; background: #fff; border: 1px solid #e5e8eb; border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,.1); z-index: 60; overflow: hidden; }
+    .bell-menu.hidden { display: none; }
+    .bell-head { padding: 10px 14px; border-bottom: 1px solid #e5e8eb; font-size: 12.5px; font-weight: 600; display: flex; justify-content: space-between; align-items: center; }
+    .bell-row { display: flex; gap: 10px; padding: 10px 14px; border-bottom: 1px solid #f2f4f6; font-size: 12.5px; color: #1F2937; }
+    .bell-row:last-child { border-bottom: 0; }
+    .bell-row .lucide { width: 15px; height: 15px; flex-shrink: 0; margin-top: 1px; }
+    .bell-row .t { color: #8b95a1; font-size: 11px; margin-left: auto; white-space: nowrap; }
 
     /* Main content */
     .content { flex: 1; min-width: 0; }
     .content iframe { width: 100%; height: 100%; border: none; }
 
-    /* Active page indicator */
     .page-indicator { position: fixed; bottom: 16px; right: 16px; background: #0A0A0A; color: #fff; font-size: 12px; font-weight: 500; padding: 6px 14px; border-radius: 20px; z-index: 100; opacity: 0; transition: opacity .3s; pointer-events: none; }
     .page-indicator.show { opacity: 1; }
   </style>
 </head>
 <body>
   <div class="shell">
-    <!-- Sidebar -->
+    <!-- Sidebar (D60 5 카테고리) -->
     <aside class="sidebar">
       <div class="logo-area">
         <a href="../user/index.html">
-          <div class="logo-icon">CL</div>
-          <span class="logo-text">케이스랩</span>
+          <span class="logo-text">Caselab</span>
           <span class="logo-badge">ADMIN</span>
         </a>
+        <!-- 종 드롭다운 (D16 + D34) -->
+        <div style="position:relative">
+          <button class="bell-btn" id="bellBtn" title="알림"><i data-lucide="bell"></i><span class="bell-dot">5</span></button>
+          <div class="bell-menu hidden" id="bellMenu">
+            <div class="bell-head">알림 <a href="history.html" style="font-size:11px;color:#3182f6;text-decoration:none">전체 보기</a></div>
+            <div class="bell-row"><i data-lucide="message-square" style="color:#3182f6"></i>답장 안 한 의견 <b>12건</b><span class="t">방금</span></div>
+            <div class="bell-row"><i data-lucide="flag" style="color:#d97706"></i>신고 댓글 <b>2건</b><span class="t">1시간</span></div>
+            <div class="bell-row"><i data-lucide="alert-triangle" style="color:#dc2626"></i>전자책 발송 실패 <b>1건</b><span class="t">2시간</span></div>
+            <div class="bell-row"><i data-lucide="lightbulb" style="color:#3182f6"></i>열린 후보 카드 <b>4건</b><span class="t">오늘</span></div>
+            <div class="bell-row"><i data-lucide="user-plus" style="color:#16a34a"></i>신규 가입 <b>8명</b><span class="t">오늘</span></div>
+          </div>
+        </div>
       </div>
 
       <div class="nav-body">
+        <div class="nav-section">분석</div>
+        <a class="nav-item active" data-page="dashboard.html" onclick="go(this)"><i data-lucide="layout-dashboard"></i>대시보드</a>
+        <a class="nav-item" data-page="analytics.html" onclick="go(this)"><i data-lucide="bar-chart-2"></i>상세 분석</a>
+        <a class="nav-item" data-page="utm.html" onclick="go(this)"><i data-lucide="link"></i>유입 (UTM)</a>
+        <a class="nav-item" data-page="analytics-search.html" onclick="go(this)"><i data-lucide="search"></i>검색 키워드</a>
+
+        <div class="nav-section">콘텐츠</div>
+        <a class="nav-item" data-page="index.html" onclick="go(this)"><i data-lucide="file-text"></i>콘텐츠 목록<span class="nav-badge">3</span></a>
+        <a class="nav-item" data-page="new.html" onclick="go(this)"><i data-lucide="plus-square"></i>새 콘텐츠</a>
+        <a class="nav-item" data-page="curation.html" onclick="go(this)"><i data-lucide="layout-grid"></i>큐레이션</a>
+        <a class="nav-item" data-page="categories.html" onclick="go(this)"><i data-lucide="tags"></i>카테고리·태그</a>
+        <a class="nav-item" data-page="topics.html" onclick="go(this)"><i data-lucide="lightbulb"></i>후보 카드<span class="nav-badge">4</span></a>
+        <a class="nav-item" data-page="comments.html" onclick="go(this)"><i data-lucide="message-circle"></i>댓글 모더레이션<span class="nav-badge nav-badge-warn">2</span></a>
+        <a class="nav-item" data-page="tools.html" onclick="go(this)"><i data-lucide="wrench"></i>자료실</a>
+        <a class="nav-item" data-page="ebooks.html" onclick="go(this)"><i data-lucide="book"></i>전자책</a>
+
+        <div class="nav-section">회원관리</div>
+        <a class="nav-item" data-page="users.html" onclick="go(this)"><i data-lucide="users"></i>가입자</a>
+        <a class="nav-item" data-page="users-invite.html" onclick="go(this)"><i data-lucide="user-plus"></i>editor 초대</a>
+        <a class="nav-item" data-page="opinions.html" onclick="go(this)"><i data-lucide="message-square"></i>의견함<span class="nav-badge">12</span></a>
+        <a class="nav-item" data-page="support.html" onclick="go(this)"><i data-lucide="life-buoy"></i>1:1 문의<span class="nav-badge">3</span></a>
+        <a class="nav-item" data-page="faq.html" onclick="go(this)"><i data-lucide="help-circle"></i>FAQ</a>
+        <a class="nav-item" data-page="newsletters.html" onclick="go(this)"><i data-lucide="mail"></i>뉴스레터</a>
+
+        <div class="nav-section">매출</div>
+        <a class="nav-item" data-page="revenue.html" onclick="go(this)"><i data-lucide="trending-up"></i>수익 대시보드</a>
+        <a class="nav-item" data-page="ebooks.html" onclick="go(this)"><i data-lucide="package"></i>주문·발송</a>
+
         <div class="nav-section">운영</div>
-        <a class="nav-item active" data-page="index.html" onclick="go(this)">
-          <i data-lucide="file-text"></i>콘텐츠
-        </a>
-        <a class="nav-item" data-page="analytics.html" onclick="go(this)">
-          <i data-lucide="bar-chart-2"></i>분석
-        </a>
-        <a class="nav-item" data-page="users.html" onclick="go(this)">
-          <i data-lucide="users"></i>가입자
-        </a>
-        <a class="nav-item" data-page="ebooks.html" onclick="go(this)">
-          <i data-lucide="book"></i>전자책
-        </a>
-
-        <a class="nav-item" data-page="tools.html" onclick="go(this)">
-          <i data-lucide="wrench"></i>도구 관리
-        </a>
-
-        <div class="nav-section">소통</div>
-        <a class="nav-item" data-page="topics.html" onclick="go(this)">
-          <i data-lucide="lightbulb"></i>후보 카드
-        </a>
-        <a class="nav-item" data-page="opinions.html" onclick="go(this)">
-          <i data-lucide="message-square"></i>의견함
-          <span class="badge">12</span>
-        </a>
+        <a class="nav-item" data-page="history.html" onclick="go(this)"><i data-lucide="history"></i>History</a>
+        <a class="nav-item" data-page="settings.html" onclick="go(this)"><i data-lucide="settings"></i>설정</a>
       </div>
 
       <div class="user-area">
         <div class="user-avatar">주</div>
         <div class="user-info">
           <div class="user-name">김주희</div>
-          <div class="user-role">운영자</div>
+          <div class="user-role">운영자 (admin)</div>
         </div>
       </div>
     </aside>
 
     <!-- Main: iframe loads each page -->
     <div class="content">
-      <iframe id="pageFrame" src="index.html"></iframe>
+      <iframe id="pageFrame" src="dashboard.html"></iframe>
     </div>
   </div>
 
@@ -106,38 +137,30 @@
     function go(el) {
       const page = el.dataset.page;
       document.getElementById('pageFrame').src = page;
-
-      // Update active state
       document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
       el.classList.add('active');
-
-      // Show indicator
       const ind = document.getElementById('indicator');
       ind.textContent = el.textContent.trim();
       ind.classList.add('show');
       setTimeout(() => ind.classList.remove('show'), 1200);
     }
 
-    // Listen for iframe navigation (e.g. clicking "새 콘텐츠" in index.html)
+    // Bell dropdown
+    const bellBtn = document.getElementById('bellBtn');
+    const bellMenu = document.getElementById('bellMenu');
+    bellBtn.addEventListener('click', (e) => { e.stopPropagation(); bellMenu.classList.toggle('hidden'); });
+    document.addEventListener('click', () => bellMenu.classList.add('hidden'));
+
+    // Sync sidebar active state with iframe URL
     const frame = document.getElementById('pageFrame');
     frame.addEventListener('load', function() {
       try {
-        const url = frame.contentWindow.location.href;
-        const page = url.split('/').pop().split('?')[0];
-
-        // Update sidebar active state based on iframe URL
+        const page = frame.contentWindow.location.href.split('/').pop().split('?')[0];
         document.querySelectorAll('.nav-item').forEach(n => {
           n.classList.remove('active');
           if (n.dataset.page === page) n.classList.add('active');
         });
-
-        // If it's new.html, highlight 콘텐츠
-        if (page === 'new.html') {
-          document.querySelector('[data-page="index.html"]').classList.add('active');
-        }
-      } catch(e) {
-        // cross-origin, ignore
-      }
+      } catch(e) {}
     });
   </script>
 </body>

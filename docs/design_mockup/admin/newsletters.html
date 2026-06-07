@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>콘텐츠 관리 — 케이스랩 admin</title>
+  <title>뉴스레터 — 케이스랩 admin</title>
 
   <script src="https://cdn.tailwindcss.com"></script>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.min.css" />
@@ -101,12 +101,15 @@
     .bar-fill.warn { background: #f59e0b; }
     .bar-fill.danger { background: #dc2626; }
 
-    /* ── page-specific (콘텐츠 목록) ── */
-    .track-badge { display: inline-block; padding: 1px 7px; font-size: 11px; border: 1px solid #e5e8eb; border-radius: 3px; color: #4B5563; background: #f7f7f7; line-height: 1.5; }
-    .status-published { display: inline-block; padding: 1px 7px; font-size: 11px; border-radius: 3px; background: #ECFDF5; color: #065F46; font-weight: 500; }
-    .status-draft { display: inline-block; padding: 1px 7px; font-size: 11px; border-radius: 3px; background: #F3F4F6; color: #6B7280; font-weight: 500; }
-    .star-on { color: #F59E0B; }
-    .star-off { color: #D1D5DB; }
+    /* newsletter-specific (토큰 재사용) */
+    .seg-chip { display: inline-flex; align-items: center; gap: .3rem; padding: .3rem .65rem; font-size: 12.5px; border: 1px solid #e5e8eb; border-radius: 999px; background: #fff; color: #4B5563; cursor: pointer; transition: all .15s; }
+    .seg-chip:hover { border-color: #bcd7ff; }
+    .seg-chip.on { background: #e8f3ff; color: #3182f6; border-color: transparent; font-weight: 600; }
+    .field-label { font-size: 12px; font-weight: 600; color: #4B5563; margin-bottom: .4rem; display: block; }
+    .field-input { width: 100%; font-size: 13.5px; padding: .55rem .75rem; border: 1px solid #e5e8eb; border-radius: 6px; background: #fff; }
+    .field-input:focus { outline: none; border-color: #3182f6; }
+    .check-row { display: flex; align-items: center; gap: .5rem; font-size: 13px; color: #1F2937; cursor: pointer; }
+    .check-row input { accent-color: #3182f6; width: 14px; height: 14px; }
   </style>
 </head>
 
@@ -138,7 +141,7 @@
         <a class="nav-item" href="utm.html"><i data-lucide="link"></i>유입 (UTM)</a>
         <a class="nav-item" href="analytics-search.html"><i data-lucide="search"></i>검색 키워드</a>
         <div class="nav-section">콘텐츠</div>
-        <a class="nav-item active" href="index.html"><i data-lucide="file-text"></i>콘텐츠 목록<span class="nav-badge">3</span></a>
+        <a class="nav-item" href="index.html"><i data-lucide="file-text"></i>콘텐츠 목록<span class="nav-badge">3</span></a>
         <a class="nav-item" href="new.html"><i data-lucide="plus-square"></i>새 콘텐츠</a>
         <a class="nav-item" href="curation.html"><i data-lucide="layout-grid"></i>큐레이션</a>
         <a class="nav-item" href="categories.html"><i data-lucide="tags"></i>카테고리·태그</a>
@@ -152,7 +155,7 @@
         <a class="nav-item" href="opinions.html"><i data-lucide="message-square"></i>의견함<span class="nav-badge">12</span></a>
         <a class="nav-item" href="support.html"><i data-lucide="life-buoy"></i>1:1 문의<span class="nav-badge">3</span></a>
         <a class="nav-item" href="faq.html"><i data-lucide="help-circle"></i>FAQ</a>
-        <a class="nav-item" href="newsletters.html"><i data-lucide="mail"></i>뉴스레터</a>
+        <a class="nav-item active" href="newsletters.html"><i data-lucide="mail"></i>뉴스레터</a>
         <div class="nav-section">매출</div>
         <a class="nav-item" href="revenue.html"><i data-lucide="trending-up"></i>수익 대시보드</a>
         <a class="nav-item" href="ebooks.html"><i data-lucide="package"></i>주문·발송</a>
@@ -170,175 +173,187 @@
       </div>
     </aside>
 
-    <!-- Main -->
+    <!-- ════════ MAIN ════════ -->
     <main class="flex-1 min-w-0">
-
-      <!-- Top bar -->
       <header class="h-14 border-b border-line bg-white flex items-center px-6 gap-3">
-        <h1 class="text-[15px] font-semibold">콘텐츠</h1>
-        <span class="text-[12.5px] text-gray-400">/ 작성·발행·큐레이션 관리</span>
+        <h1 class="text-[15px] font-extrabold">뉴스레터</h1>
+        <span class="text-[12.5px] text-muted">/ 세그먼트 발송 + 성과 추적 (Brevo)</span>
         <div class="ml-auto flex items-center gap-2">
-          <div class="relative">
-            <i data-lucide="search" class="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400"></i>
-            <input type="text" placeholder="제목 검색" class="text-[12.5px] pl-8 pr-3 py-1.5 border border-line rounded-sm bg-white focus:outline-none focus:border-brand w-44" />
-          </div>
-          <button class="ic-btn" title="필터"><i data-lucide="filter"></i></button>
-          <a href="new.html" class="btn-primary"><i data-lucide="plus" class="w-3.5 h-3.5"></i>새 콘텐츠</a>
+          <button class="btn-ghost"><i data-lucide="file-text" class="w-3.5 h-3.5"></i>임시저장 불러오기</button>
+          <button class="btn-ghost"><i data-lucide="external-link" class="w-3.5 h-3.5"></i>Brevo 콘솔</button>
         </div>
       </header>
 
-      <!-- Body -->
-      <div class="p-6">
+      <div class="p-6 space-y-5">
 
-        <!-- Filter tabs -->
-        <div class="flex items-center gap-1 mb-4 text-[13px]">
-          <button class="filter-tab px-3 py-1.5 rounded-sm font-medium bg-ink text-white" data-filter="all">전체 <span class="text-gray-400 ml-1">12</span></button>
-          <button class="filter-tab px-3 py-1.5 rounded-sm text-gray-600 hover:bg-soft" data-filter="published">발행 <span class="text-gray-400 ml-1">9</span></button>
-          <button class="filter-tab px-3 py-1.5 rounded-sm text-gray-600 hover:bg-soft" data-filter="draft">초안 <span class="text-gray-400 ml-1">3</span></button>
-          <button class="filter-tab px-3 py-1.5 rounded-sm text-gray-600 hover:bg-soft" data-filter="curated">큐레이션 <span class="text-gray-400 ml-1">2</span></button>
+        <!-- KPI 3종 -->
+        <section class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div class="kpi-card"><div class="kpi-label">총 발송 캠페인</div><div class="kpi-value">42</div><div class="kpi-delta up mt-1"><i data-lucide="arrow-up" class="w-3 h-3"></i>3건 <span class="text-muted font-normal">이번 달</span></div></div>
+          <div class="kpi-card"><div class="kpi-label">평균 오픈율</div><div class="kpi-value">38.6%</div><div class="kpi-delta up mt-1"><i data-lucide="arrow-up" class="w-3 h-3"></i>2.1%p</div></div>
+          <div class="kpi-card"><div class="kpi-label">평균 클릭률</div><div class="kpi-value">7.4%</div><div class="kpi-delta down mt-1"><i data-lucide="arrow-down" class="w-3 h-3"></i>0.6%p</div></div>
+        </section>
+
+        <!-- 2단 레이아웃: 좌 작성 / 우 recipient 미리보기 -->
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-5">
+
+          <!-- 작성 패널 -->
+          <section class="panel lg:col-span-2">
+            <div class="panel-head"><span class="panel-title">캠페인 작성</span><span class="badge badge-gray">draft</span></div>
+            <div class="panel-body space-y-5">
+
+              <!-- 제목 -->
+              <div>
+                <label class="field-label">제목</label>
+                <input type="text" class="field-input" value="[케이스랩] 이번 주 AI 활용 케이스 3선" />
+              </div>
+
+              <!-- 본문 (markdown) -->
+              <div>
+                <label class="field-label">본문 <span class="text-muted font-normal">(Markdown 지원)</span></label>
+                <textarea class="field-input font-num" rows="6" style="resize:vertical">## 안녕하세요, 케이스랩입니다
+
+이번 주 가장 반응이 좋았던 케이스 3가지를 정리했어요.
+
+- **기획서 첫 페이지** — '의도' 던지는 5단계
+- **Claude 메모리 1주일 실험**
+- 경쟁사 분석, AI가 표면만 긁는 이유
+
+[바로 읽기 →](https://caselab.kr/weekly)</textarea>
+              </div>
+
+              <!-- 세그먼트 선택 -->
+              <div class="border-t border-soft pt-4 space-y-4">
+                <div class="flex items-center gap-2">
+                  <i data-lucide="filter" class="w-4 h-4 text-brand"></i>
+                  <span class="text-[13px] font-semibold">세그먼트 선택</span>
+                </div>
+
+                <!-- 직무 multi-select chips -->
+                <div>
+                  <label class="field-label">직무 <span class="text-muted font-normal">(복수 선택)</span></label>
+                  <div class="flex flex-wrap gap-2">
+                    <span class="seg-chip on"><i data-lucide="check" class="w-3 h-3"></i>마케팅</span>
+                    <span class="seg-chip on"><i data-lucide="check" class="w-3 h-3"></i>전략</span>
+                    <span class="seg-chip">1인사업</span>
+                    <span class="seg-chip">영업</span>
+                    <span class="seg-chip">스타트업</span>
+                  </div>
+                </div>
+
+                <!-- 페르소나 체크박스 -->
+                <div>
+                  <label class="field-label">페르소나</label>
+                  <div class="flex flex-wrap gap-x-6 gap-y-2">
+                    <label class="check-row"><input type="checkbox" checked />페르소나 A</label>
+                    <label class="check-row"><input type="checkbox" checked />페르소나 B</label>
+                    <label class="check-row"><input type="checkbox" />페르소나 C</label>
+                    <label class="check-row"><input type="checkbox" />페르소나 D</label>
+                    <label class="check-row"><input type="checkbox" />페르소나 E</label>
+                  </div>
+                </div>
+
+                <!-- 관심주제 칩 -->
+                <div>
+                  <label class="field-label">관심 주제</label>
+                  <div class="flex flex-wrap gap-2">
+                    <span class="seg-chip on"><i data-lucide="check" class="w-3 h-3"></i>기획·문서</span>
+                    <span class="seg-chip">데이터 분석</span>
+                    <span class="seg-chip on"><i data-lucide="check" class="w-3 h-3"></i>경쟁사 리서치</span>
+                    <span class="seg-chip">카피라이팅</span>
+                    <span class="seg-chip">업무 자동화</span>
+                  </div>
+                </div>
+
+                <!-- AI 도구 칩 -->
+                <div>
+                  <label class="field-label">사용 AI 도구</label>
+                  <div class="flex flex-wrap gap-2">
+                    <span class="seg-chip on"><i data-lucide="check" class="w-3 h-3"></i>Claude</span>
+                    <span class="seg-chip on"><i data-lucide="check" class="w-3 h-3"></i>ChatGPT</span>
+                    <span class="seg-chip">Gemini</span>
+                    <span class="seg-chip">Perplexity</span>
+                    <span class="seg-chip">Copilot</span>
+                  </div>
+                </div>
+              </div>
+
+            </div>
+          </section>
+
+          <!-- recipient 미리보기 -->
+          <section class="panel self-start">
+            <div class="panel-head"><span class="panel-title">수신자 미리보기</span><i data-lucide="users" class="w-4 h-4 text-muted"></i></div>
+            <div class="panel-body space-y-4">
+              <div class="text-center py-3">
+                <div class="text-[12px] text-muted mb-1">선택 세그먼트 기준</div>
+                <div class="text-[44px] font-extrabold leading-none tabular-nums text-brand">1,240<span class="text-[20px] text-ink font-bold">명</span></div>
+                <div class="text-[11.5px] text-muted mt-2">전체 구독자 3,210명 중 38.6%</div>
+              </div>
+
+              <div class="space-y-2.5 text-[12.5px] border-t border-soft pt-4">
+                <div class="flex items-center justify-between"><span class="text-gray-600">직무</span><span><span class="badge badge-blue">마케팅</span> <span class="badge badge-blue">전략</span></span></div>
+                <div class="flex items-center justify-between"><span class="text-gray-600">페르소나</span><span><span class="badge badge-gray">A</span> <span class="badge badge-gray">B</span></span></div>
+                <div class="flex items-center justify-between"><span class="text-gray-600">관심 주제</span><span class="text-muted">2개</span></div>
+                <div class="flex items-center justify-between"><span class="text-gray-600">AI 도구</span><span class="text-muted">2개</span></div>
+                <div class="flex items-center justify-between"><span class="text-gray-600">수신 동의</span><span class="badge badge-green">전원 동의</span></div>
+              </div>
+
+              <div class="border-t border-soft pt-4 space-y-2">
+                <button class="btn-primary w-full justify-center"><i data-lucide="send" class="w-3.5 h-3.5"></i>발송</button>
+                <button class="btn-ghost w-full justify-center"><i data-lucide="mail-check" class="w-3.5 h-3.5"></i>테스트 메일 보내기</button>
+              </div>
+              <p class="text-[11px] text-muted text-center">발송 전 Brevo 일일 한도(잔여 8,760건) 확인</p>
+            </div>
+          </section>
         </div>
 
+        <!-- 발송 이력 -->
         <section class="panel">
+          <div class="panel-head"><span class="panel-title">발송 이력</span><a href="analytics.html" class="text-[11.5px] text-brand no-underline">성과 분석 →</a></div>
           <table class="data-table">
             <thead>
               <tr>
-                <th style="width:36px"></th>
                 <th>제목</th>
-                <th>트랙</th>
+                <th>세그먼트</th>
+                <th class="num">수신자</th>
+                <th class="num">오픈율</th>
+                <th class="num">클릭</th>
                 <th>상태</th>
-                <th>발행일</th>
-                <th class="num">조회</th>
-                <th class="num">저장</th>
-                <th></th>
+                <th class="num">발송일</th>
               </tr>
             </thead>
             <tbody>
-              <!-- Row 1: 실전 케이스 · 기획 -->
-              <tr data-track="case" data-cat="기획" data-status="published" data-curated="1">
-                <td class="text-center"><i data-lucide="star" class="w-3.5 h-3.5 star-on fill-current"></i></td>
-                <td>
-                  <div class="font-medium text-[13.5px]">기획서 첫 페이지가 안 풀릴 때 — '의도' 던지는 5단계</div>
-                  <div class="text-[11.5px] text-gray-500 mt-0.5">기획 · #01 · <span class="text-gray-400">caselab.kr/cases/planning-intent-5steps</span></div>
-                </td>
-                <td><span class="track-badge">실전 케이스</span></td>
-                <td><span class="status-published">발행</span></td>
-                <td class="text-gray-600 text-[12.5px] whitespace-nowrap">2026-05-22</td>
-                <td class="num font-medium">8,432</td>
-                <td class="num">412</td>
-                <td>
-                  <div class="flex items-center gap-1">
-                    <button class="ic-btn" title="수정"><i data-lucide="pencil"></i></button>
-                    <button class="ic-btn" title="더보기"><i data-lucide="more-horizontal"></i></button>
-                  </div>
-                </td>
-              </tr>
-              <!-- Row 2: AI 트렌드 -->
-              <tr data-track="trend" data-cat="" data-status="published" data-curated="1">
-                <td class="text-center"><i data-lucide="star" class="w-3.5 h-3.5 star-on fill-current"></i></td>
-                <td>
-                  <div class="font-medium text-[13.5px]">Claude 메모리 기능, 실제로 일에 쓸만한가 — 1주일 실험</div>
-                  <div class="text-[11.5px] text-gray-500 mt-0.5">#21 · <span class="text-gray-400">caselab.kr/ai/claude-memory-1week</span></div>
-                </td>
-                <td><span class="track-badge">AI 트렌드</span></td>
-                <td><span class="status-published">발행</span></td>
-                <td class="text-gray-600 text-[12.5px] whitespace-nowrap">2026-05-21</td>
-                <td class="num font-medium">6,118</td>
-                <td class="num">287</td>
-                <td>
-                  <div class="flex items-center gap-1">
-                    <button class="ic-btn" title="수정"><i data-lucide="pencil"></i></button>
-                    <button class="ic-btn" title="더보기"><i data-lucide="more-horizontal"></i></button>
-                  </div>
-                </td>
-              </tr>
-              <!-- Row 3: 실전 케이스 · 마케팅 -->
-              <tr data-track="case" data-cat="마케팅" data-status="published" data-curated="0">
-                <td class="text-center"><i data-lucide="star" class="w-3.5 h-3.5 star-off"></i></td>
-                <td>
-                  <div class="font-medium text-[13.5px]">경쟁사 분석, AI가 표면만 긁고 끝나는 이유</div>
-                  <div class="text-[11.5px] text-gray-500 mt-0.5">마케팅 · #02 · <span class="text-gray-400">caselab.kr/cases/competitor-analysis-depth</span></div>
-                </td>
-                <td><span class="track-badge">실전 케이스</span></td>
-                <td><span class="status-published">발행</span></td>
-                <td class="text-gray-600 text-[12.5px] whitespace-nowrap">2026-05-18</td>
-                <td class="num font-medium">5,940</td>
-                <td class="num">301</td>
-                <td>
-                  <div class="flex items-center gap-1">
-                    <button class="ic-btn" title="수정"><i data-lucide="pencil"></i></button>
-                    <button class="ic-btn" title="더보기"><i data-lucide="more-horizontal"></i></button>
-                  </div>
-                </td>
-              </tr>
-              <!-- Row 4: published -->
               <tr>
-                <td class="text-center"><i data-lucide="star" class="w-3.5 h-3.5 star-off"></i></td>
-                <td>
-                  <div class="font-medium text-[13.5px]">윗사람 톤에 안 맞는 결과물 — AI에게 다시 시키는 3단계</div>
-                  <div class="text-[11.5px] text-gray-500 mt-0.5">영업 · #04 · <span class="text-gray-400">caselab.kr/cases/tone-matching-3steps</span></div>
-                </td>
-                <td><span class="track-badge">실전 케이스</span></td>
-                <td><span class="status-published">발행</span></td>
-                <td class="text-gray-600 text-[12.5px] whitespace-nowrap">2026-05-10</td>
-                <td class="num font-medium">4,201</td>
-                <td class="num">218</td>
-                <td>
-                  <div class="flex items-center gap-1">
-                    <button class="ic-btn" title="수정"><i data-lucide="pencil"></i></button>
-                    <button class="ic-btn" title="더보기"><i data-lucide="more-horizontal"></i></button>
-                  </div>
-                </td>
+                <td class="font-medium">이번 주 AI 활용 케이스 3선</td>
+                <td><span class="text-muted text-[12px]">마케팅·전략 / A·B</span></td>
+                <td class="num">1,240</td>
+                <td class="num font-semibold text-brand">41.2%</td>
+                <td class="num">98</td>
+                <td><span class="badge badge-green">sent</span></td>
+                <td class="num text-muted">06-05</td>
               </tr>
-              <!-- Row 5: draft -->
               <tr>
-                <td class="text-center"><i data-lucide="star" class="w-3.5 h-3.5 star-off"></i></td>
-                <td>
-                  <div class="font-medium text-[13.5px] text-gray-500">보고서 요약, AI한테 시키면 진짜 시간 아낄까?</div>
-                  <div class="text-[11.5px] text-gray-400 mt-0.5">전략 · #06 · <span>caselab.kr/cases/report-summary-ai</span></div>
-                </td>
-                <td><span class="track-badge">실전 케이스</span></td>
-                <td><span class="status-draft">초안</span></td>
-                <td class="text-gray-400 text-[12.5px] whitespace-nowrap">—</td>
-                <td class="num text-gray-400">—</td>
-                <td class="num text-gray-400">—</td>
-                <td>
-                  <div class="flex items-center gap-1">
-                    <button class="ic-btn" title="수정"><i data-lucide="pencil"></i></button>
-                    <button class="ic-btn" title="더보기"><i data-lucide="more-horizontal"></i></button>
-                  </div>
-                </td>
+                <td class="font-medium">1인 사업자를 위한 자동화 템플릿</td>
+                <td><span class="text-muted text-[12px]">1인사업·스타트업 / C·E</span></td>
+                <td class="num">680</td>
+                <td class="num">36.8%</td>
+                <td class="num">52</td>
+                <td><span class="badge badge-green">sent</span></td>
+                <td class="num text-muted">05-29</td>
               </tr>
-              <!-- Row 6: draft -->
               <tr>
-                <td class="text-center"><i data-lucide="star" class="w-3.5 h-3.5 star-off"></i></td>
-                <td>
-                  <div class="font-medium text-[13.5px] text-gray-500">GPT-5 첫 인상 — 달라진 3가지와 여전한 한계</div>
-                  <div class="text-[11.5px] text-gray-400 mt-0.5">#22 · <span>caselab.kr/ai/gpt5-first-look</span></div>
-                </td>
-                <td><span class="track-badge">AI 트렌드</span></td>
-                <td><span class="status-draft">초안</span></td>
-                <td class="text-gray-400 text-[12.5px] whitespace-nowrap">—</td>
-                <td class="num text-gray-400">—</td>
-                <td class="num text-gray-400">—</td>
-                <td>
-                  <div class="flex items-center gap-1">
-                    <button class="ic-btn" title="수정"><i data-lucide="pencil"></i></button>
-                    <button class="ic-btn" title="더보기"><i data-lucide="more-horizontal"></i></button>
-                  </div>
-                </td>
+                <td class="font-medium">[작성중] 6월 전자책 신간 안내</td>
+                <td><span class="text-muted text-[12px]">전체 구독자</span></td>
+                <td class="num">3,210</td>
+                <td class="num text-muted">—</td>
+                <td class="num text-muted">—</td>
+                <td><span class="badge badge-gray">draft</span></td>
+                <td class="num text-muted">—</td>
               </tr>
             </tbody>
           </table>
-
-          <div class="px-5 py-3 border-t border-line flex items-center justify-between text-[12.5px] text-gray-500">
-            <span>총 12편 중 6편 표시</span>
-            <div class="flex items-center gap-1">
-              <button class="ic-btn"><i data-lucide="chevron-left"></i></button>
-              <span class="px-2">1 / 2</span>
-              <button class="ic-btn"><i data-lucide="chevron-right"></i></button>
-            </div>
-          </div>
         </section>
+
       </div>
     </main>
   </div>
@@ -351,50 +366,6 @@
     // bell dropdown (standalone 보기용)
     const bb = document.getElementById('bellBtn'), bm = document.getElementById('bellMenu');
     if (bb && bm) { bb.addEventListener('click', e => { e.stopPropagation(); bm.classList.toggle('hidden'); }); document.addEventListener('click', () => bm.classList.add('hidden')); }
-  </script>
-  <script>
-    // ── Filter tabs ──
-    document.querySelectorAll('.filter-tab').forEach(tab=>{
-      tab.addEventListener('click',function(){
-        document.querySelectorAll('.filter-tab').forEach(t=>{t.classList.remove('bg-ink','text-white');t.classList.add('text-gray-600')});
-        this.classList.add('bg-ink','text-white');this.classList.remove('text-gray-600');
-        const filter=this.dataset.filter;
-        document.querySelectorAll('.data-table tbody tr').forEach(row=>{
-          if(filter==='all'){row.style.display=''}
-          else if(filter==='published'){row.style.display=row.querySelector('.status-published')?'':'none'}
-          else if(filter==='draft'){row.style.display=row.querySelector('.status-draft')?'':'none'}
-          else if(filter==='curated'){row.style.display=row.querySelector('.star-on')?'':'none'}
-        });
-      });
-    });
-
-    // ── Star toggle (curation) ──
-    document.querySelectorAll('.data-table tbody td:first-child').forEach(td=>{
-      td.style.cursor='pointer';
-      td.addEventListener('click',function(e){
-        e.stopPropagation();
-        const icon=this.querySelector('[data-lucide]');
-        if(!icon)return;
-        if(icon.classList.contains('star-on')){icon.classList.remove('star-on','fill-current');icon.classList.add('star-off')}
-        else{icon.classList.remove('star-off');icon.classList.add('star-on','fill-current')}
-        lucide.createIcons();
-      });
-    });
-
-    // ── Row click → edit ──
-    document.querySelectorAll('.data-table tbody tr').forEach(row=>{
-      row.addEventListener('click',function(){window.location.href='new.html'});
-    });
-
-    // ── Search ──
-    const searchInput=document.querySelector('input[placeholder="제목 검색"]');
-    if(searchInput){searchInput.addEventListener('input',function(){
-      const q=this.value.toLowerCase();
-      document.querySelectorAll('.data-table tbody tr').forEach(row=>{
-        const title=row.querySelector('td:nth-child(2)')?.textContent?.toLowerCase()||'';
-        row.style.display=title.includes(q)?'':'none';
-      });
-    })}
   </script>
 </body>
 </html>

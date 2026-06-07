@@ -3,87 +3,159 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>도구 관리 — 케이스랩 admin</title>
+  <title>자료실 — 케이스랩 admin</title>
+
   <script src="https://cdn.tailwindcss.com"></script>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.min.css" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@1,600;1,700&display=swap" rel="stylesheet" />
   <script src="https://unpkg.com/lucide@latest"></script>
+
+  <!-- ════════ CANONICAL HEAD — 모든 admin 페이지 공통 (D58/D59 토큰) ════════ -->
   <script>
-    tailwind.config = { theme: { extend: {
-      colors: { paper: '#FAFAF7', ink: '#0A0A0A', line: '#E5E1D5', soft: '#F4F2EC', indigo: { brand: '#1E40AF' } },
-      fontFamily: { sans: ['Pretendard', 'system-ui', 'sans-serif'], num: ['ui-monospace', 'monospace'] },
-    }}};
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            paper:  '#f7f7f7',
+            ink:    '#0A0A0A',
+            line:   '#e5e8eb',
+            soft:   '#f2f4f6',
+            muted:  '#8b95a1',
+            brand:  { DEFAULT: '#3182f6' },
+          },
+          fontFamily: {
+            sans: ['Pretendard', 'system-ui', '-apple-system', 'sans-serif'],
+            num:  ['ui-monospace', 'SFMono-Regular', 'Menlo', 'monospace'],
+          },
+        },
+      },
+    };
   </script>
   <style>
-    html, body { background: #FAFAF7; color: #0A0A0A; }
-    body { font-family: 'Pretendard', system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
-    .nav-item { display: flex; align-items: center; gap: .65rem; padding: .45rem .75rem; font-size: 13.5px; color: #4B5563; border-radius: 4px; transition: background .15s, color .15s; cursor: pointer; }
-    .nav-item:hover { background: #F4F2EC; color: #0A0A0A; }
-    .nav-item.active { background: #EEF2FF; color: #1E40AF; font-weight: 500; }
+    html, body { background: #f7f7f7; color: #0A0A0A; }
+    body { font-family: 'Pretendard', system-ui, -apple-system, sans-serif; -webkit-font-smoothing: antialiased; }
+    .logo-text { font-family: 'Playfair Display', serif; font-style: italic; font-weight: 700; font-size: 20px; color: #0A0A0A; }
+
+    /* sidebar nav */
+    .nav-item { display: flex; align-items: center; gap: .65rem; padding: .45rem .75rem; margin: 0 .5rem; font-size: 13.5px; color: #4B5563; border-radius: 5px; transition: background .15s ease, color .15s ease; cursor: pointer; text-decoration: none; }
+    .nav-item:hover { background: #f2f4f6; color: #0A0A0A; }
+    .nav-item.active { background: #e8f3ff; color: #3182f6; font-weight: 600; }
     .nav-item .lucide { width: 15px; height: 15px; opacity: .85; }
-    .nav-section { font-size: 10.5px; letter-spacing: .14em; text-transform: uppercase; color: #9CA3AF; font-weight: 600; padding: 1.25rem .75rem .5rem; }
-    .panel { background: #fff; border: 1px solid #E5E1D5; border-radius: 4px; }
-    .panel-head { padding: 1rem 1.2rem; border-bottom: 1px solid #E5E1D5; display: flex; align-items: center; justify-content: space-between; }
-    .panel-title { font-size: 13.5px; font-weight: 600; }
+    .nav-section { font-size: 10.5px; letter-spacing: .14em; text-transform: uppercase; color: #8b95a1; font-weight: 600; padding: 1rem .75rem .4rem; }
+    .nav-badge { margin-left: auto; font-size: 10.5px; font-weight: 600; color: #3182f6; background: #e8f3ff; padding: 1px 6px; border-radius: 3px; }
+    .nav-badge-warn { color: #d97706; background: #fef3c7; }
+
+    /* panel */
+    .panel { background: #fff; border: 1px solid #e5e8eb; border-radius: 8px; }
+    .panel-head { padding: 1rem 1.2rem; border-bottom: 1px solid #e5e8eb; display: flex; align-items: center; justify-content: space-between; }
+    .panel-title { font-size: 13.5px; font-weight: 700; }
+
+    /* table */
     .data-table { font-size: 13.5px; width: 100%; border-collapse: collapse; }
-    .data-table thead th { text-align: left; font-weight: 500; font-size: 11.5px; letter-spacing: .08em; text-transform: uppercase; color: #6B7280; padding: .65rem 1.2rem; border-bottom: 1px solid #E5E1D5; background: #FAFAF7; }
-    .data-table tbody td { padding: .85rem 1.2rem; border-bottom: 1px solid #F1EEE4; color: #1F2937; }
-    .data-table tbody tr { transition: background .12s; }
-    .data-table tbody tr:hover { background: #FAFAF7; cursor: pointer; }
+    .data-table thead th { text-align: left; font-weight: 500; font-size: 11.5px; letter-spacing: .08em; text-transform: uppercase; color: #6B7280; padding: .65rem 1.2rem; border-bottom: 1px solid #e5e8eb; background: #f7f7f7; }
+    .data-table tbody td { padding: .85rem 1.2rem; border-bottom: 1px solid #f2f4f6; color: #1F2937; }
+    .data-table tbody tr { transition: background .12s ease; }
+    .data-table tbody tr:hover { background: #f7f7f7; cursor: pointer; }
     .data-table tbody tr:last-child td { border-bottom: 0; }
-    .ic-btn { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border: 1px solid #E5E1D5; border-radius: 4px; background: #fff; transition: background .15s; }
-    .ic-btn:hover { background: #FAFAF7; }
+
+    /* buttons */
+    .ic-btn { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border: 1px solid #e5e8eb; border-radius: 6px; background: #fff; transition: background .15s; cursor: pointer; }
+    .ic-btn:hover { background: #f7f7f7; }
     .ic-btn .lucide { width: 14px; height: 14px; color: #4B5563; }
-    .btn-primary { display: inline-flex; align-items: center; gap: .4rem; padding: .45rem .85rem; font-size: 13px; font-weight: 500; color: #fff; background: #0A0A0A; border-radius: 4px; }
-    .btn-primary:hover { background: #1F2937; }
+    .btn-primary { display: inline-flex; align-items: center; gap: .4rem; padding: .45rem .85rem; font-size: 13px; font-weight: 600; color: #fff; background: #3182f6; border-radius: 6px; transition: background .15s; cursor: pointer; border: none; }
+    .btn-primary:hover { background: #1b64da; }
+
+    /* bell */
+    .bell-btn { position: relative; display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; border: 1px solid #e5e8eb; border-radius: 6px; background: #fff; cursor: pointer; }
+    .bell-btn:hover { background: #f7f7f7; }
+    .bell-btn .lucide { width: 15px; height: 15px; color: #4B5563; }
+    .bell-dot { position: absolute; top: -5px; right: -5px; min-width: 15px; height: 15px; padding: 0 3px; border-radius: 999px; background: #3182f6; color: #fff; font-size: 9px; font-weight: 700; display: flex; align-items: center; justify-content: center; }
+
+    /* tools-specific (re-themed) */
     .status-public { display: inline-block; padding: 1px 7px; font-size: 11px; border-radius: 3px; background: #ECFDF5; color: #065F46; font-weight: 500; }
-    .status-hidden { display: inline-block; padding: 1px 7px; font-size: 11px; border-radius: 3px; background: #F3F4F6; color: #6B7280; font-weight: 500; }
-    .cat-badge { display: inline-block; padding: 1px 7px; font-size: 11px; border: 1px solid #E5E1D5; border-radius: 3px; color: #4B5563; background: #FAFAF7; }
+    .status-hidden { display: inline-block; padding: 1px 7px; font-size: 11px; border-radius: 3px; background: #f2f4f6; color: #6B7280; font-weight: 500; }
+    .cat-badge { display: inline-block; padding: 1px 7px; font-size: 11px; border: 1px solid #e5e8eb; border-radius: 3px; color: #4B5563; background: #f7f7f7; }
     .price-free { color: #065F46; font-weight: 500; }
     .price-paid { color: #6B7280; }
+
+    /* resource tab switcher */
+    .res-tab { padding: .25rem .625rem; font-size: 12.5px; color: #4B5563; cursor: pointer; transition: background .15s, color .15s; }
+    .res-tab:hover { background: #f2f4f6; }
+    .res-tab.active { background: #3182f6; color: #fff; }
   </style>
 </head>
 <body class="bg-paper text-ink">
   <div class="flex min-h-screen">
-    <!-- Sidebar -->
-    <aside class="w-[220px] shrink-0 border-r border-line bg-white flex flex-col">
-      <div class="h-14 flex items-center px-4 border-b border-line">
-        <a href="../user/index.html" class="flex items-center gap-2 no-underline">
-          <div class="w-6 h-6 rounded-sm bg-ink flex items-center justify-center text-white text-[10px] font-bold tracking-wider">CL</div>
-          <span class="font-bold text-[14px]">케이스랩</span>
-          <span class="text-[10px] text-gray-400 font-medium tracking-wider">ADMIN</span>
+
+    <!-- ════════ CANONICAL SIDEBAR (D60 5 카테고리) — active만 페이지별로 변경 ════════ -->
+    <aside class="w-[232px] shrink-0 border-r border-line bg-white flex flex-col">
+      <div class="h-14 flex items-center gap-2 px-4 border-b border-line">
+        <a href="../user/index.html" class="flex items-center gap-1.5 no-underline flex-1 min-w-0">
+          <span class="logo-text">Caselab</span>
+          <span class="text-[10px] text-muted font-semibold tracking-wider">ADMIN</span>
         </a>
+        <div class="relative">
+          <button class="bell-btn" id="bellBtn" title="알림"><i data-lucide="bell"></i><span class="bell-dot">5</span></button>
+          <div class="hidden absolute right-0 top-9 w-72 bg-white border border-line rounded-lg shadow-xl z-50 overflow-hidden" id="bellMenu">
+            <div class="px-3.5 py-2.5 border-b border-line text-[12.5px] font-semibold flex justify-between items-center">알림 <a href="history.html" class="text-[11px] text-brand no-underline">전체</a></div>
+            <a href="opinions.html" class="flex gap-2.5 px-3.5 py-2.5 border-b border-soft text-[12.5px] text-gray-800 no-underline hover:bg-paper"><i data-lucide="message-square" class="w-4 h-4 text-brand shrink-0 mt-px"></i>답장 안 한 의견 <b>12건</b><span class="ml-auto text-[11px] text-muted">방금</span></a>
+            <a href="comments.html" class="flex gap-2.5 px-3.5 py-2.5 border-b border-soft text-[12.5px] text-gray-800 no-underline hover:bg-paper"><i data-lucide="flag" class="w-4 h-4 text-amber-600 shrink-0 mt-px"></i>신고 댓글 <b>2건</b><span class="ml-auto text-[11px] text-muted">1시간</span></a>
+            <a href="ebooks.html" class="flex gap-2.5 px-3.5 py-2.5 border-b border-soft text-[12.5px] text-gray-800 no-underline hover:bg-paper"><i data-lucide="alert-triangle" class="w-4 h-4 text-red-600 shrink-0 mt-px"></i>발송 실패 <b>1건</b><span class="ml-auto text-[11px] text-muted">2시간</span></a>
+            <a href="topics.html" class="flex gap-2.5 px-3.5 py-2.5 text-[12.5px] text-gray-800 no-underline hover:bg-paper"><i data-lucide="lightbulb" class="w-4 h-4 text-brand shrink-0 mt-px"></i>열린 후보 <b>4건</b><span class="ml-auto text-[11px] text-muted">오늘</span></a>
+          </div>
+        </div>
       </div>
-      <nav class="flex-1 px-2 py-3 overflow-y-auto">
-        <div class="nav-section">운영</div>
-        <a class="nav-item" href="index.html"><i data-lucide="file-text"></i>콘텐츠</a>
-        <a class="nav-item" href="analytics.html"><i data-lucide="bar-chart-2"></i>분석</a>
-        <a class="nav-item" href="users.html"><i data-lucide="users"></i>가입자</a>
+      <nav class="flex-1 py-2 overflow-y-auto">
+        <div class="nav-section">분석</div>
+        <a class="nav-item" href="dashboard.html"><i data-lucide="layout-dashboard"></i>대시보드</a>
+        <a class="nav-item" href="analytics.html"><i data-lucide="bar-chart-2"></i>상세 분석</a>
+        <a class="nav-item" href="utm.html"><i data-lucide="link"></i>유입 (UTM)</a>
+        <a class="nav-item" href="analytics-search.html"><i data-lucide="search"></i>검색 키워드</a>
+        <div class="nav-section">콘텐츠</div>
+        <a class="nav-item" href="index.html"><i data-lucide="file-text"></i>콘텐츠 목록<span class="nav-badge">3</span></a>
+        <a class="nav-item" href="new.html"><i data-lucide="plus-square"></i>새 콘텐츠</a>
+        <a class="nav-item" href="curation.html"><i data-lucide="layout-grid"></i>큐레이션</a>
+        <a class="nav-item" href="categories.html"><i data-lucide="tags"></i>카테고리·태그</a>
+        <a class="nav-item" href="topics.html"><i data-lucide="lightbulb"></i>후보 카드<span class="nav-badge">4</span></a>
+        <a class="nav-item" href="comments.html"><i data-lucide="message-circle"></i>댓글 모더레이션<span class="nav-badge nav-badge-warn">2</span></a>
+        <a class="nav-item active" href="tools.html"><i data-lucide="wrench"></i>자료실</a>
         <a class="nav-item" href="ebooks.html"><i data-lucide="book"></i>전자책</a>
-        <a class="nav-item active" href="tools.html"><i data-lucide="wrench"></i>도구 관리</a>
-        <div class="nav-section">소통</div>
-        <a class="nav-item" href="topics.html"><i data-lucide="lightbulb"></i>후보 카드</a>
-        <a class="nav-item" href="opinions.html"><i data-lucide="message-square"></i>의견함 <span class="ml-auto text-[10.5px] font-medium text-indigo-brand bg-[#EEF2FF] px-1.5 py-0.5 rounded-sm">12</span></a>
+        <div class="nav-section">회원관리</div>
+        <a class="nav-item" href="users.html"><i data-lucide="users"></i>가입자</a>
+        <a class="nav-item" href="users-invite.html"><i data-lucide="user-plus"></i>editor 초대</a>
+        <a class="nav-item" href="opinions.html"><i data-lucide="message-square"></i>의견함<span class="nav-badge">12</span></a>
+        <a class="nav-item" href="support.html"><i data-lucide="life-buoy"></i>1:1 문의<span class="nav-badge">3</span></a>
+        <a class="nav-item" href="faq.html"><i data-lucide="help-circle"></i>FAQ</a>
+        <a class="nav-item" href="newsletters.html"><i data-lucide="mail"></i>뉴스레터</a>
+        <div class="nav-section">매출</div>
+        <a class="nav-item" href="revenue.html"><i data-lucide="trending-up"></i>수익 대시보드</a>
+        <a class="nav-item" href="ebooks.html"><i data-lucide="package"></i>주문·발송</a>
+        <div class="nav-section">운영</div>
+        <a class="nav-item" href="history.html"><i data-lucide="history"></i>History</a>
+        <a class="nav-item" href="settings.html"><i data-lucide="settings"></i>설정</a>
       </nav>
       <div class="border-t border-line px-3 py-3 flex items-center gap-2.5">
         <div class="w-7 h-7 rounded-full bg-soft border border-line flex items-center justify-center text-[11px] font-semibold text-gray-700">주</div>
         <div class="min-w-0">
           <div class="text-[12.5px] font-medium truncate">김주희</div>
-          <div class="text-[10.5px] text-gray-500 truncate">운영자</div>
+          <div class="text-[10.5px] text-muted truncate">운영자 (admin)</div>
         </div>
-        <button class="ml-auto ic-btn"><i data-lucide="more-horizontal"></i></button>
+        <button class="ml-auto ic-btn" title="설정"><i data-lucide="more-horizontal"></i></button>
       </div>
     </aside>
 
-    <!-- Main -->
+    <!-- ════════ MAIN ════════ -->
     <main class="flex-1 min-w-0">
       <header class="h-14 border-b border-line bg-white flex items-center px-6 gap-3">
-        <h1 class="text-[15px] font-semibold">도구 관리</h1>
-        <span class="text-[12.5px] text-gray-400">/ AI 도구 · 프롬프트 · 공식 가이드</span>
+        <h1 class="text-[15px] font-extrabold">자료실</h1>
+        <span class="text-[12.5px] text-muted">/ AI 도구 · 프롬프트 · 공식 가이드 · 컨텍스트 카드 필터</span>
         <div class="ml-auto flex items-center gap-2">
-          <div class="flex border border-line rounded-sm overflow-hidden text-[12.5px]">
-            <button class="px-2.5 py-1 bg-ink text-white">도구</button>
-            <button class="px-2.5 py-1 text-gray-600 hover:bg-soft">프롬프트</button>
-            <button class="px-2.5 py-1 text-gray-600 hover:bg-soft">가이드</button>
+          <div class="flex border border-line rounded-md overflow-hidden text-[12.5px]" id="resTabs">
+            <button class="res-tab active" data-tab="tools">도구</button>
+            <button class="res-tab" data-tab="prompts">프롬프트</button>
+            <button class="res-tab" data-tab="guides">가이드</button>
+            <button class="res-tab" data-tab="context">컨텍스트 카드</button>
           </div>
           <button class="btn-primary"><i data-lucide="plus" class="w-3.5 h-3.5"></i>도구 추가</button>
         </div>
@@ -99,7 +171,7 @@
             <div class="flex items-center gap-2">
               <div class="relative">
                 <i data-lucide="search" class="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400"></i>
-                <input type="text" placeholder="도구 검색" class="text-[12.5px] pl-8 pr-3 py-1.5 border border-line rounded-sm bg-white focus:outline-none focus:border-indigo-brand w-44" />
+                <input type="text" placeholder="도구 검색" class="text-[12.5px] pl-8 pr-3 py-1.5 border border-line rounded-md bg-white focus:outline-none focus:border-brand w-44" />
               </div>
             </div>
           </div>
@@ -119,7 +191,7 @@
             </thead>
             <tbody>
               <tr>
-                <td><div class="w-8 h-8 rounded bg-indigo-50 border border-line flex items-center justify-center text-[12px] font-bold text-indigo-brand">Sn</div></td>
+                <td><div class="w-8 h-8 rounded bg-[#e8f3ff] border border-line flex items-center justify-center text-[12px] font-bold text-brand">Sn</div></td>
                 <td>
                   <div class="font-medium text-[13.5px]">Snipit</div>
                   <div class="text-[11.5px] text-gray-500 mt-0.5">경쟁사 광고·레퍼런스 AI 큐레이션</div>
@@ -127,7 +199,7 @@
                 <td><span class="cat-badge">리서치</span></td>
                 <td class="text-[12.5px] price-free">무료</td>
                 <td><span class="status-public">공개</span></td>
-                <td class="text-[12.5px] text-indigo-brand">경쟁사 분석 3시간→30분</td>
+                <td class="text-[12.5px] text-brand">경쟁사 분석 3시간→30분</td>
                 <td class="text-[12.5px] text-gray-600">5/20</td>
                 <td>
                   <div class="flex items-center gap-1">
@@ -145,7 +217,7 @@
                 <td><span class="cat-badge">리서치</span></td>
                 <td class="text-[12.5px] price-paid">$29/mo</td>
                 <td><span class="status-public">공개</span></td>
-                <td class="text-[12.5px] text-indigo-brand">경쟁사 분석 3시간→30분</td>
+                <td class="text-[12.5px] text-brand">경쟁사 분석 3시간→30분</td>
                 <td class="text-[12.5px] text-gray-600">5/20</td>
                 <td>
                   <div class="flex items-center gap-1">
@@ -163,7 +235,7 @@
                 <td><span class="cat-badge">분석</span></td>
                 <td class="text-[12.5px] price-free">무료</td>
                 <td><span class="status-public">공개</span></td>
-                <td class="text-[12.5px] text-indigo-brand">경쟁사 분석 3시간→30분</td>
+                <td class="text-[12.5px] text-brand">경쟁사 분석 3시간→30분</td>
                 <td class="text-[12.5px] text-gray-600">5/20</td>
                 <td>
                   <div class="flex items-center gap-1">
@@ -214,6 +286,22 @@
       </div>
     </main>
   </div>
-  <script>lucide.createIcons();if(window!==window.top){const sb=document.querySelector("aside");if(sb)sb.style.display="none";}</script>
+
+  <!-- ════════ CANONICAL FOOTER JS ════════ -->
+  <script>
+    lucide.createIcons();
+    // iframe(master.html) 안에서는 자체 사이드바 숨김
+    if (window !== window.top) { const sb = document.querySelector('aside'); if (sb) sb.style.display = 'none'; }
+    // bell dropdown (standalone 보기용)
+    const bb = document.getElementById('bellBtn'), bm = document.getElementById('bellMenu');
+    if (bb && bm) { bb.addEventListener('click', e => { e.stopPropagation(); bm.classList.toggle('hidden'); }); document.addEventListener('click', () => bm.classList.add('hidden')); }
+    // 자료실 탭 전환 (도구/프롬프트/가이드/컨텍스트 카드)
+    document.querySelectorAll('#resTabs .res-tab').forEach(t => {
+      t.addEventListener('click', () => {
+        document.querySelectorAll('#resTabs .res-tab').forEach(x => x.classList.remove('active'));
+        t.classList.add('active');
+      });
+    });
+  </script>
 </body>
 </html>
