@@ -65,7 +65,6 @@ const NAV: { group: string; items: NavItem[] }[] = [
       { href: '/admin/comments', label: '댓글 모더레이션', icon: MessagesSquare },
       { href: '/admin/tools', label: '프롬프트 순위', icon: Copy },
       { href: '/admin/guides', label: '공식 가이드', icon: BookMarked },
-      { href: '/admin/ebooks', label: 'ebook', icon: BookOpen },
     ],
   },
   {
@@ -83,7 +82,9 @@ const NAV: { group: string; items: NavItem[] }[] = [
     group: '매출',
     items: [
       { href: '/admin/revenue', label: '수익 대시보드', icon: Wallet },
-      { href: '/admin/ebooks/orders', label: '주문·발송', icon: Package, disabled: true },
+      { href: '/admin/ebooks', label: 'ebook 판매중', icon: BookOpen },
+      { href: '/admin/ebooks/new', label: 'ebook 등록', icon: FilePlus },
+      { href: '/admin/ebooks/customers', label: '구매 고객', icon: Package },
     ],
   },
   {

@@ -1,56 +1,81 @@
+import Link from 'next/link';
 import { createSupabaseServerClient, isSupabaseConfigured } from '@/lib/supabase/server';
-import { formatDate } from '@/lib/utils';
+import { Button } from '@/components/ui/button';
+
+// /admin/ebooks — 판매 중인 ebook (피드백 #8-2). 판매수·매출·발송완료 지표.
+export const dynamic = 'force-dynamic';
+
+type Product = { id: string; slug: string; title: string; price: number; status: string; body: { read_minutes?: number } | null };
+type Purchase = { product_id: string; amount: number; sent_at: string | null };
+
+function won(n: number) { return n === 0 ? '0원' : `${n.toLocaleString('ko-KR')}원`; }
 
 export default async function AdminEbooks() {
   if (!isSupabaseConfigured()) return <div className="p-4 sm:p-8 text-sm">Supabase 연결 필요</div>;
   const supabase = await createSupabaseServerClient();
-  const { data: products } = await supabase
-    .from('products')
-    .select('id, slug, title, price, status, created_at')
-    .order('created_at', { ascending: false });
-  const { data: purchases } = await supabase
-    .from('purchases')
-    .select('id, name, email, status, sent_at, created_at, products(title)')
-    .order('created_at', { ascending: false })
-    .limit(50);
+  const [prodRes, purRes] = await Promise.all([
+    supabase.from('products').select('id, slug, title, price, status, body').order('created_at', { ascending: false }),
+    supabase.from('purchases').select('product_id, amount, sent_at'),
+  ]);
+  const products = (prodRes.data ?? []) as Product[];
+  const purchases = (purRes.data ?? []) as Purchase[];
+
+  const agg = new Map<string, { sales: number; revenue: number; sent: number }>();
+  for (const p of purchases) {
+    const a = agg.get(p.product_id) ?? { sales: 0, revenue: 0, sent: 0 };
+    a.sales += 1;
+    a.revenue += p.amount ?? 0;
+    if (p.sent_at) a.sent += 1;
+    agg.set(p.product_id, a);
+  }
 
   return (
-    <div className="p-4 sm:p-8 space-y-8">
-      <section>
-        <h1 className="font-serif text-xl sm:text-2xl font-semibold mb-4">전자책</h1>
-        <ul className="space-y-2">
-          {(products ?? []).map((p) => (
-            <li key={p.id} className="card p-4 flex items-center justify-between gap-3">
-              <div className="min-w-0">
-                <h3 className="font-medium">{p.title}</h3>
-                <p className="text-xs text-ink/50">/{p.slug} · {p.price === 0 ? '무료' : p.price.toLocaleString() + '원'}</p>
-              </div>
-              <span className="badge shrink-0">{p.status}</span>
-            </li>
-          ))}
-        </ul>
-      </section>
-      <section>
-        <h2 className="font-semibold mb-3">최근 주문</h2>
-        <div className="card overflow-x-auto">
-          <table className="w-full min-w-[640px] text-sm">
-            <thead className="bg-muted text-left text-xs uppercase tracking-wider text-ink/50">
-              <tr><th className="px-4 py-3">이름</th><th className="px-4 py-3">이메일</th><th className="px-4 py-3">전자책</th><th className="px-4 py-3">상태</th><th className="px-4 py-3">신청일</th></tr>
-            </thead>
-            <tbody className="divide-y divide-border">
-              {((purchases ?? []) as any[]).map((p) => (
-                <tr key={p.id}>
-                  <td className="px-4 py-3">{p.name}</td>
-                  <td className="px-4 py-3">{p.email}</td>
-                  <td className="px-4 py-3">{p.products?.title}</td>
-                  <td className="px-4 py-3"><span className="badge">{p.status}</span></td>
-                  <td className="px-4 py-3 text-xs text-ink/50">{formatDate(p.created_at)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+    <div className="p-4 sm:p-8">
+      <header className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h1 className="font-serif text-xl sm:text-2xl font-semibold">판매 중인 ebook</h1>
+          <p className="text-sm text-ink/60 mt-1">등록된 전자책과 판매·발송 현황.</p>
         </div>
-      </section>
+        <div className="flex gap-2 self-start sm:self-auto">
+          <Link href="/admin/ebooks/customers"><Button variant="outline">구매 고객</Button></Link>
+          <Link href="/admin/ebooks/new"><Button variant="accent">새 ebook</Button></Link>
+        </div>
+      </header>
+
+      <div className="card overflow-x-auto">
+        <table className="w-full min-w-[720px] text-sm">
+          <thead className="bg-muted text-left text-xs uppercase tracking-wider text-ink/50">
+            <tr>
+              <th className="px-4 py-3">제목</th>
+              <th className="px-4 py-3 w-24 text-right">가격</th>
+              <th className="px-4 py-3 w-20 text-right">읽는시간</th>
+              <th className="px-4 py-3 w-20 text-right">판매수</th>
+              <th className="px-4 py-3 w-24 text-right">매출</th>
+              <th className="px-4 py-3 w-20 text-right">발송완료</th>
+              <th className="px-4 py-3 w-20">상태</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-border">
+            {products.length === 0 && (
+              <tr><td colSpan={7} className="px-4 py-10 text-center text-ink/40">등록된 ebook이 없어요. 우상단 "새 ebook"으로 시작하세요.</td></tr>
+            )}
+            {products.map((p) => {
+              const a = agg.get(p.id) ?? { sales: 0, revenue: 0, sent: 0 };
+              return (
+                <tr key={p.id} className="hover:bg-muted/30">
+                  <td className="px-4 py-3 font-medium">{p.title}<div className="text-xs text-ink/40">/{p.slug}</div></td>
+                  <td className="px-4 py-3 text-right tabular-nums">{won(p.price)}</td>
+                  <td className="px-4 py-3 text-right tabular-nums text-ink/60">{p.body?.read_minutes ? `${p.body.read_minutes}분` : '—'}</td>
+                  <td className="px-4 py-3 text-right tabular-nums font-semibold">{a.sales.toLocaleString('ko-KR')}</td>
+                  <td className="px-4 py-3 text-right tabular-nums">{won(a.revenue)}</td>
+                  <td className="px-4 py-3 text-right tabular-nums text-ink/60">{a.sent.toLocaleString('ko-KR')}</td>
+                  <td className="px-4 py-3"><span className={`badge ${p.status === 'active' ? 'bg-green-100 text-green-700' : 'bg-muted text-ink/50'}`}>{p.status === 'active' ? '판매중' : '보관'}</span></td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
