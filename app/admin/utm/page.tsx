@@ -1,5 +1,6 @@
 import { createSupabaseServerClient, isSupabaseConfigured } from '@/lib/supabase/server';
 import { formatDate } from '@/lib/utils';
+import { UtmBuilderForm } from '@/components/admin/UtmBuilderForm';
 
 // /admin/utm — UTM 링크 (D25). 현재 생성 이력 목록, Builder 폼은 다음 레이어.
 type UtmLink = {
@@ -27,8 +28,10 @@ export default async function AdminUtm() {
     <div className="p-4 sm:p-8">
       <header className="mb-6">
         <h1 className="font-serif text-xl sm:text-2xl font-semibold">유입 (UTM)</h1>
-        <p className="text-sm text-ink/60 mt-1">생성한 UTM 추적 링크 이력. Builder(채널 템플릿 기반 생성)는 추후 추가.</p>
+        <p className="text-sm text-ink/60 mt-1">UTM 추적 링크를 만들고 생성 이력을 관리하세요.</p>
       </header>
+
+      <UtmBuilderForm />
 
       <div className="card overflow-x-auto">
         <table className="w-full min-w-[720px] text-sm">
