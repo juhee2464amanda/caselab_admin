@@ -4,7 +4,9 @@ import { createServerClient, type CookieOptions } from '@supabase/ssr';
 export async function GET(request: NextRequest) {
   const { searchParams, origin } = request.nextUrl;
   const code = searchParams.get('code');
-  const next = searchParams.get('next') ?? '/admin';
+  const nextRaw = searchParams.get('next') ?? '/admin';
+  // 루트('/')는 페이지가 없으므로 대시보드로 정규화
+  const next = nextRaw === '/' ? '/admin' : nextRaw;
 
   if (code) {
     const response = NextResponse.redirect(`${origin}${next}`);
