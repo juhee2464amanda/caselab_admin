@@ -62,7 +62,7 @@ const NAV: { group: string; items: NavItem[] }[] = [
       { href: '/admin/topics', label: '후보 카드', icon: Lightbulb },
       { href: '/admin/comments', label: '댓글 모더레이션', icon: MessagesSquare },
       { href: '/admin/tools', label: '자료실', icon: Wrench },
-      { href: '/admin/ebooks', label: '전자책', icon: BookOpen },
+      { href: '/admin/ebooks', label: 'ebook', icon: BookOpen },
     ],
   },
   {

@@ -1,8 +1,8 @@
 import { createSupabaseServerClient, isSupabaseConfigured } from '@/lib/supabase/server';
 
-// /admin/analytics/search — 인기 검색어 (D55).
+// /admin/analytics/search — 인기 검색어 (D55) + 새로 시도된 검색어 (피드백 #1).
 // events(event_type='search').metadata = { keyword, results_count, filter } 집계.
-type SearchMeta = { metadata: { keyword?: string; results_count?: number } | null };
+type SearchMeta = { metadata: { keyword?: string; results_count?: number } | null; created_at: string };
 
 export const dynamic = 'force-dynamic';
 
@@ -12,25 +12,36 @@ export default async function AdminSearchKeywords() {
   }
   const supabase = await createSupabaseServerClient();
   const since = new Date(Date.now() - 30 * 86400000).toISOString();
+  const sevenAgo = Date.now() - 7 * 86400000;
   const { data } = await supabase
     .from('events')
-    .select('metadata')
+    .select('metadata, created_at')
     .eq('event_type', 'search')
     .gt('created_at', since)
     .limit(3000);
   const rows = (data ?? []) as SearchMeta[];
 
-  const agg = new Map<string, { count: number; totalResults: number; zero: number }>();
+  const agg = new Map<string, { count: number; totalResults: number; zero: number; recentCount: number; firstSeen: number }>();
   for (const r of rows) {
     const kw = (r.metadata?.keyword ?? '').toString().trim();
     if (!kw) continue;
-    const e = agg.get(kw) ?? { count: 0, totalResults: 0, zero: 0 };
+    const ts = new Date(r.created_at).getTime();
+    const e = agg.get(kw) ?? { count: 0, totalResults: 0, zero: 0, recentCount: 0, firstSeen: ts };
     const rc = Number(r.metadata?.results_count ?? 0);
     e.count += 1;
     e.totalResults += rc;
     if (rc === 0) e.zero += 1;
+    if (ts >= sevenAgo) e.recentCount += 1;
+    e.firstSeen = Math.min(e.firstSeen, ts);
     agg.set(kw, e);
   }
+
+  // 새로 시도된 검색어 = 최근 7일 안에 처음 등장 (그 전엔 없던 키워드) Top 5
+  const newKeywords = [...agg.entries()]
+    .filter(([, e]) => e.firstSeen >= sevenAgo)
+    .map(([keyword, e]) => ({ keyword, recentCount: e.recentCount, zero: e.zero, count: e.count }))
+    .sort((a, b) => b.recentCount - a.recentCount)
+    .slice(0, 5);
   const keywords = [...agg.entries()]
     .map(([keyword, e]) => ({ keyword, ...e }))
     .sort((a, b) => b.count - a.count)
@@ -44,6 +55,28 @@ export default async function AdminSearchKeywords() {
         <h1 className="font-serif text-xl sm:text-2xl font-semibold">검색 키워드</h1>
         <p className="text-sm text-ink/60 mt-1">최근 30일 사용자 검색어 Top 50. 0결과 검색어 = 콘텐츠 갭 신호.</p>
       </header>
+
+      {/* 새로 시도된 검색어 Top 5 (최근 7일 첫 등장) */}
+      <section className="card p-5 border-l-4 border-accent">
+        <div className="flex items-baseline gap-2 mb-3">
+          <h2 className="font-serif text-base font-semibold">✨ 새로 시도된 검색어</h2>
+          <span className="text-[11px] text-ink/40">최근 7일 처음 등장 · Top 5</span>
+        </div>
+        {newKeywords.length === 0 ? (
+          <p className="text-sm text-ink/40">최근 7일 새로 등장한 검색어가 없어요.</p>
+        ) : (
+          <div className="flex flex-wrap gap-2">
+            {newKeywords.map((k) => (
+              <span key={k.keyword} className="inline-flex items-center gap-1.5 rounded-full border border-accent/40 bg-accent/5 px-3 py-1.5 text-sm">
+                <span className="font-medium">{k.keyword}</span>
+                <span className="text-xs text-ink/40">{k.recentCount}회</span>
+                {k.zero > 0 && <span className="text-[10px] text-amber-600">0결과</span>}
+              </span>
+            ))}
+          </div>
+        )}
+        <p className="mt-2 text-[11px] text-ink/40">신규 검색어는 새로운 수요 신호예요. 0결과면 콘텐츠 제작 후보.</p>
+      </section>
 
       <section className="grid grid-cols-2 sm:grid-cols-3 gap-3">
         <div className="card p-4"><div className="text-xs text-ink/50">총 검색</div><div className="mt-1 font-serif text-2xl font-semibold tabular-nums">{totalSearches.toLocaleString('ko-KR')}</div></div>
