@@ -79,7 +79,7 @@ const NAV: { group: string; items: NavItem[] }[] = [
   {
     group: '매출',
     items: [
-      { href: '/admin/revenue', label: '수익 대시보드', icon: Wallet, disabled: true },
+      { href: '/admin/revenue', label: '수익 대시보드', icon: Wallet },
       { href: '/admin/ebooks/orders', label: '주문·발송', icon: Package, disabled: true },
     ],
   },
