@@ -1432,6 +1432,7 @@ D42 트리거(구독자 500 OR 결제 요청 10건) 도달 시:
 | 2026-06-07 | 목업 커버리지 감사 PASS(21p) + 구현 갭(11/23) 기록 + `/admin/contents` 타입 통합 뷰 결정 + §4.5/§5/§14.1 정합 정정 | 본 세션 (ADMIN_SESSION_NOTES §7) |
 | 2026-06-07 | 본가 마이그레이션 0001~0009 repo 동기화 + Quick Wins(revenue·guides·prompts) + 미구현 7페이지(categories·faq·support·newsletters·utm·history·curation) 목록 구현 → 구현 18/23. 편집·발송·드래그·Builder는 다음 레이어 | 본 세션 |
 | 2026-06-07 | 대시보드 D61 7위젯 구현(북극성 스파크라인·퍼널·Top5·최근변경·직무/페르소나 분포). CSS 바+SVG SSR, get_daily_trend RPC 활용. tremor 미사용 | 본 세션 |
+| 2026-06-07 | Mutation 레이어: UTM Builder·FAQ CRUD·카테고리/태그 CRUD(client+RLS). 읽기 페이지: analytics/search 인기검색어 집계·settings 상태. 미구현은 users/invite(Auth Admin API)·support 답변/newsletter 발송(Brevo Edge Function)·curation DnD | 본 세션 |
 
 ## 부록 B. 다른 세션에서 본 문서 활용
 

@@ -49,7 +49,7 @@ const NAV: { group: string; items: NavItem[] }[] = [
       { href: '/admin', label: '대시보드', icon: LayoutDashboard },
       { href: '/admin/analytics', label: '상세 분석', icon: BarChart3 },
       { href: '/admin/utm', label: '유입 (UTM)', icon: Link2 },
-      { href: '/admin/analytics/search', label: '검색 키워드', icon: Search, disabled: true },
+      { href: '/admin/analytics/search', label: '검색 키워드', icon: Search },
     ],
   },
   {
@@ -87,7 +87,7 @@ const NAV: { group: string; items: NavItem[] }[] = [
     group: '운영',
     items: [
       { href: '/admin/history', label: 'History', icon: HistoryIcon },
-      { href: '/admin/settings', label: '설정', icon: Settings, disabled: true },
+      { href: '/admin/settings', label: '설정', icon: Settings },
     ],
   },
 ];
