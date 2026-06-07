@@ -44,10 +44,19 @@ async function updateSessionInner(request: NextRequest): Promise<NextResponse> {
 
   if (isPublicPath(pathname)) return response;
 
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL ?? '';
-  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? '';
+  const url = (process.env.NEXT_PUBLIC_SUPABASE_URL ?? '').trim();
+  const key = (process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? '').trim();
   if (!url || !key) {
     console.warn('[middleware] missing supabase env, allowing through');
+    return response;
+  }
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
+      throw new Error(`unexpected protocol: ${parsed.protocol}`);
+    }
+  } catch (e) {
+    console.warn('[middleware] invalid NEXT_PUBLIC_SUPABASE_URL:', JSON.stringify(url), e);
     return response;
   }
 
