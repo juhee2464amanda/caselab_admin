@@ -25,6 +25,20 @@ function isAdminOnly(pathname: string) {
 }
 
 export async function updateSession(request: NextRequest): Promise<NextResponse> {
+  try {
+    return await updateSessionInner(request);
+  } catch (e) {
+    console.error('[middleware] failed:', e);
+    const pathname = request.nextUrl.pathname;
+    if (isPublicPath(pathname)) return NextResponse.next({ request });
+    const redirect = request.nextUrl.clone();
+    redirect.pathname = '/login';
+    redirect.searchParams.set('error', 'middleware');
+    return NextResponse.redirect(redirect);
+  }
+}
+
+async function updateSessionInner(request: NextRequest): Promise<NextResponse> {
   let response = NextResponse.next({ request });
   const pathname = request.nextUrl.pathname;
 
@@ -32,7 +46,10 @@ export async function updateSession(request: NextRequest): Promise<NextResponse>
 
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL ?? '';
   const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? '';
-  if (!url || !key) return response;
+  if (!url || !key) {
+    console.warn('[middleware] missing supabase env, allowing through');
+    return response;
+  }
 
   const supabase = createServerClient(url, key, {
     cookies: {
