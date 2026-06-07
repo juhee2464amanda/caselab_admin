@@ -1277,12 +1277,13 @@ D42 트리거(구독자 500 OR 결제 요청 10건) 도달 시:
 
 ### 14.1 Migration
 
-> ⚠ **정합 주의 (2026-06-07)**: 본 repo(`caselab_admin`)에는 `supabase/` 디렉터리·`.sql` 마이그레이션이 **존재하지 않음**. 아래 0001~0004는 remote Supabase 프로젝트에만 적용/예정이며 repo에 미추적. 로컬 추적·재현이 필요하면 `supabase/migrations/` 신설 + `supabase db pull`로 동기화할 것 (액션 아이템).
+> ✅ **정합 갱신 (2026-06-07)**: 원본 `caselab`(본가) repo에서 마이그레이션 **0001~0009 전체를 `supabase/migrations/`로 동기화 완료** (db pull 불필요). remote DB에는 본가가 이미 적용함. **apply 소유자 = 본가 repo, admin은 참조·재현용**(중복 `db push` 금지). 상세: `supabase/README.md`.
 
 | 파일 | 결정 |
 |---|---|
-| `supabase/migrations/0001_init.sql` | D17 role 확장 (remote 적용, **repo 미추적**) |
-| `supabase/migrations/0002_admin_p0.sql` | D1/D3/D4/D5/D8/D11/D14/D15/D16/D17/D19 + `is_admin()` / `is_editor()` 헬퍼 (remote 적용 추정, **repo 미추적**) |
+| `supabase/migrations/0001_init.sql` | D17 role 확장 + 12 테이블 + admin_stats/content_stats view (repo 동기화 ✅) |
+| `supabase/migrations/0002_admin_p0.sql` | D1/D3/D4/D5/D8/D11/D14/D15/D16/D17/D19 + `is_admin()`/`is_editor()` + featured_contents + weekly_kpi/admin_notifications view (repo 동기화 ✅) |
+| `0003`~`0009` | categories·tags·utm·faqs·support_tickets·newsletter_campaigns·audit_logs·newsletter_subscribers 등 (repo 동기화 ✅) |
 | `supabase/migrations/0003_categories_tags_utm.sql` ⭐ NEW | D13 / D26 / D37 / D39 / D43 / D44 / utm_channel seed + **D51 faqs/support_tickets** + **D52 featured_contents.slot_type** + **D53 newsletter_campaigns** + **D54 contents.og_* 컬럼** |
 | `supabase/migrations/0004_storage_policies.sql` ⭐ NEW | **D57 Storage 7 버킷 풀 옵션** — avatars/content-images/newsletter-assets (Public) + support-files/audit-exports (Private) + 각 RLS 정책 (anyone read·editor write·admin write·본인 write 패턴 분리) |
 
@@ -1430,6 +1431,7 @@ D42 트리거(구독자 500 OR 결제 요청 10건) 도달 시:
 | 2026-06-02 | `docs/06_admin_dev_plan.md` 신설 (본 문서) | 본 세션 |
 | 2026-06-02 | Phase 6 user mockup 갭 점검 → D50~D56 추가 + 영역 8 (사용자 페이지 운영) 확장 | 본 세션 |
 | 2026-06-07 | 목업 커버리지 감사 PASS(21p) + 구현 갭(11/23) 기록 + `/admin/contents` 타입 통합 뷰 결정 + §4.5/§5/§14.1 정합 정정 | 본 세션 (ADMIN_SESSION_NOTES §7) |
+| 2026-06-07 | 본가 마이그레이션 0001~0009 repo 동기화 + Quick Wins(revenue·guides·prompts) + 미구현 7페이지(categories·faq·support·newsletters·utm·history·curation) 목록 구현 → 구현 18/23. 편집·발송·드래그·Builder는 다음 레이어 | 본 세션 |
 
 ## 부록 B. 다른 세션에서 본 문서 활용
 

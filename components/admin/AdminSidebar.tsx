@@ -48,7 +48,7 @@ const NAV: { group: string; items: NavItem[] }[] = [
     items: [
       { href: '/admin', label: '대시보드', icon: LayoutDashboard },
       { href: '/admin/analytics', label: '상세 분석', icon: BarChart3 },
-      { href: '/admin/utm', label: '유입 (UTM)', icon: Link2, disabled: true },
+      { href: '/admin/utm', label: '유입 (UTM)', icon: Link2 },
       { href: '/admin/analytics/search', label: '검색 키워드', icon: Search, disabled: true },
     ],
   },
@@ -57,8 +57,8 @@ const NAV: { group: string; items: NavItem[] }[] = [
     items: [
       { href: '/admin/contents', label: '콘텐츠 목록', icon: FileText },
       { href: '/admin/contents/new', label: '새 콘텐츠', icon: FilePlus },
-      { href: '/admin/contents/curation', label: '큐레이션', icon: Star, disabled: true },
-      { href: '/admin/categories', label: '카테고리·태그', icon: Tags, disabled: true },
+      { href: '/admin/contents/curation', label: '큐레이션', icon: Star },
+      { href: '/admin/categories', label: '카테고리·태그', icon: Tags },
       { href: '/admin/topics', label: '후보 카드', icon: Lightbulb },
       { href: '/admin/comments', label: '댓글 모더레이션', icon: MessagesSquare },
       { href: '/admin/tools', label: '자료실', icon: Wrench },
@@ -71,9 +71,9 @@ const NAV: { group: string; items: NavItem[] }[] = [
       { href: '/admin/users', label: '가입자', icon: Users },
       { href: '/admin/users/invite', label: 'editor 초대', icon: UserPlus, disabled: true },
       { href: '/admin/opinions', label: '의견함', icon: MessageSquare },
-      { href: '/admin/support', label: '1:1 문의', icon: LifeBuoy, disabled: true },
-      { href: '/admin/faq', label: 'FAQ', icon: HelpCircle, disabled: true },
-      { href: '/admin/newsletters', label: '뉴스레터', icon: Mail, disabled: true },
+      { href: '/admin/support', label: '1:1 문의', icon: LifeBuoy },
+      { href: '/admin/faq', label: 'FAQ', icon: HelpCircle },
+      { href: '/admin/newsletters', label: '뉴스레터', icon: Mail },
     ],
   },
   {
@@ -86,7 +86,7 @@ const NAV: { group: string; items: NavItem[] }[] = [
   {
     group: '운영',
     items: [
-      { href: '/admin/history', label: 'History', icon: HistoryIcon, disabled: true },
+      { href: '/admin/history', label: 'History', icon: HistoryIcon },
       { href: '/admin/settings', label: '설정', icon: Settings, disabled: true },
     ],
   },
