@@ -3,25 +3,19 @@ import { NextRequest, NextResponse } from 'next/server';
 
 const PUBLIC_PATHS = ['/login', '/auth', '/api', '/_next', '/favicon.ico'];
 
-// editor 진입 차단 — admin only 경로
-// 계획서 §D17: editor 는 콘텐츠·자료실 운영, 분석·사용자·매출·설정·정산 영역은 admin only
-const ADMIN_ONLY_PREFIXES = [
-  '/admin/users',
-  '/admin/analytics',
-  '/admin/revenue',
-  '/admin/settings',
-  '/admin/ebooks',
-  '/admin/opinions',
-  '/admin/comments',
-  '/admin/newsletters',
-];
+// admin 접근 허용 이메일 — 기본값은 운영자 단일 계정.
+// 여러 명 허용하려면 Vercel env ADMIN_EMAILS="a@x.com,b@y.com" 로 덮어씀.
+const DEFAULT_ADMIN_EMAILS = 'caselab.kr@gmail.com';
+
+function adminEmails(): string[] {
+  return (process.env.ADMIN_EMAILS ?? DEFAULT_ADMIN_EMAILS)
+    .split(',')
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean);
+}
 
 function isPublicPath(pathname: string) {
   return PUBLIC_PATHS.some((p) => pathname.startsWith(p));
-}
-
-function isAdminOnly(pathname: string) {
-  return ADMIN_ONLY_PREFIXES.some((p) => pathname === p || pathname.startsWith(p + '/'));
 }
 
 export async function updateSession(request: NextRequest): Promise<NextResponse> {
@@ -82,25 +76,12 @@ async function updateSessionInner(request: NextRequest): Promise<NextResponse> {
     return NextResponse.redirect(redirect);
   }
 
-  const { data: profile } = await supabase
-    .from('profiles')
-    .select('role')
-    .eq('id', user.id)
-    .maybeSingle();
-  const role = profile?.role ?? 'user';
-  const isAdmin = role === 'admin';
-  const isEditor = role === 'editor';
-
-  if (!isAdmin && !isEditor) {
+  // 단일 운영자 게이트 — 허용 이메일만 통과. 그 외 계정은 로그인돼도 차단.
+  const email = (user.email ?? '').toLowerCase();
+  if (!adminEmails().includes(email)) {
     const redirect = request.nextUrl.clone();
     redirect.pathname = '/login';
     redirect.searchParams.set('error', 'forbidden');
-    return NextResponse.redirect(redirect);
-  }
-
-  if (isEditor && isAdminOnly(pathname)) {
-    const redirect = request.nextUrl.clone();
-    redirect.pathname = '/admin';
     return NextResponse.redirect(redirect);
   }
 

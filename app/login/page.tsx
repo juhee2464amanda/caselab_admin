@@ -23,10 +23,30 @@ function LoginInner() {
   const router = useRouter();
   const params = useSearchParams();
   const next = params.get('next') ?? '/admin';
-  const initialNotice = params.get('error') === 'forbidden'
-    ? '관리자 권한이 없는 계정입니다.'
-    : null;
+  const initialNotice = (() => {
+    switch (params.get('error')) {
+      case 'forbidden':
+        return '이 계정은 관리자 권한이 없습니다. caselab.kr@gmail.com 으로 로그인해 주세요.';
+      case 'middleware':
+        return '인증 처리 중 오류가 발생했습니다. 다시 시도해 주세요.';
+      default:
+        return null;
+    }
+  })();
   const supabase = createSupabaseBrowserClient();
+
+  function loginWithGoogle() {
+    setError(null);
+    startTransition(async () => {
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: `${window.location.origin}/auth/callback?next=${encodeURIComponent(next)}`,
+        },
+      });
+      if (error) setError(error.message);
+    });
+  }
 
   function loginEmail(e: React.FormEvent) {
     e.preventDefault();
@@ -45,7 +65,7 @@ function LoginInner() {
           케이스랩 관리자
         </div>
         <p className="text-center text-sm text-ink/60 mb-8">
-          관리자(admin / editor) 전용 로그인입니다.
+          관리자 전용 — caselab.kr@gmail.com 구글 계정으로 로그인하세요.
         </p>
 
         {initialNotice && (
@@ -54,24 +74,35 @@ function LoginInner() {
           </p>
         )}
 
-        <form onSubmit={loginEmail} className="space-y-3">
-          <div>
-            <Label htmlFor="email">이메일</Label>
-            <Input id="email" type="email" required value={email} onChange={(e) => setEmail(e.target.value)} />
-          </div>
-          <div>
-            <Label htmlFor="password">비밀번호</Label>
-            <Input id="password" type="password" required value={password} onChange={(e) => setPassword(e.target.value)} />
-          </div>
-          {error && <p className="text-sm text-red-600">{error}</p>}
-          <Button type="submit" variant="accent" className="w-full" disabled={pending}>
-            로그인
-          </Button>
-        </form>
+        <Button
+          variant="outline"
+          className="w-full"
+          onClick={loginWithGoogle}
+          disabled={pending}
+        >
+          Google로 로그인
+        </Button>
 
-        <p className="mt-6 text-center text-xs text-ink/50">
-          계정이 없으신가요? 운영자에게 계정 발급을 요청해 주세요.
-        </p>
+        {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
+
+        <details className="mt-8">
+          <summary className="cursor-pointer text-xs text-ink/40 text-center list-none">
+            다른 방법으로 로그인 (이메일·비밀번호)
+          </summary>
+          <form onSubmit={loginEmail} className="space-y-3 mt-4">
+            <div>
+              <Label htmlFor="email">이메일</Label>
+              <Input id="email" type="email" required value={email} onChange={(e) => setEmail(e.target.value)} />
+            </div>
+            <div>
+              <Label htmlFor="password">비밀번호</Label>
+              <Input id="password" type="password" required value={password} onChange={(e) => setPassword(e.target.value)} />
+            </div>
+            <Button type="submit" variant="accent" className="w-full" disabled={pending}>
+              로그인
+            </Button>
+          </form>
+        </details>
       </div>
     </div>
   );
