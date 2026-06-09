@@ -2,7 +2,8 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
+import { createSupabaseBrowserClient } from '@/lib/supabase/client';
 import {
   LayoutDashboard,
   BarChart3,
@@ -30,6 +31,7 @@ import {
   Settings,
   Menu,
   X,
+  LogOut,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -96,6 +98,32 @@ const NAV: { group: string; items: NavItem[] }[] = [
   },
 ];
 
+function LogoutButton({ onNavigate }: { onNavigate?: () => void }) {
+  const router = useRouter();
+  const [pending, setPending] = useState(false);
+
+  async function handleLogout() {
+    setPending(true);
+    const supabase = createSupabaseBrowserClient();
+    await supabase.auth.signOut();
+    onNavigate?.();
+    router.push('/login');
+    router.refresh();
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={handleLogout}
+      disabled={pending}
+      className="flex w-full items-center gap-2 px-2 py-1.5 rounded-md text-[13px] text-ink/70 hover:bg-muted disabled:opacity-50"
+    >
+      <LogOut className="h-4 w-4" />
+      {pending ? '로그아웃 중…' : '로그아웃'}
+    </button>
+  );
+}
+
 function NavContent({ onNavigate }: { onNavigate?: () => void }) {
   const pathname = usePathname();
   return (
@@ -151,6 +179,12 @@ function NavContent({ onNavigate }: { onNavigate?: () => void }) {
           </ul>
         </div>
       ))}
+      <div>
+        <div className="px-2 mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-ink/40">
+          계정
+        </div>
+        <LogoutButton onNavigate={onNavigate} />
+      </div>
     </nav>
   );
 }
