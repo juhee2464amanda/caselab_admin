@@ -3,7 +3,6 @@ import { Suspense } from 'react';
 import { SpeedInsights } from '@vercel/speed-insights/next';
 import './globals.css';
 import { GA4Provider } from '@/components/analytics/GA4Provider';
-import { CookieConsent } from '@/components/analytics/CookieConsent';
 import { UtmCapture } from '@/components/analytics/UtmCapture';
 
 export const metadata: Metadata = {
@@ -32,7 +31,6 @@ export default function RootLayout({
           <GA4Provider />
           <UtmCapture />
         </Suspense>
-        <CookieConsent />
         <SpeedInsights />
       </body>
     </html>
