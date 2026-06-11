@@ -19,6 +19,8 @@ export type Slot = {
   content_id: string;
   active: boolean;
   sort_label: string | null;
+  featured_from: string | null;
+  featured_until: string | null;
   contents: { title: string } | null;
 };
 export type PubContent = { id: string; title: string; track: string };
@@ -34,9 +36,26 @@ export function CurationManager({ entries, published, ranked }: { entries: Slot[
   const router = useRouter();
   const supabase = createSupabaseBrowserClient();
   const [add, setAdd] = useState({ slot_type: 'hero', content_id: '', slot: 1 });
-  const [heroDate, setHeroDate] = useState(entries.find((e) => e.slot_type === 'hero')?.sort_label ?? '');
+  const heroEntry = entries.find((e) => e.slot_type === 'hero');
+  const [heroDate, setHeroDate] = useState(heroEntry?.sort_label ?? '');
+  // 예약 노출 기간 — 본사이트 계약: featured_from <= now <= featured_until (null=상시). hero 4슬롯 일괄.
+  const [heroFrom, setHeroFrom] = useState(heroEntry?.featured_from?.slice(0, 10) ?? '');
+  const [heroUntil, setHeroUntil] = useState(heroEntry?.featured_until?.slice(0, 10) ?? '');
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+
+  function ymd(d: Date): string {
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  }
+  function applyPreset(kind: 'always' | 'week' | 'twomonths') {
+    if (kind === 'always') { setHeroFrom(''); setHeroUntil(''); return; }
+    const from = new Date();
+    const until = new Date();
+    if (kind === 'week') until.setDate(until.getDate() + 7);
+    else until.setMonth(until.getMonth() + 2);
+    setHeroFrom(ymd(from));
+    setHeroUntil(ymd(until));
+  }
 
   const placedIds = new Set(entries.map((e) => e.content_id));
 
@@ -82,12 +101,28 @@ export function CurationManager({ entries, published, ranked }: { entries: Slot[
     await supabase.from('featured_contents').delete().eq('id', item.id);
     router.refresh();
   }
-  async function applyHeroDate() {
+  async function applyHeroSchedule() {
+    setError(null);
     const heroIds = entries.filter((e) => e.slot_type === 'hero').map((e) => e.id);
     if (!heroIds.length) { setError('hero 슬롯이 없어요. 먼저 콘텐츠를 배치하세요.'); return; }
-    await supabase.from('featured_contents').update({ sort_label: heroDate || null }).in('id', heroIds);
+    if (heroFrom && heroUntil && heroFrom > heroUntil) { setError('종료일이 시작일보다 빨라요.'); return; }
+    setPending(true);
+    const { error: err } = await supabase.from('featured_contents').update({
+      sort_label: heroDate || null,
+      featured_from: heroFrom ? `${heroFrom}T00:00:00` : null,   // 시작일 0시
+      featured_until: heroUntil ? `${heroUntil}T23:59:59` : null, // 종료일 끝까지 포함
+    }).in('id', heroIds);
+    setPending(false);
+    if (err) { setError(err.message); return; }
     router.refresh();
   }
+
+  const today = ymd(new Date());
+  const scheduleHint =
+    !heroFrom && !heroUntil ? '상시 노출 (기간 제한 없음).'
+    : heroUntil && heroUntil < today ? '현재 비노출 (기간 만료 — 홈은 curated로 폴백).'
+    : heroFrom && heroFrom > today ? `예약됨 — ${heroFrom}부터 노출.`
+    : '노출 중 (설정 기간 안).';
 
   return (
     <div className="space-y-6">
@@ -96,13 +131,40 @@ export function CurationManager({ entries, published, ranked }: { entries: Slot[
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* 좌측: 슬롯 영역 */}
         <div className="lg:col-span-2 space-y-6">
-          {/* hero 대표 날짜 */}
-          <div className="card p-4 flex flex-col sm:flex-row sm:items-end gap-3">
-            <div className="flex-1">
-              <Label className="text-xs">Hero 대표 날짜 (4슬롯 일괄)</Label>
-              <Input className="mt-1" value={heroDate} onChange={(e) => setHeroDate(e.target.value)} placeholder="예: 2026년 6월 2주차" />
+          {/* hero 대표 날짜 + 예약 노출 기간 (4슬롯 일괄) */}
+          <div className="card p-4 space-y-3">
+            <div className="flex flex-col sm:flex-row sm:items-end gap-3">
+              <div className="flex-1">
+                <Label className="text-xs">Hero 대표 날짜 (표시용 라벨)</Label>
+                <Input className="mt-1" value={heroDate} onChange={(e) => setHeroDate(e.target.value)} placeholder="예: 2026년 6월 2주차" />
+              </div>
             </div>
-            <Button type="button" variant="outline" onClick={applyHeroDate}>hero 전체에 적용</Button>
+
+            <div className="border-t border-border pt-3">
+              <div className="flex items-center justify-between gap-2 mb-2">
+                <Label className="text-xs">예약 노출 기간</Label>
+                <div className="flex gap-1.5">
+                  <button type="button" onClick={() => applyPreset('always')} className="text-[11px] rounded bg-muted text-ink/70 px-2 py-1 hover:bg-muted/70">상시</button>
+                  <button type="button" onClick={() => applyPreset('week')} className="text-[11px] rounded bg-muted text-ink/70 px-2 py-1 hover:bg-muted/70">1주</button>
+                  <button type="button" onClick={() => applyPreset('twomonths')} className="text-[11px] rounded bg-muted text-ink/70 px-2 py-1 hover:bg-muted/70">2달</button>
+                </div>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <Label className="text-[11px] text-ink/50">시작일</Label>
+                  <Input className="mt-1" type="date" value={heroFrom} onChange={(e) => setHeroFrom(e.target.value)} />
+                </div>
+                <div>
+                  <Label className="text-[11px] text-ink/50">종료일</Label>
+                  <Input className="mt-1" type="date" value={heroUntil} onChange={(e) => setHeroUntil(e.target.value)} />
+                </div>
+              </div>
+              <p className="text-[11px] text-ink/40 mt-2">{scheduleHint}</p>
+            </div>
+
+            <div className="flex justify-end">
+              <Button type="button" variant="outline" onClick={applyHeroSchedule} disabled={pending}>{pending ? '저장 중…' : 'hero 전체에 적용'}</Button>
+            </div>
           </div>
 
           {MANUAL_AREAS.map((meta) => {
