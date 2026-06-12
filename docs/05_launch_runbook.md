@@ -22,10 +22,11 @@
 |---|---|---|
 | 도메인 | **Vercel 무료 서브도메인** (예: `caselab.vercel.app`) | Day 10 Vercel 가입 시 결정 |
 | 운영자 메일 | `caselab.kr@gmail.com` | Day 0 (이미 보유) |
-| 사이트 발송 이메일 | **Brevo HTTP API** (단일 발신자 인증, 발신: `caselab.kr@gmail.com`, 일 300건·월 9,000건 무료) | Day 9 |
+| 전자책 발송(트랜잭션) | **Gmail SMTP / nodemailer** (발신: `caselab.kr@gmail.com`, ~500통/일, INBOX 도달, 2026-06-12 §18.16) | Day 9 |
+| 뉴스레터 명단 동기화 | **Brevo Contacts API** (`sync-brevo-contact`) | Day 9 |
 | Cloudflare | **사용 안 함** | — |
-| Resend | **사용 안 함** (Brevo로 대체) | — |
-| Brevo | **사용** (단일 발신자 인증, 무료) | Day 9 |
+| Resend | **사용 안 함** | — |
+| Brevo | **사용** (뉴스레터 명단 동기화 + 비번재설정 SMTP) | Day 9 |
 | Anthropic API (AI 초안) | **출시 후 도입 예정** | — |
 | Supabase | 사용 (Free) | Day 1 |
 | Vercel | 사용 (Hobby 무료) | Day 10 |
@@ -419,13 +420,13 @@ open http://localhost:3000/sitemap.xml
 
 ## Day 9 — Brevo + 전자책 발송 ([Issue #5](https://github.com/juhee2464amanda/caselab/issues/5))
 
-> 2026-06-02 결정 변경: Gmail SMTP → Brevo HTTP API. 사유는 `docs/04_dev_plan.md` §18.5 참조.
+> ⚠️ 2026-06-12 최신 결정: **전자책 발송 = Gmail SMTP(nodemailer)**. Brevo가 gmail 발신자를 Gmail에 silent-drop해서 인박스 미도달 → Gmail 자체 SMTP로 전환(INBOX 도달 검증). 사유는 메인 레포 `caselab/docs/04_dev_plan.md` §18.16 참조. 아래 Brevo 설정은 **뉴스레터 명단 동기화·비번재설정 SMTP**에만 해당.
 
 ### ✅ 끝났을 때
-- Brevo 가입 + `caselab.kr@gmail.com` 단일 발신자 인증 완료
-- Brevo API Key 발급 + Supabase secrets 3종 등록 완료
-- `send-ebook` Edge Function 배포 (Brevo HTTP API 사용)
-- 본인 이메일로 전자책 주문 → 1분 내 PDF 다운로드 링크 도착
+- 발신 Gmail 계정 2단계 인증 + 앱 비밀번호 발급 → secrets `GMAIL_USER/GMAIL_APP_PASSWORD/GMAIL_SENDER_NAME` 등록
+- `send-ebook` Edge Function 배포 (Gmail SMTP / nodemailer 사용)
+- 본인 Gmail로 전자책 주문 → 1분 내 PDF 다운로드 링크 INBOX 도착
+- (뉴스레터 명단 동기화용) Brevo 가입 + API Key + `BREVO_NEWSLETTER_LIST_ID` 등록
 
 ### 📋 Brevo 단일 발신자 인증 (~5분)
 1. [brevo.com](https://www.brevo.com/) 가입 (Google 로그인 가능). Day 0에 이미 가입했으면 패스.
@@ -602,7 +603,8 @@ https://<your>.vercel.app/sitemap.xml  # 200
 | `NEXT_PUBLIC_GA_MEASUREMENT_ID` | GA4 | Day 8 | 선택 |
 | `KAKAO_REST_API_KEY` (Edge Function secret) | Kakao 디벨로퍼스 | Day 2 (선택) | Kakao 도입 시 |
 | `KAKAO_CLIENT_SECRET` (Edge Function secret) | Kakao 디벨로퍼스 | Day 2 (선택) | 동일 |
-| `BREVO_API_KEY` (Edge Function secret) | Brevo → SMTP & API → API Keys (`xkeysib-...`) | Day 9 | 필수 (전자책 발송) |
+| `GMAIL_USER` / `GMAIL_APP_PASSWORD` / `GMAIL_SENDER_NAME` (Edge Function secret) | 발신 Gmail + 앱비번 16자리 | Day 9 | 필수 (전자책 발송) |
+| `BREVO_API_KEY` (Edge Function secret) | Brevo → SMTP & API → API Keys (`xkeysib-...`) | Day 9 | 필수 (뉴스레터 명단 동기화) |
 | `BREVO_SENDER_EMAIL` (Edge Function secret) | `caselab.kr@gmail.com` (Brevo 단일 발신자 인증 완료한 주소) | Day 9 | 필수 |
 | `BREVO_SENDER_NAME` (Edge Function secret) | `케이스랩` | Day 9 | 필수 |
 | `ANTHROPIC_API_KEY` | Anthropic Console | **출시 후** | 보류 |
