@@ -14,7 +14,7 @@ export default async function AdminCuration() {
   }
   const supabase = await createSupabaseServerClient();
   const [featRes, pubRes, statRes] = await Promise.all([
-    supabase.from('featured_contents').select('id, slot_type, slot, content_id, active, sort_label, contents(title)').order('slot_type').order('slot'),
+    supabase.from('featured_contents').select('id, slot_type, slot, content_id, active, sort_label, featured_from, featured_until, contents(title)').order('slot_type').order('slot'),
     supabase.from('contents').select('id, title, track').eq('status', 'published').order('updated_at', { ascending: false }).limit(100),
     supabase.from('content_stats').select('content_id, title, track, view_count, save_count, like_count'),
   ]);
