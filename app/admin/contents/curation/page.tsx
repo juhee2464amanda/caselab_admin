@@ -1,5 +1,6 @@
 import { createSupabaseServerClient, isSupabaseConfigured } from '@/lib/supabase/server';
 import { CurationManager, type Slot, type PubContent, type Ranked } from '@/components/admin/CurationManager';
+import { CategoryQuickEdit } from '@/components/admin/CategoryQuickEdit';
 
 // /admin/contents/curation — Hero·Highlight·Links 슬롯 (D52 + 피드백 #3).
 // 우측 '잘 되는 콘텐츠' 랭킹(조회·저장·좋아요 index)에서 한 클릭 배치.
@@ -36,9 +37,14 @@ export default async function AdminCuration() {
 
   return (
     <div className="p-4 sm:p-8 space-y-6">
-      <header>
-        <h1 className="font-serif text-xl sm:text-2xl font-semibold">큐레이션</h1>
-        <p className="text-sm text-ink/60 mt-1">잘 되는 콘텐츠를 메인 슬롯에 배치하세요. 우측 랭킹에서 📌로 한 번에 배치.</p>
+      <header className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h1 className="font-serif text-xl sm:text-2xl font-semibold">큐레이션</h1>
+          <p className="text-sm text-ink/60 mt-1">잘 되는 콘텐츠를 메인 슬롯에 배치하세요. 우측 랭킹에서 📌로 한 번에 배치.</p>
+        </div>
+        <div className="self-start sm:self-auto">
+          <CategoryQuickEdit scope={{ type: 'content_subcategory', tracks: ['case', 'trend'], title: '콘텐츠 카테고리 수정' }} />
+        </div>
       </header>
       <CurationManager entries={entries} published={published} ranked={ranked} />
     </div>
