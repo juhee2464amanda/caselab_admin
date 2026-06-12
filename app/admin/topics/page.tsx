@@ -1,4 +1,5 @@
 import { createSupabaseServerClient, isSupabaseConfigured } from '@/lib/supabase/server';
+import { CategoryQuickEdit } from '@/components/admin/CategoryQuickEdit';
 import { formatDate } from '@/lib/utils';
 
 // /admin/topics — 후보 카드 (D29) + 피드백 #5: 투표 많은 후보 / raw 신규 제안 분리 + 제출자 정보.
@@ -43,9 +44,14 @@ export default async function AdminTopics() {
 
   return (
     <div className="p-4 sm:p-8 space-y-8">
-      <header>
-        <h1 className="font-serif text-xl sm:text-2xl font-semibold">후보 카드</h1>
-        <p className="text-sm text-ink/60 mt-1">사용자가 제안한 콘텐츠 주제. 투표 많은 후보와 신규 raw 제안을 분리.</p>
+      <header className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h1 className="font-serif text-xl sm:text-2xl font-semibold">후보 카드</h1>
+          <p className="text-sm text-ink/60 mt-1">사용자가 제안한 콘텐츠 주제. 투표 많은 후보와 신규 raw 제안을 분리.</p>
+        </div>
+        <div className="self-start sm:self-auto">
+          <CategoryQuickEdit scope={{ type: 'content_subcategory', tracks: ['case', 'trend'], title: '콘텐츠 카테고리 수정' }} />
+        </div>
       </header>
 
       {/* 투표 많은 후보 */}

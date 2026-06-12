@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { createSupabaseServerClient, isSupabaseConfigured } from '@/lib/supabase/server';
+import { CategoryQuickEdit } from '@/components/admin/CategoryQuickEdit';
 
 // /admin/tools → '프롬프트 순위' (피드백 #6).
 // 전체 콘텐츠에서 prompt_copy 이벤트가 많은 = 잘 복사되는 프롬프트 순위.
@@ -51,9 +52,14 @@ export default async function AdminPromptRanking() {
 
   return (
     <div className="p-4 sm:p-8 space-y-6">
-      <header>
-        <h1 className="font-serif text-xl sm:text-2xl font-semibold">프롬프트 순위</h1>
-        <p className="text-sm text-ink/60 mt-1">최근 90일 전체 콘텐츠에서 복사가 많이 된 프롬프트 순위. 콘텐츠 등록·편집은 <Link href="/admin/contents" className="text-accent hover:underline">콘텐츠 목록</Link>에서.</p>
+      <header className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h1 className="font-serif text-xl sm:text-2xl font-semibold">프롬프트 순위</h1>
+          <p className="text-sm text-ink/60 mt-1">최근 90일 전체 콘텐츠에서 복사가 많이 된 프롬프트 순위. 콘텐츠 등록·편집은 <Link href="/admin/contents" className="text-accent hover:underline">콘텐츠 목록</Link>에서.</p>
+        </div>
+        <div className="self-start sm:self-auto">
+          <CategoryQuickEdit scope={{ type: 'tool_subcategory', tracks: ['tool', 'prompt', 'context-card'], title: '자료실 카테고리 수정' }} />
+        </div>
       </header>
 
       <section className="grid grid-cols-2 sm:grid-cols-3 gap-3">

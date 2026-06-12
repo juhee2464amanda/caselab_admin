@@ -1,4 +1,5 @@
 import { createSupabaseServerClient, isSupabaseConfigured } from '@/lib/supabase/server';
+import { CategoryQuickEdit } from '@/components/admin/CategoryQuickEdit';
 import { formatDate } from '@/lib/utils';
 
 export default async function AdminComments() {
@@ -12,7 +13,12 @@ export default async function AdminComments() {
 
   return (
     <div className="p-4 sm:p-8">
-      <h1 className="font-serif text-xl sm:text-2xl font-semibold mb-6">댓글 모더레이션</h1>
+      <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <h1 className="font-serif text-xl sm:text-2xl font-semibold">댓글 모더레이션</h1>
+        <div className="self-start sm:self-auto">
+          <CategoryQuickEdit scope={{ type: 'content_subcategory', tracks: ['case', 'trend'], title: '콘텐츠 카테고리 수정' }} />
+        </div>
+      </div>
       <ul className="space-y-3">
         {((data ?? []) as any[]).map((c) => (
           <li key={c.id} className="card p-4 sm:p-5">

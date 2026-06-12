@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { createSupabaseServerClient, isSupabaseConfigured } from '@/lib/supabase/server';
 import { Button } from '@/components/ui/button';
+import { CategoryQuickEdit } from '@/components/admin/CategoryQuickEdit';
 import { formatDate } from '@/lib/utils';
 
 // ─────────────── 타입 정의 ───────────────
@@ -117,6 +118,7 @@ export default async function AdminContents({
           <p className="text-xs text-ink/50 mt-1">케이스·트렌드 + 자료실(도구·가이드·프롬프트·맥락 카드) 통합</p>
         </div>
         <div className="flex gap-2 self-start sm:self-auto">
+          <CategoryQuickEdit scope={{ type: 'content_subcategory', tracks: ['case', 'trend'], title: '콘텐츠 카테고리 수정' }} />
           <Link href="/admin/tools/new"><Button variant="outline">새 자료</Button></Link>
           <Link href="/admin/contents/new"><Button variant="accent">새 콘텐츠</Button></Link>
         </div>
