@@ -38,7 +38,7 @@ export default async function AdminEbookCustomers({
     (() => {
       let q = supabase
         .from('purchases')
-        .select('id, name, email, amount, status, sent_at, created_at, product_id, products(title)')
+        .select('id, name, email, amount, status, sent_at, created_at, product_id, metadata, products(title)')
         .order('created_at', { ascending: false })
         .limit(300);
       if (sp.product) q = q.eq('product_id', sp.product);
@@ -46,7 +46,9 @@ export default async function AdminEbookCustomers({
     })(),
   ]);
   const products = (prodRes.data ?? []) as Product[];
-  const purchases = (purRes.data ?? []) as unknown as Purchase[];
+  // 테스트 발송(metadata.test) 행 제외
+  const purchases = ((purRes.data ?? []) as unknown as (Purchase & { metadata: { test?: boolean } | null })[])
+    .filter((p) => !p.metadata?.test);
 
   return (
     <div className="p-4 sm:p-8">

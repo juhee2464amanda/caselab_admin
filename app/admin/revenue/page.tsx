@@ -27,10 +27,12 @@ export default async function AdminRevenue() {
   const supabase = await createSupabaseServerClient();
   const { data } = await supabase
     .from('purchases')
-    .select('id, status, sent_at, created_at, products(title, price)')
+    .select('id, status, sent_at, created_at, metadata, products(title, price)')
     .order('created_at', { ascending: false });
 
-  const rows = (data ?? []) as unknown as PurchaseRow[];
+  // 테스트 발송(metadata.test) 행 제외
+  const rows = ((data ?? []) as unknown as (PurchaseRow & { metadata: { test?: boolean } | null })[])
+    .filter((r) => !r.metadata?.test);
   const now = new Date();
   const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
 

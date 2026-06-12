@@ -19,7 +19,7 @@
 - Next.js 15 (App Router) + TypeScript + Tailwind 3
 - Supabase (Postgres + Auth + Storage + Edge Functions, Free)
 - Vercel (Hobby 무료 — 무료 서브도메인 caselab.vercel.app 예정)
-- Gmail SMTP (전자책 발송, denomailer 라이브러리)
+- Gmail SMTP (전자책 발송, nodemailer 라이브러리)
 - GA4 (쿠키 동의 후)
 - React 18.3 (peer-dep 충돌로 React 19 RC 안 씀)
 
@@ -77,7 +77,7 @@ caselab/
 ├── supabase/
 │   ├── migrations/0001_init.sql
 │   └── functions/
-│       ├── send-ebook/   — Gmail SMTP (denomailer)
+│       ├── send-ebook/   — Gmail SMTP (nodemailer)
 │       └── kakao-oauth/  — Custom OAuth proxy
 └── docs/
     ├── 04_dev_plan.md    — 원본 기획서 + §18 Decisions Log

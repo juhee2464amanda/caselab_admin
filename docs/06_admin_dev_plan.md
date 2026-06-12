@@ -60,7 +60,7 @@
 
 | 항목 | §1~§17 기획 | 출시 결정 (정본) |
 |---|---|---|
-| 이메일 인프라 | Resend | **Brevo 단일 발신자 인증** (`caselab.kr@gmail.com`). admin/opinions 답장 + 전자책 발송 + Brevo Contact 동기화 모두 Brevo |
+| 이메일 인프라 | Resend | **전자책 발송 = Gmail SMTP(nodemailer)** (`caselab.kr@gmail.com`, 2026-06-12 §18.16). admin/opinions 답장·비번재설정 SMTP·Brevo Contact 동기화 = Brevo |
 | 도메인 | `caselab.kr` | **Vercel 무료 서브도메인** (`caselab.vercel.app`) until 구독자 500명 (D42 PG 트리거와 동일) |
 | AI 초안 | Anthropic Claude API | **비활성** (Claude Max 구독 직접 사용 → admin 폼 복붙) |
 | 답신 메일 | `official@<도메인>` | **`caselab.kr@gmail.com`** Privacy/Footer 직접 표기 |

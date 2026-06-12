@@ -71,7 +71,7 @@ caselab/
 ├── supabase/
 │   ├── migrations/0001_init.sql  — DB 스키마 (12개 테이블 + RLS)
 │   └── functions/
-│       ├── send-ebook/   — Gmail SMTP (denomailer)
+│       ├── send-ebook/   — Gmail SMTP (nodemailer)
 │       └── kakao-oauth/  — Custom OAuth proxy
 ├── middleware.ts         — /admin 가드 + onboarded 강제
 └── docs/
