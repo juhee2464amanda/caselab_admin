@@ -47,12 +47,11 @@ export function CurationManager({ entries, published, ranked }: { entries: Slot[
   function ymd(d: Date): string {
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
   }
-  function applyPreset(kind: 'always' | 'week' | 'twomonths') {
-    if (kind === 'always') { setHeroFrom(''); setHeroUntil(''); return; }
+  function applyAlways() { setHeroFrom(''); setHeroUntil(''); }
+  function applyWeeks(weeks: number) {
     const from = new Date();
     const until = new Date();
-    if (kind === 'week') until.setDate(until.getDate() + 7);
-    else until.setMonth(until.getMonth() + 2);
+    until.setDate(until.getDate() + weeks * 7);
     setHeroFrom(ymd(from));
     setHeroUntil(ymd(until));
   }
@@ -143,10 +142,11 @@ export function CurationManager({ entries, published, ranked }: { entries: Slot[
             <div className="border-t border-border pt-3">
               <div className="flex items-center justify-between gap-2 mb-2">
                 <Label className="text-xs">예약 노출 기간</Label>
-                <div className="flex gap-1.5">
-                  <button type="button" onClick={() => applyPreset('always')} className="text-[11px] rounded bg-muted text-ink/70 px-2 py-1 hover:bg-muted/70">상시</button>
-                  <button type="button" onClick={() => applyPreset('week')} className="text-[11px] rounded bg-muted text-ink/70 px-2 py-1 hover:bg-muted/70">1주</button>
-                  <button type="button" onClick={() => applyPreset('twomonths')} className="text-[11px] rounded bg-muted text-ink/70 px-2 py-1 hover:bg-muted/70">2달</button>
+                <div className="flex flex-wrap gap-1.5">
+                  <button type="button" onClick={applyAlways} className="text-[11px] rounded bg-muted text-ink/70 px-2 py-1 hover:bg-muted/70">상시</button>
+                  {[1, 2, 3, 4, 5].map((n) => (
+                    <button key={n} type="button" onClick={() => applyWeeks(n)} className="text-[11px] rounded bg-muted text-ink/70 px-2 py-1 hover:bg-muted/70">{n}주</button>
+                  ))}
                 </div>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
