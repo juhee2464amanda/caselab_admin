@@ -2,12 +2,13 @@ import Link from 'next/link';
 import { createSupabaseServerClient, isSupabaseConfigured } from '@/lib/supabase/server';
 import { Button } from '@/components/ui/button';
 import { EbookPdfUpload } from '@/components/admin/EbookPdfUpload';
+import { TestSendButton } from '@/components/admin/TestSendButton';
 
-// /admin/ebooks — 판매 중인 ebook (피드백 #8-2). 판매수·매출·발송완료 지표 + PDF 연결.
+// /admin/ebooks — 판매 중인 ebook (피드백 #8-2). 판매수·매출·발송완료 지표 + PDF 연결 + 테스트 발송.
 export const dynamic = 'force-dynamic';
 
 type Product = { id: string; slug: string; title: string; price: number; status: string; pdf_path: string | null; body: { read_minutes?: number } | null };
-type Purchase = { product_id: string; amount: number; sent_at: string | null };
+type Purchase = { product_id: string; amount: number; sent_at: string | null; metadata: { test?: boolean } | null };
 
 function won(n: number) { return n === 0 ? '0원' : `${n.toLocaleString('ko-KR')}원`; }
 
@@ -16,10 +17,11 @@ export default async function AdminEbooks() {
   const supabase = await createSupabaseServerClient();
   const [prodRes, purRes] = await Promise.all([
     supabase.from('products').select('id, slug, title, price, status, pdf_path, body').order('created_at', { ascending: false }),
-    supabase.from('purchases').select('product_id, amount, sent_at'),
+    supabase.from('purchases').select('product_id, amount, sent_at, metadata'),
   ]);
   const products = (prodRes.data ?? []) as Product[];
-  const purchases = (purRes.data ?? []) as Purchase[];
+  // 테스트 발송(metadata.test) 행은 매출·판매수 집계에서 제외
+  const purchases = ((purRes.data ?? []) as Purchase[]).filter((p) => !p.metadata?.test);
 
   const agg = new Map<string, { sales: number; revenue: number; sent: number }>();
   for (const p of purchases) {
@@ -55,11 +57,12 @@ export default async function AdminEbooks() {
               <th className="px-4 py-3 w-20 text-right">발송완료</th>
               <th className="px-4 py-3 w-20">상태</th>
               <th className="px-4 py-3 w-44">PDF</th>
+              <th className="px-4 py-3 w-36">테스트 발송</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-border">
             {products.length === 0 && (
-              <tr><td colSpan={8} className="px-4 py-10 text-center text-ink/40">등록된 ebook이 없어요. 우상단 "새 ebook"으로 시작하세요.</td></tr>
+              <tr><td colSpan={9} className="px-4 py-10 text-center text-ink/40">등록된 ebook이 없어요. 우상단 "새 ebook"으로 시작하세요.</td></tr>
             )}
             {products.map((p) => {
               const a = agg.get(p.id) ?? { sales: 0, revenue: 0, sent: 0 };
@@ -73,6 +76,7 @@ export default async function AdminEbooks() {
                   <td className="px-4 py-3 text-right tabular-nums text-ink/60">{a.sent.toLocaleString('ko-KR')}</td>
                   <td className="px-4 py-3"><span className={`badge ${p.status === 'active' ? 'bg-green-100 text-green-700' : 'bg-muted text-ink/50'}`}>{p.status === 'active' ? '판매중' : '보관'}</span></td>
                   <td className="px-4 py-3"><EbookPdfUpload productId={p.id} slug={p.slug} pdfPath={p.pdf_path} /></td>
+                  <td className="px-4 py-3"><TestSendButton productId={p.id} hasPdf={!!p.pdf_path} /></td>
                 </tr>
               );
             })}
