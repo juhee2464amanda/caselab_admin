@@ -65,7 +65,7 @@ export default async function AdminEbooks() {
               const a = agg.get(p.id) ?? { sales: 0, revenue: 0, sent: 0 };
               return (
                 <tr key={p.id} className="hover:bg-muted/30">
-                  <td className="px-4 py-3 font-medium">{p.title}<div className="text-xs text-ink/40">/{p.slug}</div></td>
+                  <td className="px-4 py-3 font-medium"><Link href={`/admin/ebooks/${p.id}/edit`} className="hover:text-accent hover:underline underline-offset-2">{p.title}</Link><div className="text-xs text-ink/40">/{p.slug}</div></td>
                   <td className="px-4 py-3 text-right tabular-nums">{won(p.price)}</td>
                   <td className="px-4 py-3 text-right tabular-nums text-ink/60">{p.body?.read_minutes ? `${p.body.read_minutes}분` : '—'}</td>
                   <td className="px-4 py-3 text-right tabular-nums font-semibold">{a.sales.toLocaleString('ko-KR')}</td>
