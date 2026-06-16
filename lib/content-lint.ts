@@ -91,21 +91,7 @@ export function lintContent(
     checks.push({ id: 'intent-labels', label: 'Step별 IntentBox (트렌드 N/A)', passed: true });
   }
 
-  // 5. 별로 사례 ≥ 30% 분량 (case 만)
-  if (body.kind === 'case') {
-    const total = [...body.essence, ...body.framework.flatMap((s) => s.blocks), ...body.failures, ...body.review]
-      .map(extractText)
-      .join(' ').length;
-    const failureChars = body.failures.map(extractText).join(' ').length;
-    const ratio = total > 0 ? failureChars / total : 0;
-    checks.push({
-      id: 'failure-ratio',
-      label: `별로였던 사례 분량 ≥ 30% (${Math.round(ratio * 100)}%)`,
-      passed: ratio >= 0.3,
-    });
-  } else {
-    checks.push({ id: 'failure-ratio', label: '별로 사례 분량 (트렌드 N/A)', passed: true });
-  }
+  // (별로 사례 ≥30% 분량 강제 게이트는 제거됨 — 솔직한 실패는 ai-draft 가이드로만 권장, 비율 강제 없음)
 
   // 6. customization 4단계 (case 만)
   if (body.kind === 'case') {
