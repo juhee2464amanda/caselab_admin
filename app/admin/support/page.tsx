@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import { createSupabaseServerClient, isSupabaseConfigured } from '@/lib/supabase/server';
 import { formatDate } from '@/lib/utils';
 
@@ -66,7 +67,9 @@ export default async function AdminSupport({
               const s = STATUS[t.status] ?? { label: t.status, cls: 'badge' };
               return (
                 <tr key={t.id} className="hover:bg-muted/30">
-                  <td className="px-4 py-3 font-medium">{t.subject}</td>
+                  <td className="px-4 py-3 font-medium">
+                    <Link href={`/admin/support/${t.id}`} className="hover:underline">{t.subject}</Link>
+                  </td>
                   <td className="px-4 py-3"><span className={`badge ${s.cls}`}>{s.label}</span></td>
                   <td className="px-4 py-3 text-xs text-ink/50">{formatDate(t.created_at)}</td>
                   <td className="px-4 py-3 text-xs text-ink/50">{t.replied_at ? formatDate(t.replied_at) : '—'}</td>
