@@ -26,6 +26,22 @@ function verifySlack(req: NextRequest, rawBody: string): boolean {
   }
 }
 
+// SLACK_HERMES_CHANNELS = "C0AAA:scout,C0BBB:analyst,C0CCC:briefing" (채널ID:lane 콤마목록).
+// 하위호환: SLACK_HERMES_CHANNEL_ID(단일)는 lane "slack"로 취급.
+function channelLanes(): Record<string, string> {
+  const map: Record<string, string> = {};
+  const raw = (process.env.SLACK_HERMES_CHANNELS ?? '').trim();
+  if (raw) {
+    for (const part of raw.split(',')) {
+      const [id, lane] = part.split(':').map((s) => s.trim());
+      if (id) map[id] = lane || 'slack';
+    }
+  }
+  const single = (process.env.SLACK_HERMES_CHANNEL_ID ?? '').trim();
+  if (single && !map[single]) map[single] = 'slack';
+  return map;
+}
+
 // 봇 메시지는 text 대신 attachments/blocks에 본문이 들어오는 경우가 있어 보강 추출.
 function extractText(ev: Record<string, any>): string {
   if (typeof ev.text === 'string' && ev.text.trim()) return ev.text;
@@ -65,17 +81,23 @@ export async function POST(req: NextRequest) {
   }
 
   const ev = (payload.event ?? {}) as Record<string, any>;
-  const channelId = (process.env.SLACK_HERMES_CHANNEL_ID ?? '').trim();
   const dbId = (process.env.NOTION_SEED_DB_ID ?? '').trim();
+  const lanes = channelLanes();
 
-  // 3) 필터: 대상 채널의 message 이벤트만. 편집/삭제/입장 등 subtype 제외(봇메시지는 허용).
+  // 3) 필터:
+  //  - 대상 채널(여러 lane 중 하나)의 message 이벤트만
+  //  - 봇이 올린 브리핑만 적재 (사람 수동 대화 = 노이즈 → 제외)
+  //  - 편집/삭제/입장 등 subtype 제외
   const isMsg = ev.type === 'message';
-  const okChannel = !channelId || ev.channel === channelId;
-  const isMutation = ev.subtype && ev.subtype !== 'bot_message'; // message_changed/deleted/channel_join 등 제외
+  const lane = lanes[ev.channel];
+  const okChannel = Object.keys(lanes).length === 0 || !!lane;
+  const isBot = !!ev.bot_id || ev.subtype === 'bot_message';
+  const isMutation = ev.subtype && ev.subtype !== 'bot_message';
   const text = extractText(ev);
-  if (!isMsg || !okChannel || isMutation || !text.trim()) {
+  if (!isMsg || !okChannel || !isBot || isMutation || !text.trim()) {
     return NextResponse.json({ ok: true, skipped: 'filtered' });
   }
+  const laneLabel = lane ?? 'slack';
 
   try {
     if (!dbId) throw new Error('NOTION_SEED_DB_ID missing');
@@ -89,15 +111,16 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: true, skipped: 'duplicate' });
     }
 
-    // 5) Notion 적재 (raw draft)
+    // 5) Notion 적재 (raw draft) — lane 태그를 제목에 붙여 triage 때 출처 lane 구분
     const firstLine = text.split('\n').find((l) => l.trim()) ?? text;
     const permalink = `https://slack.com/archives/${ev.channel}/${needle}`;
     const seed = await createBriefSeed({
       databaseId: dbId,
-      title: firstLine,
+      title: `[${laneLabel}] ${firstLine}`,
       rawText: text,
       sourceUrl: permalink,
       origin: 'hermes-slack',
+      lane: laneLabel,
     });
     return NextResponse.json({ ok: true, seed: seed.url });
   } catch (e) {

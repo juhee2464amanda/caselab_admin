@@ -48,6 +48,7 @@ export interface BriefSeedInput {
   rawText: string; // 브리핑 원문 (페이지 본문)
   sourceUrl: string; // 원천링크 (Slack permalink, "p<ts>" 포함)
   origin: 'hermes-slack' | 'hermes-telegram';
+  lane?: string; // 채널 lane (scout/analyst/briefing/weekly) — 본문 배너 표기용
 }
 
 // Seed Backlog에 raw draft seed 1건 생성. 핵심인사이트·실험앵글 등은 비워 둠
@@ -65,13 +66,14 @@ export async function createBriefSeed(input: BriefSeedInput): Promise<{ id: stri
         원천링크: { rich_text: [{ text: { content: input.sourceUrl.slice(0, 2000) } }] },
         status: { status: { name: '시작 전' } },
       },
-      children: briefBlocks(input.rawText),
+      children: briefBlocks(input.rawText, input.lane),
     }),
   });
   return { id: json.id as string, url: json.url as string };
 }
 
-function briefBlocks(rawText: string): unknown[] {
+function briefBlocks(rawText: string, lane?: string): unknown[] {
+  const laneTag = lane ? `[lane: ${lane}] ` : '';
   const banner = {
     object: 'block',
     type: 'callout',
@@ -82,7 +84,7 @@ function briefBlocks(rawText: string): unknown[] {
           type: 'text',
           text: {
             content:
-              'HERMES 브리퍼 자동 적재 (raw). triage 때 핵심인사이트·실험앵글을 직접 채우고 ready(준비완료)로 승격하세요.',
+              `${laneTag}HERMES 브리퍼 자동 적재 (raw). triage 때 핵심인사이트·실험앵글을 직접 채우고 ready(준비완료)로 승격하세요.`,
           },
         },
       ],
