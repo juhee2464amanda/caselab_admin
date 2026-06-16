@@ -106,8 +106,26 @@ export function lintContent(
 
   // 7. 광고/외부 링크 화이트리스트
   const allBlocks: Block[] = body.kind === 'case'
-    ? [...body.essence, ...body.framework.flatMap((s) => s.blocks), ...body.failures, ...body.review]
-    : [...body.whats_new, ...body.experiment, ...body.verdict.useful, ...body.verdict.notUseful];
+    ? [
+        ...body.essence,
+        ...body.framework.flatMap((s) => s.blocks),
+        ...body.failures,
+        ...body.review,
+        // D70 본문 섹션도 링크 스캔에 포함
+        ...(body.caseIntro ?? []),
+      ]
+    : [
+        // D70 트렌드 본문 (정본)
+        ...(body.what ?? []),
+        ...(body.why ?? []),
+        ...(body.deepDive ?? []),
+        ...(body.soWhat ?? []),
+        // legacy 트렌드 (있으면)
+        ...(body.whats_new ?? []),
+        ...(body.experiment ?? []),
+        ...(body.verdict?.useful ?? []),
+        ...(body.verdict?.notUseful ?? []),
+      ];
   const allText = allBlocks.map(extractText).join(' ');
   const found = urls(allText);
   const violations = found.filter((u) => {
