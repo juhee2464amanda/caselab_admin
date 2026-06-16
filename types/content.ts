@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-export const JOB_TAGS = ['planning', 'marketing', 'sales', 'solo', 'strategy', 'analysis'] as const;
+export const JOB_TAGS = ['planning', 'marketing', 'sales', 'solo', 'strategy', 'analysis', 'revenue_kpi', 'customer_research'] as const;
 export const PERSONAS = ['A', 'B', 'C', 'D', 'E'] as const;
 
 export const JobTagSchema = z.enum(JOB_TAGS);
@@ -132,8 +132,68 @@ export const FrameworkStepSchema = z.object({
   blocks: z.array(BlockSchema).min(1),
 });
 
+// ───────────────────────────────────────────────────────────
+// D70 (2026-06-06) — 본가 content.html 7섹션 정합 sub-schemas.
+// 본가(라이브 렌더러)가 정본. admin 폼은 이 필드들을 생산한다.
+// ───────────────────────────────────────────────────────────
+export const PainPointSchema = z.object({
+  num: z.string(),
+  title: z.string(),
+  symptom: z.string(),
+  rootCause: z.string(),
+});
+
+export const FrameworkReferenceSchema = z.object({
+  name: z.string(),
+  description: z.string(),
+  sourceLabel: z.string().optional(),
+  sourceTitle: z.string().optional(),
+  sourceUrl: z.string().url().optional(),
+  sourceThumbnail: z.string().url().optional(),
+});
+
+export const StepCardSchema = z.object({
+  num: z.number().int().min(1),
+  label: z.string(),
+  description: z.string().optional(),
+  human: z.string(),
+  ai: z.string(),
+  prompt: z.string(),
+  goodResult: z.string().optional(),
+  badResult: z.string().optional(),
+});
+
+export const TakingPointSchema = z.object({
+  title: z.string(),
+  description: z.string(),
+  action: z.string().optional(),
+});
+
+/** 트렌드 "누구한테 중요해요" — 직무별 관련도 */
+export const TrendForWhoSchema = z.object({
+  role: z.string(),
+  why: z.string(),
+});
+
+export const SourceLinkSchema = z.object({
+  label: z.string(),
+  url: z.string(),
+});
+
 export const CaseBodySchema = z.object({
   kind: z.literal('case'),
+
+  // D70 신규 — 모두 optional. 채워지면 7섹션 렌더, 비면 legacy 4섹션 폴백.
+  forWho: z.array(z.string()).optional(),
+  caseIntro: z.array(BlockSchema).optional(),
+  painPoints: z.array(PainPointSchema).optional(),
+  frameworkReference: FrameworkReferenceSchema.optional(),
+  stepCards: z.array(StepCardSchema).optional(),
+  pros: z.array(z.string()).optional(),
+  cons: z.array(z.string()).optional(),
+  takingPoints: z.array(TakingPointSchema).optional(),
+
+  // legacy (4섹션) — 본가와 동일하게 required 유지. D70 폼에서도 함께 채운다.
   essence: z.array(BlockSchema).min(1),
   framework: z.array(FrameworkStepSchema).min(1),
   failures: z.array(BlockSchema).min(1),
@@ -143,12 +203,25 @@ export const CaseBodySchema = z.object({
 
 export const TrendBodySchema = z.object({
   kind: z.literal('trend'),
-  whats_new: z.array(BlockSchema).min(1),
-  experiment: z.array(BlockSchema).min(1),
-  verdict: z.object({
-    useful: z.array(BlockSchema).min(1),
-    notUseful: z.array(BlockSchema).min(1),
-  }),
+
+  // D70 신규 — 본가 트렌드 페이지가 렌더하는 정본 7섹션 (모두 optional, 있는 것만 렌더).
+  what: z.array(BlockSchema).optional(),
+  why: z.array(BlockSchema).optional(),
+  forWho: z.array(TrendForWhoSchema).optional(),
+  keyPoints: z.array(z.string()).optional(),
+  deepDive: z.array(BlockSchema).optional(),
+  soWhat: z.array(BlockSchema).optional(),
+  sources: z.array(SourceLinkSchema).optional(),
+
+  // legacy — 본가는 제거했으나 admin lint/기존 default 호환 위해 optional 보존. (Phase 3에서 제거)
+  whats_new: z.array(BlockSchema).optional(),
+  experiment: z.array(BlockSchema).optional(),
+  verdict: z
+    .object({
+      useful: z.array(BlockSchema).min(1),
+      notUseful: z.array(BlockSchema).min(1),
+    })
+    .optional(),
 });
 
 export const ContentBodySchema = z.discriminatedUnion('kind', [
@@ -160,6 +233,12 @@ export type ContentBody = z.infer<typeof ContentBodySchema>;
 export type CaseBody = z.infer<typeof CaseBodySchema>;
 export type TrendBody = z.infer<typeof TrendBodySchema>;
 export type FrameworkStep = z.infer<typeof FrameworkStepSchema>;
+export type PainPoint = z.infer<typeof PainPointSchema>;
+export type FrameworkReference = z.infer<typeof FrameworkReferenceSchema>;
+export type StepCard = z.infer<typeof StepCardSchema>;
+export type TakingPoint = z.infer<typeof TakingPointSchema>;
+export type TrendForWho = z.infer<typeof TrendForWhoSchema>;
+export type SourceLink = z.infer<typeof SourceLinkSchema>;
 export type JobTag = z.infer<typeof JobTagSchema>;
 export type Persona = z.infer<typeof PersonaSchema>;
 
@@ -197,6 +276,8 @@ export const JOB_LABELS: Record<JobTag, string> = {
   solo: '1인 사업',
   strategy: '전략',
   analysis: '데이터/분석',
+  revenue_kpi: '매출/KPI 관리',
+  customer_research: '고객조사',
 };
 
 // ─── §5-4 온보딩 4종 추가 (D38) ───
