@@ -1,6 +1,19 @@
 # 다음 세션 인수인계 (caselab_admin)
 
-> 작성일: 2026-06-09. 새 세션 첫 메시지로 이 파일 경로를 주거나 내용을 붙여넣으면 됨.
+> 작성일: 2026-06-09 (2026-06-16 갱신). 새 세션 첫 메시지로 이 파일 경로를 주거나 내용을 붙여넣으면 됨.
+
+## ⭐ 최우선 — 카테고리 DB 모델 재작업 (2026-06-16 인터뷰 확정, 구현 대기)
+
+콘텐츠 작성 구조·카테고리를 다시 손볼 예정. 방향 3건 확정됨:
+
+1. **직무(마케팅·영업)를 DB 카테고리로 승격** — `categories.type='job_category'` 신설 + 코드 enum `JOB_TAGS`(`types/content.ts`)를 시드로 이전. (지금은 직무가 하드코딩이라 admin 수정 불가)
+2. **주제·직무 별도 축** — content_subcategory(주제: 케이스/트렌드 내 분류)와 job_category(직무)는 독립. 콘텐츠가 '케이스'이면서 '마케팅'일 수 있게.
+3. **전 영역 공유 마스터** — 직무 단일 목록을 콘텐츠·자료·가입자 공유. `parent_track=null`, scope type 1개.
+4. **콘텐츠 직무 = 다중** — 콘텐츠 1개에 직무 여러 개(조인 테이블 `content_jobs`). 도구 `job_tags[]`와 일관. 입력 UI는 칩 다중선택.
+
+구현 TODO: ① 마이그레이션(job_category 신설+JOB_TAGS 시드) ② 링크 정합(tools.job_tags[]·profiles.job→job_category 참조, contents↔job_category 다대다 조인 `content_jobs` 신설) ③ 머지된 `CategoryQuickEdit` scope를 job_category로 재지정 ④ (별건) `utm_channel` 중복 row 정리(instagram-bio 3개·instagram-feed 2개 등).
+
+**참고 현황**: PR #4 `CategoryQuickEdit`(메뉴별 카테고리 수정 패널) 이미 main 머지·배포됨. 단 `content_subcategory`가 현재 DB 0개라 콘텐츠쪽 패널은 빈 상태. `tool_subcategory`(디자인/자동화/리서치/글쓰기/프레젠테이션/코딩)는 존재. CategoryQuickEdit "삭제" 버튼은 FK `ON DELETE SET NULL`이라 에러는 없지만 쓰던 콘텐츠가 말없이 미분류로 떨어짐 → 비활성만 둘지 추후 결정.
 
 ## 한 줄 요약
 
