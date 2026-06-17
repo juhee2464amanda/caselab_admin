@@ -75,8 +75,32 @@ export function lintContent(
     passed: (row.persona_coverage?.length ?? 0) >= 1,
   });
 
-  // 4. 의도 라벨 (case 만 적용)
-  if (body.kind === 'case') {
+  // 4. 본문 내용 ≥ 1섹션 (트랙 공통) — D70 우선, legacy 폴백.
+  //    구조 보장이 사라진 D70에서 "빈 본문 발행"을 막는 최소 게이트.
+  const caseHasContent =
+    body.kind === 'case' &&
+    [
+      body.caseIntro,
+      body.painPoints,
+      body.stepCards,
+      body.takingPoints,
+      body.forWho,
+      body.essence,
+      body.framework,
+    ].some((s) => (s?.length ?? 0) > 0);
+  const trendHasContent =
+    body.kind === 'trend' &&
+    [body.what, body.why, body.forWho, body.keyPoints, body.deepDive, body.soWhat, body.whats_new].some(
+      (s) => (s?.length ?? 0) > 0
+    );
+  checks.push({
+    id: 'has-content',
+    label: '본문 내용 ≥ 1섹션',
+    passed: body.kind === 'case' ? caseHasContent : trendHasContent,
+  });
+
+  // 5. 의도 라벨 — legacy framework가 있을 때만 적용 (D70 stepCards는 해당 없음)
+  if (body.kind === 'case' && body.framework && body.framework.length > 0) {
     const stepCount = body.framework.length;
     const intentCount = body.framework.reduce(
       (acc, s) => acc + s.blocks.filter((b) => b.type === 'intent').length,
@@ -85,34 +109,35 @@ export function lintContent(
     checks.push({
       id: 'intent-labels',
       label: `Step별 IntentBox 수 = Step 수 (${intentCount}/${stepCount})`,
-      passed: stepCount > 0 && stepCount === intentCount,
+      passed: stepCount === intentCount,
     });
   } else {
-    checks.push({ id: 'intent-labels', label: 'Step별 IntentBox (트렌드 N/A)', passed: true });
+    checks.push({ id: 'intent-labels', label: 'Step별 IntentBox (D70/트렌드 N/A)', passed: true });
   }
 
   // (별로 사례 ≥30% 분량 강제 게이트는 제거됨 — 솔직한 실패는 ai-draft 가이드로만 권장, 비율 강제 없음)
 
-  // 6. customization 4단계 (case 만)
-  if (body.kind === 'case') {
+  // 6. customization 4단계 — legacy customization이 있을 때만 정확히 4개 검사
+  if (body.kind === 'case' && body.customization && body.customization.length > 0) {
     checks.push({
       id: 'customization-4',
       label: '본인 것으로 만드는 4단계 (정확히 4개)',
       passed: body.customization.length === 4,
     });
   } else {
-    checks.push({ id: 'customization-4', label: 'Customization (트렌드 N/A)', passed: true });
+    checks.push({ id: 'customization-4', label: 'Customization (D70/트렌드 N/A)', passed: true });
   }
 
   // 7. 광고/외부 링크 화이트리스트
   const allBlocks: Block[] = body.kind === 'case'
     ? [
-        ...body.essence,
-        ...body.framework.flatMap((s) => s.blocks),
-        ...body.failures,
-        ...body.review,
-        // D70 본문 섹션도 링크 스캔에 포함
+        // D70 본문 섹션
         ...(body.caseIntro ?? []),
+        // legacy 4섹션 (있으면)
+        ...(body.essence ?? []),
+        ...(body.framework ?? []).flatMap((s) => s.blocks),
+        ...(body.failures ?? []),
+        ...(body.review ?? []),
       ]
     : [
         // D70 트렌드 본문 (정본)

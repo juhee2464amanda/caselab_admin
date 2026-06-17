@@ -193,12 +193,13 @@ export const CaseBodySchema = z.object({
   cons: z.array(z.string()).optional(),
   takingPoints: z.array(TakingPointSchema).optional(),
 
-  // legacy (4섹션) — 본가와 동일하게 required 유지. D70 폼에서도 함께 채운다.
-  essence: z.array(BlockSchema).min(1),
-  framework: z.array(FrameworkStepSchema).min(1),
-  failures: z.array(BlockSchema).min(1),
-  review: z.array(BlockSchema).min(1),
-  customization: z.array(z.string().min(1)).length(4),
+  // legacy (4섹션) — D70 폼은 이 필드를 안 만든다. 단, 기존 콘텐츠 보존을 위해
+  //   optional로 두어 폼이 read/preserve 가능. (본가는 required지만 런타임 검증 안 함 → 안전)
+  essence: z.array(BlockSchema).optional(),
+  framework: z.array(FrameworkStepSchema).optional(),
+  failures: z.array(BlockSchema).optional(),
+  review: z.array(BlockSchema).optional(),
+  customization: z.array(z.string()).optional(),
 });
 
 export const TrendBodySchema = z.object({
