@@ -14,35 +14,34 @@ import type { ContentBody, ContentRow, JobTag, Persona } from '@/types/content';
 import { createSupabaseBrowserClient } from '@/lib/supabase/client';
 import { lintContent } from '@/lib/content-lint';
 import { slugify, cn } from '@/lib/utils';
+import { CaseBodyEditor } from '@/components/admin/section-editors/CaseBodyEditor';
+import { TrendBodyEditor } from '@/components/admin/section-editors/TrendBodyEditor';
 
 interface Props {
   initial?: Partial<ContentRow> & { id?: string };
 }
 
+// D70 정본 shape — 라이브 cases/[slug]·trends/[slug] 렌더 필드와 정합.
 const EMPTY_CASE: ContentBody = {
   kind: 'case',
-  essence: [{ type: 'text', markdown: '여기에 본질을 적어보세요.' }],
-  framework: [
-    {
-      name: 'Step 1',
-      description: '',
-      intent: '이 단계의 의도를 한 줄로.',
-      blocks: [{ type: 'text', markdown: '내용을 적어보세요.' }],
-    },
-  ],
-  failures: [{ type: 'text', markdown: '별로였던 사례 (≥30% 분량).' }],
-  review: [{ type: 'text', markdown: '솔직한 후기.' }],
-  customization: ['', '', '', ''],
+  forWho: [],
+  caseIntro: [{ type: 'text', markdown: '' }],
+  painPoints: [],
+  stepCards: [],
+  pros: [],
+  cons: [],
+  takingPoints: [],
 };
 
 const EMPTY_TREND: ContentBody = {
   kind: 'trend',
-  whats_new: [{ type: 'text', markdown: '뭐가 새로 나왔나.' }],
-  experiment: [{ type: 'text', markdown: '직접 실험.' }],
-  verdict: {
-    useful: [{ type: 'text', markdown: '쓸만한 케이스.' }],
-    notUseful: [{ type: 'text', markdown: '별로인 케이스.' }],
-  },
+  what: [{ type: 'text', markdown: '' }],
+  why: [],
+  forWho: [],
+  keyPoints: [],
+  deepDive: [],
+  soWhat: [],
+  sources: [],
 };
 
 export function TrackForm({ initial }: Props) {
@@ -82,6 +81,14 @@ export function TrackForm({ initial }: Props) {
     return () => clearTimeout(t);
   }, [initial?.id, track, title, slug, summary, readMin, applyMin, authorQuote, thumbnailUrl, jobTags, personas, body]);
 
+  // body 정본 = body 상태. GUI 편집 시 호출 → JSON도 동기화.
+  function updateBody(next: ContentBody) {
+    setBody(next);
+    setBodyJson(JSON.stringify(next, null, 2));
+    setBodyError(null);
+  }
+
+  // 고급 JSON 직접 편집 → body 동기화.
   function syncBody(newJson: string) {
     setBodyJson(newJson);
     try {
@@ -96,9 +103,7 @@ export function TrackForm({ initial }: Props) {
   function switchTrack(t: 'case' | 'trend') {
     if (!confirm('트랙을 바꾸면 본문이 초기화돼요. 계속할까요?')) return;
     setTrack(t);
-    const empty = t === 'case' ? EMPTY_CASE : EMPTY_TREND;
-    setBody(empty);
-    setBodyJson(JSON.stringify(empty, null, 2));
+    updateBody(t === 'case' ? EMPTY_CASE : EMPTY_TREND);
   }
 
   async function runAIDraft() {
@@ -111,8 +116,7 @@ export function TrackForm({ initial }: Props) {
       });
       const json = await res.json();
       if (json.body) {
-        setBody(json.body);
-        setBodyJson(JSON.stringify(json.body, null, 2));
+        updateBody(json.body);
       } else {
         alert(json.error ?? 'AI 초안 생성 실패');
       }
@@ -269,32 +273,48 @@ export function TrackForm({ initial }: Props) {
 
           <section className="card p-5">
             <header className="flex items-center justify-between mb-3">
-              <h2 className="font-semibold">본문 (JSON blocks)</h2>
+              <h2 className="font-semibold">본문</h2>
               {process.env.NEXT_PUBLIC_AI_DRAFT_ENABLED === 'true' && (
                 <Button variant="outline" size="sm" onClick={runAIDraft} disabled={aiBusy}>
                   <Sparkles className="h-4 w-4" /> {aiBusy ? '생성 중…' : 'AI 초안'}
                 </Button>
               )}
             </header>
-            <Textarea
-              value={bodyJson}
-              onChange={(e) => syncBody(e.target.value)}
-              className="font-mono text-xs min-h-[500px]"
-            />
-            {bodyError && (
-              <p className="mt-2 text-xs text-red-600 flex items-center gap-1">
-                <AlertCircle className="h-3 w-3" /> {bodyError}
-              </p>
+
+            {/* GUI 본문 에디터 (D70 정본) */}
+            {body.kind === 'case' ? (
+              <CaseBodyEditor value={body} onChange={updateBody} />
+            ) : (
+              <TrendBodyEditor value={body} onChange={updateBody} />
             )}
-            <p className="mt-2 text-xs text-ink/50">
-              ※ Phase 1 시점 — 본문은 jsonb 직접 편집. Phase 3에서 step별 GUI 에디터로 교체.
-            </p>
+
+            {/* 고급 — JSON 직접 편집 (AI 초안 붙여넣기·고급 블록·디버깅용) */}
+            <details className="mt-5 rounded-lg border border-border">
+              <summary className="cursor-pointer select-none px-3 py-2 text-xs font-semibold text-ink/60">
+                JSON 직접 편집 (고급)
+              </summary>
+              <div className="border-t border-border p-3">
+                <p className="mb-2 text-[11px] text-ink/50 break-keep">
+                  claude.ai 초안 붙여넣기·GUI 미지원 블록(role-card 등)·디버깅용. 저장하면 위 GUI에 반영됩니다.
+                </p>
+                <Textarea
+                  value={bodyJson}
+                  onChange={(e) => syncBody(e.target.value)}
+                  className="font-mono text-xs min-h-[360px]"
+                />
+                {bodyError && (
+                  <p className="mt-2 text-xs text-red-600 flex items-center gap-1">
+                    <AlertCircle className="h-3 w-3" /> {bodyError}
+                  </p>
+                )}
+              </div>
+            </details>
           </section>
         </div>
 
         <aside className="space-y-4">
           <section className="card p-5">
-            <h3 className="font-semibold text-sm mb-3">발행 게이트 (자동 6)</h3>
+            <h3 className="font-semibold text-sm mb-3">발행 게이트 (자동)</h3>
             <ul className="space-y-1.5">
               {lint.checks.map((c) => (
                 <li key={c.id} className="flex items-start gap-2 text-xs">
@@ -343,10 +363,10 @@ export function TrackForm({ initial }: Props) {
             <section className="card p-5">
               <h3 className="font-semibold text-sm mb-2">초안 작성 워크플로우</h3>
               <ol className="text-xs text-ink/60 leading-relaxed space-y-1 list-decimal pl-4">
-                <li>Claude Max(claude.ai)에서 톤 가이드 + jsonb 스키마와 함께 주제 입력</li>
-                <li>본문 JSON 받기 → 좌측 “본문 (JSON blocks)”에 붙여넣기</li>
+                <li>본문은 위 GUI 섹션 에디터로 직접 작성 (D70 7섹션)</li>
+                <li>또는 claude.ai에서 톤 가이드+스키마로 받은 JSON을 “JSON 직접 편집(고급)”에 붙여넣기 → GUI에서 미세조정</li>
                 <li>직무 태그·페르소나·시간 라벨 채우기</li>
-                <li>발행 게이트 자동 6 통과 확인 → 발행</li>
+                <li>발행 게이트 자동 통과 확인 → 발행</li>
               </ol>
               <p className="mt-2 text-[10px] text-ink/40">
                 AI 초안 자동화는 출시 후 도입 예정.
