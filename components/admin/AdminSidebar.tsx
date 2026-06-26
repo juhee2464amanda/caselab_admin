@@ -4,99 +4,17 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { createSupabaseBrowserClient } from '@/lib/supabase/client';
-import {
-  LayoutDashboard,
-  BarChart3,
-  Link2,
-  Search,
-  FileText,
-  FilePlus,
-  Star,
-  Tags,
-  Lightbulb,
-  MessagesSquare,
-  Wrench,
-  Copy,
-  BookMarked,
-  BookOpen,
-  Users,
-  UserPlus,
-  MessageSquare,
-  LifeBuoy,
-  HelpCircle,
-  Mail,
-  Wallet,
-  Package,
-  History as HistoryIcon,
-  Settings,
-  Menu,
-  X,
-  LogOut,
-} from 'lucide-react';
+import { Menu, X, LogOut } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { SECTIONS, activeSection, type Section } from './admin-nav';
 
 /**
- * AdminSidebar — 5 카테고리 재구조 (D60, 2026-06-03)
+ * AdminSidebar — 대분류 5개만 노출 (2026-06-26 재정리)
  *
- * 분석 / 콘텐츠 / 회원관리 / 매출 / 운영(보조)
- *
- * 미작성 페이지(disabled=true)는 회색 비활성 + "준비 중" 배지 (404 회피).
- * 페이지 신설 시 disabled 제거.
+ * 대시보드 / 콘텐츠 / 회원·소통 / 매출 / ─ / 설정(보조)
+ * 하위 페이지는 각 섹션 진입 후 상단 탭(SectionTabs)으로 묶는다.
+ * 섹션 정의·활성 판정은 admin-nav.ts 공유.
  */
-
-type NavItem = { href: string; label: string; icon: typeof Search; disabled?: boolean };
-
-const NAV: { group: string; items: NavItem[] }[] = [
-  {
-    group: '분석',
-    items: [
-      { href: '/admin', label: '대시보드', icon: LayoutDashboard },
-      { href: '/admin/analytics', label: '상세 분석', icon: BarChart3 },
-      { href: '/admin/utm', label: '유입 (UTM)', icon: Link2 },
-      { href: '/admin/analytics/search', label: '검색 키워드', icon: Search },
-    ],
-  },
-  {
-    group: '콘텐츠',
-    items: [
-      { href: '/admin/contents', label: '콘텐츠 목록', icon: FileText },
-      { href: '/admin/contents/new', label: '새 콘텐츠', icon: FilePlus },
-      { href: '/admin/contents/curation', label: '큐레이션', icon: Star },
-      { href: '/admin/categories', label: '카테고리·태그', icon: Tags },
-      { href: '/admin/topics', label: '후보 카드', icon: Lightbulb },
-      { href: '/admin/comments', label: '댓글 모더레이션', icon: MessagesSquare },
-      { href: '/admin/tools', label: '프롬프트 순위', icon: Copy },
-      { href: '/admin/guides', label: '공식 가이드', icon: BookMarked },
-    ],
-  },
-  {
-    group: '회원관리',
-    items: [
-      { href: '/admin/users', label: '가입자', icon: Users },
-      { href: '/admin/users/invite', label: 'editor 초대', icon: UserPlus },
-      { href: '/admin/opinions', label: '의견함', icon: MessageSquare },
-      { href: '/admin/support', label: '1:1 문의', icon: LifeBuoy },
-      { href: '/admin/faq', label: 'FAQ', icon: HelpCircle },
-      { href: '/admin/newsletters', label: '뉴스레터', icon: Mail },
-    ],
-  },
-  {
-    group: '매출',
-    items: [
-      { href: '/admin/revenue', label: '수익 대시보드', icon: Wallet },
-      { href: '/admin/ebooks', label: 'ebook 판매중', icon: BookOpen },
-      { href: '/admin/ebooks/new', label: 'ebook 등록', icon: FilePlus },
-      { href: '/admin/ebooks/customers', label: '구매 고객', icon: Package },
-    ],
-  },
-  {
-    group: '운영',
-    items: [
-      { href: '/admin/history', label: 'History', icon: HistoryIcon },
-      { href: '/admin/settings', label: '설정', icon: Settings },
-    ],
-  },
-];
 
 function LogoutButton({ onNavigate }: { onNavigate?: () => void }) {
   const router = useRouter();
@@ -116,75 +34,65 @@ function LogoutButton({ onNavigate }: { onNavigate?: () => void }) {
       type="button"
       onClick={handleLogout}
       disabled={pending}
-      className="flex w-full items-center gap-2 px-2 py-1.5 rounded-md text-[13px] text-ink/70 hover:bg-muted disabled:opacity-50"
+      className="flex w-full items-center gap-2.5 px-3 py-2 rounded-md text-sm text-ink/70 hover:bg-muted disabled:opacity-50"
     >
-      <LogOut className="h-4 w-4" />
+      <LogOut className="h-4 w-4 shrink-0" />
       {pending ? '로그아웃 중…' : '로그아웃'}
     </button>
   );
 }
 
+function SideLink({
+  section,
+  active,
+  onNavigate,
+}: {
+  section: Section;
+  active: boolean;
+  onNavigate?: () => void;
+}) {
+  const Icon = section.icon;
+  return (
+    <Link
+      href={section.href}
+      onClick={onNavigate}
+      className={cn(
+        'flex items-center gap-2.5 px-3 py-2 rounded-md text-sm',
+        active ? 'bg-accent/10 text-accent font-medium' : 'text-ink/70 hover:bg-muted'
+      )}
+    >
+      <Icon className="h-4 w-4 shrink-0" />
+      {section.label}
+    </Link>
+  );
+}
+
 function NavContent({ onNavigate }: { onNavigate?: () => void }) {
   const pathname = usePathname();
+  const current = activeSection(pathname);
+  const mainSections = SECTIONS.filter((s) => !s.footer);
+  const footerSections = SECTIONS.filter((s) => s.footer);
+
   return (
-    <nav className="space-y-5">
-      {NAV.map((g) => (
-        <div key={g.group}>
-          <div className="px-2 mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-ink/40">
-            {g.group}
-          </div>
-          <ul className="space-y-0.5">
-            {g.items.map((it) => {
-              const Icon = it.icon;
-              const active =
-                !it.disabled &&
-                (pathname === it.href ||
-                  (it.href !== '/admin' && pathname.startsWith(it.href)));
-
-              if (it.disabled) {
-                return (
-                  <li key={it.href}>
-                    <span
-                      className="flex items-center gap-2 px-2 py-1.5 rounded-md text-[13px] text-ink/30 cursor-not-allowed"
-                      title="준비 중"
-                    >
-                      <Icon className="h-4 w-4" />
-                      <span className="flex-1 truncate">{it.label}</span>
-                      <span className="text-[9px] font-medium uppercase tracking-wider text-ink/30 border border-border rounded px-1 py-0.5">
-                        준비 중
-                      </span>
-                    </span>
-                  </li>
-                );
-              }
-
-              return (
-                <li key={it.href}>
-                  <Link
-                    href={it.href}
-                    onClick={onNavigate}
-                    className={cn(
-                      'flex items-center gap-2 px-2 py-1.5 rounded-md text-[13px]',
-                      active
-                        ? 'bg-accent/10 text-accent font-medium'
-                        : 'text-ink/70 hover:bg-muted'
-                    )}
-                  >
-                    <Icon className="h-4 w-4" />
-                    {it.label}
-                  </Link>
-                </li>
-              );
-            })}
-          </ul>
-        </div>
+    <nav className="flex flex-col gap-1">
+      {mainSections.map((s) => (
+        <SideLink
+          key={s.key}
+          section={s}
+          active={current?.key === s.key}
+          onNavigate={onNavigate}
+        />
       ))}
-      <div>
-        <div className="px-2 mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-ink/40">
-          계정
-        </div>
-        <LogoutButton onNavigate={onNavigate} />
-      </div>
+      <div className="my-3 border-t border-border" />
+      {footerSections.map((s) => (
+        <SideLink
+          key={s.key}
+          section={s}
+          active={current?.key === s.key}
+          onNavigate={onNavigate}
+        />
+      ))}
+      <LogoutButton onNavigate={onNavigate} />
     </nav>
   );
 }
