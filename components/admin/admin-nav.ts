@@ -52,6 +52,7 @@ export const SECTIONS: Section[] = [
     href: '/admin/contents',
     tabs: [
       { href: '/admin/contents', label: '콘텐츠' },
+      { href: '/admin/seeds', label: 'HERMES 씨앗' },
       { href: '/admin/contents/curation', label: '큐레이션' },
       { href: '/admin/categories', label: '카테고리·태그' },
       { href: '/admin/topics', label: '후보 카드' },

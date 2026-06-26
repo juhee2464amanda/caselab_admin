@@ -1,12 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import crypto from 'crypto';
-import { createBriefSeed, seedExists } from '@/lib/notion';
+import { createSupabaseAdminClient } from '@/lib/supabase/admin';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-// Slack Events API 웹훅 — HERMES 브리퍼 채널의 새 메시지를 Seed Backlog에 raw draft로 적재.
+// Slack Events API 웹훅 — HERMES 브리퍼 채널의 새 메시지를 content_seeds에 raw seed로 적재.
+// 적재처: Supabase content_seeds (2026-06-26 Notion에서 이전 — 운영자가 admin 한 곳에서 triage).
 // 인증: Supabase 세션이 아니라 Slack 서명(v0)으로 검증 (Slack이 호출하므로).
+// 적재는 service-role 클라이언트(RLS 우회) — webhook은 유저 세션이 없음.
 // 미들웨어 PUBLIC_PATHS에 /api 가 포함돼 이 경로는 세션 검사 없이 열림.
 
 function verifySlack(req: NextRequest, rawBody: string): boolean {
@@ -81,7 +83,6 @@ export async function POST(req: NextRequest) {
   }
 
   const ev = (payload.event ?? {}) as Record<string, any>;
-  const dbId = (process.env.NOTION_SEED_DB_ID ?? '').trim();
   const lanes = channelLanes();
 
   // 3) 필터:
@@ -100,31 +101,36 @@ export async function POST(req: NextRequest) {
   const laneLabel = lane ?? 'slack';
 
   try {
-    if (!dbId) throw new Error('NOTION_SEED_DB_ID missing');
-
     const ts: string = ev.ts ?? '';
-    const pts = ts.replace('.', '');
-    const needle = `p${pts}`;
+    const slackTs = ts.replace('.', '');
+    const needle = `p${slackTs}`;
 
-    // 4) 중복 방지 (Slack 재전송/중복 이벤트 멱등 처리)
-    if (pts && (await seedExists(dbId, needle))) {
-      return NextResponse.json({ ok: true, skipped: 'duplicate' });
-    }
-
-    // 5) Notion 적재 (raw draft) — lane 태그를 제목에 붙여 triage 때 출처 lane 구분
+    // 4) content_seeds 적재 (raw) — lane 태그를 제목에 붙여 triage 때 출처 lane 구분.
+    //    중복 방지: slack_ts unique → onConflict 멱등 처리(Slack 재전송 대비).
     const firstLine = text.split('\n').find((l) => l.trim()) ?? text;
     const permalink = `https://slack.com/archives/${ev.channel}/${needle}`;
-    const seed = await createBriefSeed({
-      databaseId: dbId,
-      title: `[${laneLabel}] ${firstLine}`,
-      rawText: text,
-      sourceUrl: permalink,
-      origin: 'hermes-slack',
-      lane: laneLabel,
-    });
-    return NextResponse.json({ ok: true, seed: seed.url });
+    const supabase = createSupabaseAdminClient();
+    const { data, error } = await supabase
+      .from('content_seeds')
+      .upsert(
+        {
+          title: `[${laneLabel}] ${firstLine}`.slice(0, 300),
+          raw_text: text,
+          source_url: permalink,
+          origin: 'hermes-slack',
+          lane: laneLabel,
+          slack_ts: slackTs || null,
+          status: 'raw',
+        },
+        { onConflict: 'slack_ts', ignoreDuplicates: true }
+      )
+      .select('id')
+      .maybeSingle();
+    if (error) throw new Error(error.message);
+
+    return NextResponse.json({ ok: true, seedId: data?.id ?? null });
   } catch (e) {
-    // 500 → Slack이 재전송. 위 seedExists 멱등 처리로 중복 적재는 방지됨.
+    // 500 → Slack이 재전송. slack_ts unique upsert로 중복 적재는 방지됨.
     console.error('[hermes-brief] failed:', e);
     return NextResponse.json({ error: (e as Error).message }, { status: 500 });
   }
