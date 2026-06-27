@@ -1,4 +1,6 @@
+import Link from 'next/link';
 import { createSupabaseServerClient, isSupabaseConfigured } from '@/lib/supabase/server';
+import { Button } from '@/components/ui/button';
 import { formatDate } from '@/lib/utils';
 
 export default async function AdminUsers() {
@@ -12,7 +14,12 @@ export default async function AdminUsers() {
 
   return (
     <div className="p-4 sm:p-8">
-      <h1 className="font-serif text-xl sm:text-2xl font-semibold mb-6">사용자</h1>
+      <header className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <h1 className="font-serif text-xl sm:text-2xl font-semibold">가입자</h1>
+        <Link href="/admin/users/invite" className="self-start sm:self-auto">
+          <Button variant="accent">editor 초대</Button>
+        </Link>
+      </header>
       <div className="card overflow-x-auto">
         <table className="w-full min-w-[720px] text-sm">
           <thead className="bg-muted text-left text-xs uppercase tracking-wider text-ink/50">
