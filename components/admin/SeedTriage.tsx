@@ -8,6 +8,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { createSupabaseBrowserClient } from '@/lib/supabase/client';
 import { formatDate } from '@/lib/utils';
 import { cn } from '@/lib/utils';
+import { SEED_TRACKS, type SeedTrack } from '@/lib/seed-tracks';
 
 export type Seed = {
   id: string;
@@ -63,9 +64,9 @@ function SeedCard({ seed, muted }: { seed: Seed; muted: boolean }) {
   const [pending, setPending] = useState(false);
   const [note, setNote] = useState(seed.note ?? '');
   const [error, setError] = useState<string | null>(null);
-  const [gen, setGen] = useState<null | 'case' | 'trend' | 'tool'>(null);
+  const [gen, setGen] = useState<SeedTrack | null>(null);
 
-  const generate = async (track: 'case' | 'trend' | 'tool') => {
+  const generate = async (track: SeedTrack) => {
     setGen(track);
     setError(null);
     try {
@@ -181,25 +182,28 @@ function SeedCard({ seed, muted }: { seed: Seed; muted: boolean }) {
           <>
             {LOCAL_AI ? (
               <>
-                {(['trend', 'case', 'tool'] as const).map((t) => {
-                  const labels = { trend: '트렌드로 생성', case: '케이스로 생성', tool: 'AI 도구로 생성' };
-                  return (
-                    <Button
-                      key={t}
-                      size="sm"
-                      variant="accent"
-                      disabled={!!gen}
-                      onClick={() => generate(t)}
-                    >
-                      {gen === t ? (
+                {/* 케이스(기획주도)는 각도 메모를 먼저 적으면 초안에 반영됨 */}
+                {!note.trim() && (
+                  <p className="w-full text-xs text-ink/45">
+                    케이스는 <b>기획 각도</b>를 먼저 적으면 초안에 반영돼요 — 원문을 펼쳐 메모를 저장하세요.
+                  </p>
+                )}
+                {SEED_TRACKS.map((p, i) => (
+                  <span key={p.track} className="contents">
+                    {/* 콘텐츠 → 자료실 그룹 구분선 */}
+                    {i > 0 && p.group !== SEED_TRACKS[i - 1].group && (
+                      <span className="self-center text-ink/20">|</span>
+                    )}
+                    <Button size="sm" variant="accent" disabled={!!gen} onClick={() => generate(p.track)}>
+                      {gen === p.track ? (
                         <Loader2 className="h-3.5 w-3.5 animate-spin" />
                       ) : (
                         <Sparkles className="h-3.5 w-3.5" />
                       )}{' '}
-                      {labels[t]}
+                      {p.label}
                     </Button>
-                  );
-                })}
+                  </span>
+                ))}
                 {gen && <span className="self-center text-xs text-ink/50">리서치 포함, 1–3분…</span>}
               </>
             ) : (

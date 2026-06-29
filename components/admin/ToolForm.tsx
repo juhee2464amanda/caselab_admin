@@ -168,6 +168,10 @@ export function ToolForm({ initial }: Props) {
           body: JSON.stringify({ kind: 'tool', slug: payload.slug }),
         });
       }
+      if (id && status === 'published') {
+        // HERMES 씨앗에서 생성된 도구/프롬프트/가이드면 씨앗도 발행됨으로 닫기(연결 없으면 no-op)
+        await supabase.from('content_seeds').update({ status: 'published' }).eq('tool_id', id);
+      }
 
       router.push('/admin/tools');
       router.refresh();

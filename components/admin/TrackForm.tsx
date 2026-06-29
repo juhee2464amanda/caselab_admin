@@ -169,6 +169,8 @@ export function TrackForm({ initial }: Props) {
           headers: { 'content-type': 'application/json' },
           body: JSON.stringify({ id, track }),
         });
+        // HERMES 씨앗에서 생성된 콘텐츠면 씨앗도 발행됨으로 닫기(연결 없으면 no-op)
+        await supabase.from('content_seeds').update({ status: 'published' }).eq('content_id', id);
       }
       router.push('/admin');
       router.refresh();
