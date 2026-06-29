@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { ExternalLink, ChevronDown, ChevronUp, Check, X, RotateCcw, Sparkles } from 'lucide-react';
+import { ExternalLink, ChevronDown, ChevronUp, Check, X, RotateCcw, Sparkles, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { createSupabaseBrowserClient } from '@/lib/supabase/client';
@@ -28,6 +28,9 @@ const STATUS_LABEL: Record<Seed['status'], { label: string; cls: string }> = {
   published: { label: '발행됨', cls: 'bg-green-100 text-green-700' },
   rejected: { label: '반려', cls: 'bg-muted text-ink/50' },
 };
+
+// 생성 버튼은 로컬 작업장(Claude CLI 있는 환경)에서만 노출. Vercel에선 숨김.
+const LOCAL_AI = process.env.NEXT_PUBLIC_LOCAL_AI === 'true';
 
 const LANE_CLS: Record<string, string> = {
   scout: 'bg-emerald-50 text-emerald-700',
@@ -60,6 +63,26 @@ function SeedCard({ seed, muted }: { seed: Seed; muted: boolean }) {
   const [pending, setPending] = useState(false);
   const [note, setNote] = useState(seed.note ?? '');
   const [error, setError] = useState<string | null>(null);
+  const [gen, setGen] = useState<null | 'case' | 'trend' | 'tool'>(null);
+
+  const generate = async (track: 'case' | 'trend' | 'tool') => {
+    setGen(track);
+    setError(null);
+    try {
+      const res = await fetch('/api/seeds/generate', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ seedId: seed.id, track }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || '생성 실패');
+      router.push(json.redirect);
+    } catch (e) {
+      setError((e as Error).message);
+      setGen(null);
+      router.refresh();
+    }
+  };
 
   const update = async (patch: Partial<Pick<Seed, 'status' | 'note'>>) => {
     setPending(true);
@@ -156,11 +179,33 @@ function SeedCard({ seed, muted }: { seed: Seed; muted: boolean }) {
         )}
         {seed.status === 'adopted' && (
           <>
-            {/* 생성 연결은 다음 PR(②). 지금은 자리만. */}
-            <Button size="sm" variant="accent" disabled title="다음 단계: AI 생성 연결 예정">
-              <Sparkles className="h-3.5 w-3.5" /> 콘텐츠 생성 (준비 중)
-            </Button>
-            <Button size="sm" variant="ghost" disabled={pending} onClick={() => update({ status: 'raw' })}>
+            {LOCAL_AI ? (
+              <>
+                {(['trend', 'case', 'tool'] as const).map((t) => {
+                  const labels = { trend: '트렌드로 생성', case: '케이스로 생성', tool: 'AI 도구로 생성' };
+                  return (
+                    <Button
+                      key={t}
+                      size="sm"
+                      variant="accent"
+                      disabled={!!gen}
+                      onClick={() => generate(t)}
+                    >
+                      {gen === t ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <Sparkles className="h-3.5 w-3.5" />
+                      )}{' '}
+                      {labels[t]}
+                    </Button>
+                  );
+                })}
+                {gen && <span className="self-center text-xs text-ink/50">리서치 포함, 1–3분…</span>}
+              </>
+            ) : (
+              <span className="self-center text-xs text-ink/40">생성은 로컬 작업장에서</span>
+            )}
+            <Button size="sm" variant="ghost" disabled={pending || !!gen} onClick={() => update({ status: 'raw' })}>
               <RotateCcw className="h-3.5 w-3.5" /> 검토 전으로
             </Button>
           </>
