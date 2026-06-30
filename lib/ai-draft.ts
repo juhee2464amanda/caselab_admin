@@ -1,6 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { ContentBodySchema, type ContentBody } from '@/types/content';
 import { runClaudeSubscription, extractJson } from '@/lib/claude-cli';
+import { BUCKETS, isSeedBucket, type SeedBucket } from '@/lib/seed-curation';
 
 // 본문(블록 배열) 작성 규칙 — D70 스키마의 BlockSchema는 "type" 판별자가 필수다.
 // 초안 단계에선 가장 안전한 두 블록만 쓰게 강제(운영자가 폼에서 다른 블록 추가).
@@ -258,5 +259,59 @@ export async function generateGuideDraft(input: { title: string; summary?: strin
   } catch {
     // 파싱 실패 → 운영자가 GuideManager/ToolForm에서 URL·설명 보정
     return { name: input.title, description: raw.slice(0, 500), url: '' };
+  }
+}
+
+// ─────────────── 씨앗 채점(큐레이션) ───────────────
+
+export interface SeedScore {
+  bucket: SeedBucket;
+  score: number; // 0~100
+  reason: string;
+  suggestedAngle: string;
+}
+
+// 채점 시스템 프롬프트는 lib/seed-curation.ts의 BUCKETS 정의에서 생성(단일 출처).
+const SCORE_SYSTEM = `당신은 케이스랩(Caselab)의 콘텐츠 큐레이터입니다. 케이스랩 독자는 AI를 실무에 쓰려는 직무인(기획자·마케터·1인 사업가 등)입니다.
+
+HERMES가 수집한 "씨앗(브리핑 원문)" 하나를 평가해 ① 목적 버킷 분류 ② 0~100 점수 ③ 근거 ④ 콘텐츠화 각도를 매깁니다.
+
+[버킷]
+${BUCKETS.map((b) => `- "${b.key}" (${b.label}): ${b.criteria}`).join('\n')}
+- "etc": 위 셋 중 어디에도 안 맞거나 광고·홍보·출처불명 루머·기존과 중복으로 가치 낮음.
+
+[점수 4축 — 각 0~100을 매긴 뒤 버킷별 가중치로 가중평균]
+- timeliness(시의성): 지금 화제이고 최신인가
+- practical(실무가치): 우리 독자가 바로 써먹을 수 있나
+- fit(케이스랩 적합성): 우리 톤·포맷으로 차별화해 풀 수 있나
+- trust(신뢰도): 출처가 분명하고 광고·루머가 아닌가
+버킷별 가중치(합 100):
+${BUCKETS.map((b) => `- ${b.key}: 시의성 ${b.weights.timeliness} / 실무 ${b.weights.practical} / 적합 ${b.weights.fit} / 신뢰 ${b.weights.trust}`).join('\n')}
+- etc로 분류하면 score는 40 이하로.
+
+[suggestedAngle] 이 씨앗을 콘텐츠로 만든다면 어떤 각도로 풀지 한 줄(대상·핵심 메시지).
+
+응답은 아래 JSON 객체 하나만 반환하세요(설명 없이):
+{ "bucket": "trend|service|painpoint|etc", "score": 0-100정수, "reason": "점수 근거 한 줄", "suggestedAngle": "콘텐츠화 각도 한 줄" }`;
+
+/** 씨앗 1개를 채점(버킷 분류 + 0~100). 로컬 작업장 전제. */
+export async function scoreSeed(input: { title: string; rawText?: string }): Promise<SeedScore> {
+  const userPrompt = `제목: ${input.title}\n원문: ${(input.rawText ?? '').slice(0, 4000)}\n\n위 씨앗을 평가해 JSON만 반환하세요.`;
+  const raw = await callModel(SCORE_SYSTEM, userPrompt);
+
+  try {
+    const parsed = JSON.parse(extractJson(raw)) as Record<string, unknown>;
+    const bucket = isSeedBucket(parsed.bucket) ? parsed.bucket : 'etc';
+    const n = typeof parsed.score === 'number' ? Math.round(parsed.score) : Number(parsed.score);
+    const score = Number.isFinite(n) ? Math.min(100, Math.max(0, n)) : 0;
+    return {
+      bucket,
+      score,
+      reason: typeof parsed.reason === 'string' ? parsed.reason : '',
+      suggestedAngle: typeof parsed.suggestedAngle === 'string' ? parsed.suggestedAngle : '',
+    };
+  } catch {
+    // 파싱 실패 → 보수적으로 etc/저점 처리(운영자가 재분석 가능)
+    return { bucket: 'etc', score: 0, reason: '자동 채점 실패(재분석 필요)', suggestedAngle: '' };
   }
 }
