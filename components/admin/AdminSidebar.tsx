@@ -9,9 +9,9 @@ import { cn } from '@/lib/utils';
 import { SECTIONS, activeSection, type Section } from './admin-nav';
 
 /**
- * AdminSidebar — 대분류 5개만 노출 (2026-06-26 재정리)
+ * AdminSidebar — 대분류만 노출 (2026-06-26 재정리)
  *
- * 대시보드 / 콘텐츠 / 회원·소통 / 매출 / ─ / 설정(보조)
+ * 대시보드 / 새 콘텐츠 발행 / 콘텐츠 관리 / ebook / 회원·소통 / ─ / 설정(보조)
  * 하위 페이지는 각 섹션 진입 후 상단 탭(SectionTabs)으로 묶는다.
  * 섹션 정의·활성 판정은 admin-nav.ts 공유.
  */
