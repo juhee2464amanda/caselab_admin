@@ -8,6 +8,7 @@ import { createSupabaseBrowserClient } from '@/lib/supabase/client';
 import { formatDate, cn } from '@/lib/utils';
 import { BUCKETS, type SeedBucket } from '@/lib/seed-curation';
 import { SEED_TRACKS, type SeedTrack } from '@/lib/seed-tracks';
+import { sourceProfile } from '@/lib/seed-sources';
 
 export type CurSeed = {
   id: string;
@@ -15,6 +16,7 @@ export type CurSeed = {
   raw_text: string;
   source_url: string | null;
   lane: string | null;
+  source_type: string | null;
   status: string;
   note: string | null;
   created_at: string;
@@ -124,6 +126,11 @@ export function SeedCuration({
                 {b.emoji} {b.label} <span className="text-xs text-ink/40 font-normal">{list.length}</span>
               </h2>
               <p className="text-[11px] text-ink/45 leading-snug">{b.criteria}</p>
+              {b.sources.length > 0 && (
+                <p className="text-[11px] text-ink/35 leading-snug">
+                  소스 · {b.sources.map((k) => sourceProfile(k)?.badge ?? k).join(' · ')}
+                </p>
+              )}
               {list.length === 0 ? (
                 <p className="text-sm text-ink/30 py-4">72시간 내 떠오른 소식이 없어요.</p>
               ) : (
@@ -203,6 +210,11 @@ function SeedCuratedCard({
             {seed.score != null && (
               <span className={cn('rounded px-1.5 py-0.5 text-[11px] font-semibold tabular-nums', scoreCls(seed.score))}>
                 {seed.score}
+              </span>
+            )}
+            {sourceProfile(seed.source_type) && (
+              <span className="rounded bg-muted px-1.5 py-0.5 text-[11px] text-ink/50">
+                {sourceProfile(seed.source_type)!.badge}
               </span>
             )}
             <span className="text-[11px] text-ink/40">{formatDate(seed.created_at)}</span>

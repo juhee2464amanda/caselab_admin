@@ -30,11 +30,11 @@ export async function POST(req: NextRequest) {
   // 대상: 명시된 seedIds, 아니면 미채점(scored_at is null) raw 씨앗 최신순 일부
   let query = admin
     .from('content_seeds')
-    .select('id, title, raw_text')
+    .select('id, title, raw_text, source_type')
     .order('created_at', { ascending: false })
     .limit(BATCH_LIMIT);
   if (body.seedIds?.length) {
-    query = admin.from('content_seeds').select('id, title, raw_text').in('id', body.seedIds);
+    query = admin.from('content_seeds').select('id, title, raw_text, source_type').in('id', body.seedIds);
   } else {
     query = query.is('scored_at', null).eq('status', 'raw');
   }
@@ -47,7 +47,7 @@ export async function POST(req: NextRequest) {
   // CLI 동시 실행 방지 위해 순차 처리.
   for (const seed of seeds) {
     try {
-      const s = await scoreSeed({ title: seed.title, rawText: seed.raw_text });
+      const s = await scoreSeed({ title: seed.title, rawText: seed.raw_text, sourceType: seed.source_type });
       await admin
         .from('content_seeds')
         .update({

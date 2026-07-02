@@ -17,7 +17,7 @@ export default async function AdminSeeds() {
     // 버킷 노출 대상: 72h 내 · 점수컷 이상 · 노출버킷 · 아직 콘텐츠화 전(raw/adopted)
     supabase
       .from('content_seeds')
-      .select('id, title, raw_text, source_url, lane, status, note, created_at, bucket, score, score_reason, suggested_angle')
+      .select('id, title, raw_text, source_url, lane, source_type, status, note, created_at, bucket, score, score_reason, suggested_angle')
       .gte('created_at', since)
       .gte('score', SCORE_CUT)
       .in('bucket', VISIBLE_BUCKETS)

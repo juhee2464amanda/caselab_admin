@@ -2,6 +2,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { ContentBodySchema, type ContentBody } from '@/types/content';
 import { runClaudeSubscription, extractJson } from '@/lib/claude-cli';
 import { BUCKETS, isSeedBucket, type SeedBucket } from '@/lib/seed-curation';
+import { sourceProfile } from '@/lib/seed-sources';
 
 // 본문(블록 배열) 작성 규칙 — D70 스키마의 BlockSchema는 "type" 판별자가 필수다.
 // 초안 단계에선 가장 안전한 두 블록만 쓰게 강제(운영자가 폼에서 다른 블록 추가).
@@ -289,14 +290,20 @@ ${BUCKETS.map((b) => `- "${b.key}" (${b.label}): ${b.criteria}`).join('\n')}
 ${BUCKETS.map((b) => `- ${b.key}: 시의성 ${b.weights.timeliness} / 실무 ${b.weights.practical} / 적합 ${b.weights.fit} / 신뢰 ${b.weights.trust}`).join('\n')}
 - etc로 분류하면 score는 40 이하로.
 
+[출처 힌트] 씨앗에 출처가 주어지면 참고하되, 실제 버킷은 내용으로 판단하세요(힌트는 강제 아님).
+
 [suggestedAngle] 이 씨앗을 콘텐츠로 만든다면 어떤 각도로 풀지 한 줄(대상·핵심 메시지).
 
 응답은 아래 JSON 객체 하나만 반환하세요(설명 없이):
 { "bucket": "trend|service|painpoint|etc", "score": 0-100정수, "reason": "점수 근거 한 줄", "suggestedAngle": "콘텐츠화 각도 한 줄" }`;
 
 /** 씨앗 1개를 채점(버킷 분류 + 0~100). 로컬 작업장 전제. */
-export async function scoreSeed(input: { title: string; rawText?: string }): Promise<SeedScore> {
-  const userPrompt = `제목: ${input.title}\n원문: ${(input.rawText ?? '').slice(0, 4000)}\n\n위 씨앗을 평가해 JSON만 반환하세요.`;
+export async function scoreSeed(input: { title: string; rawText?: string; sourceType?: string }): Promise<SeedScore> {
+  const src = sourceProfile(input.sourceType);
+  const sourceHint = src
+    ? `\n[출처] ${src.label} — ${src.criteria}${src.bucketHint ? ` (보통 '${src.bucketHint}' 버킷 소재)` : ''}`
+    : '';
+  const userPrompt = `제목: ${input.title}\n원문: ${(input.rawText ?? '').slice(0, 4000)}${sourceHint}\n\n위 씨앗을 평가해 JSON만 반환하세요.`;
   const raw = await callModel(SCORE_SYSTEM, userPrompt);
 
   try {
