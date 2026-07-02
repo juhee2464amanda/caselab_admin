@@ -1,64 +1,56 @@
 import { createSupabaseServerClient, isSupabaseConfigured } from '@/lib/supabase/server';
-import { SeedTriage, type Seed } from '@/components/admin/SeedTriage';
+import { SeedCuration, type CurSeed } from '@/components/admin/SeedCuration';
+import { BUCKETS, VISIBLE_BUCKETS, SCORE_CUT, WINDOW_HOURS, TOP_N, type SeedBucket } from '@/lib/seed-curation';
 
-// /admin/seeds — HERMES 씨앗 triage.
-// HERMES 브리퍼 → webhook(/api/slack/hermes-brief) → content_seeds(raw) 적재.
-// 운영자가 여기서 보고 채택/반려 → (다음 단계) AI 생성 → 발행.
+// /admin/seeds — HERMES 씨앗 큐레이션.
+// 무작위 backlog 대신: 로컬 AI가 채점·분류한 씨앗을 목적 버킷별 72h·점수순 top5로 노출.
+// 운영자가 소식을 (복수)선택 → 콘텐츠 유형 선택 → 1개 콘텐츠로 합쳐 생성.
 export const dynamic = 'force-dynamic';
-
-const LANES = ['scout', 'analyst', 'briefing', 'weekly'] as const;
 
 export default async function AdminSeeds() {
   if (!isSupabaseConfigured()) return <div className="p-4 sm:p-8 text-sm">Supabase 연결 필요</div>;
   const supabase = await createSupabaseServerClient();
-  const { data } = await supabase
-    .from('content_seeds')
-    .select('id, title, raw_text, source_url, origin, lane, status, note, created_at')
-    .order('created_at', { ascending: false })
-    .limit(300);
-  const all = (data ?? []) as Seed[];
 
-  const fresh = all.filter((s) => s.status === 'raw');
-  const working = all.filter((s) => s.status === 'adopted' || s.status === 'generating');
-  const done = all.filter((s) => s.status === 'published' || s.status === 'rejected');
+  const since = new Date(Date.now() - WINDOW_HOURS * 3600 * 1000).toISOString();
+
+  const [curRes, pendingRes] = await Promise.all([
+    // 버킷 노출 대상: 72h 내 · 점수컷 이상 · 노출버킷 · 아직 콘텐츠화 전(raw/adopted)
+    supabase
+      .from('content_seeds')
+      .select('id, title, raw_text, source_url, lane, status, note, created_at, bucket, score, score_reason, suggested_angle')
+      .gte('created_at', since)
+      .gte('score', SCORE_CUT)
+      .in('bucket', VISIBLE_BUCKETS)
+      .in('status', ['raw', 'adopted'])
+      .order('score', { ascending: false })
+      .limit(60),
+    // 미채점(분석 대기) raw 씨앗 수
+    supabase
+      .from('content_seeds')
+      .select('id', { count: 'exact', head: true })
+      .is('scored_at', null)
+      .eq('status', 'raw'),
+  ]);
+
+  const all = (curRes.data ?? []) as CurSeed[];
+  const pending = pendingRes.count ?? 0;
+
+  // 버킷별 그룹화 + top5
+  const grouped = Object.fromEntries(BUCKETS.map((b) => [b.key, [] as CurSeed[]])) as Record<SeedBucket, CurSeed[]>;
+  for (const s of all) {
+    if (s.bucket && grouped[s.bucket] && grouped[s.bucket].length < TOP_N) grouped[s.bucket].push(s);
+  }
 
   return (
-    <div className="p-4 sm:p-8 space-y-8">
+    <div className="p-4 sm:p-8 space-y-6">
       <header>
-        <h1 className="font-serif text-xl sm:text-2xl font-semibold">HERMES 씨앗</h1>
+        <h1 className="font-serif text-xl sm:text-2xl font-semibold">Contents Seed from HERMES</h1>
         <p className="text-sm text-ink/60 mt-1">
-          브리퍼가 자동 수집한 콘텐츠 씨앗. 검토 후 채택하면 콘텐츠 제작으로 이어집니다.
+          AI가 분류·채점한 소식 중 지금 가장 쓸만한 것들. 선택해서 콘텐츠로 만드세요.
         </p>
       </header>
 
-      <section>
-        <h2 className="font-serif text-base font-semibold mb-3">
-          🌱 검토 전 <span className="text-xs text-ink/40 font-normal">{fresh.length}</span>
-        </h2>
-        {fresh.length === 0 ? (
-          <p className="text-sm text-ink/40">새로 들어온 씨앗이 없어요.</p>
-        ) : (
-          <SeedTriage seeds={fresh} lanes={LANES as unknown as string[]} />
-        )}
-      </section>
-
-      {working.length > 0 && (
-        <section>
-          <h2 className="font-serif text-base font-semibold mb-3">
-            ✍️ 채택됨 <span className="text-xs text-ink/40 font-normal">{working.length}</span>
-          </h2>
-          <SeedTriage seeds={working} lanes={LANES as unknown as string[]} />
-        </section>
-      )}
-
-      {done.length > 0 && (
-        <section>
-          <h2 className="font-serif text-base font-semibold mb-3">
-            ✅ 처리됨 <span className="text-xs text-ink/40 font-normal">{done.length}</span>
-          </h2>
-          <SeedTriage seeds={done} lanes={LANES as unknown as string[]} muted />
-        </section>
-      )}
+      <SeedCuration grouped={grouped} pending={pending} />
     </div>
   );
 }
