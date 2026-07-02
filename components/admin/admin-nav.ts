@@ -1,8 +1,9 @@
 import {
   LayoutDashboard,
   FileText,
+  Sparkles,
   Users,
-  Wallet,
+  BookOpen,
   Settings,
   type LucideIcon,
 } from 'lucide-react';
@@ -46,20 +47,38 @@ export const SECTIONS: Section[] = [
     ],
   },
   {
+    key: 'publish',
+    label: '새 콘텐츠 발행',
+    icon: Sparkles,
+    href: '/admin/seeds',
+    // HERMES 씨앗 큐레이션 → 선택·조합 → AI 생성 → 발행의 진입점
+    tabs: [{ href: '/admin/seeds', label: 'HERMES 씨앗' }],
+  },
+  {
     key: 'content',
-    label: '콘텐츠',
+    label: '콘텐츠 관리',
     icon: FileText,
     href: '/admin/contents',
     tabs: [
       { href: '/admin/contents', label: '콘텐츠' },
-      { href: '/admin/seeds', label: 'HERMES 씨앗' },
       { href: '/admin/contents/curation', label: '큐레이션' },
       { href: '/admin/categories', label: '카테고리·태그' },
       { href: '/admin/topics', label: '후보 카드' },
       { href: '/admin/comments', label: '댓글' },
     ],
-    // 자료(도구·가이드·프롬프트) 신규/편집 → 콘텐츠 섹션 소속
+    // 자료(도구·가이드·프롬프트) 신규/편집 → 콘텐츠 관리 섹션 소속
     extraMatch: ['/admin/tools/'],
+  },
+  {
+    key: 'ebook',
+    label: 'ebook',
+    icon: BookOpen,
+    href: '/admin/ebooks',
+    tabs: [
+      { href: '/admin/ebooks', label: 'ebook 관리' },
+      { href: '/admin/revenue', label: '판매 현황' },
+      { href: '/admin/ebooks/customers', label: '구매자 관리' },
+    ],
   },
   {
     key: 'members',
@@ -72,17 +91,6 @@ export const SECTIONS: Section[] = [
       { href: '/admin/support', label: '1:1 문의' },
       { href: '/admin/faq', label: 'FAQ' },
       { href: '/admin/newsletters', label: '뉴스레터' },
-    ],
-  },
-  {
-    key: 'revenue',
-    label: '매출',
-    icon: Wallet,
-    href: '/admin/revenue',
-    tabs: [
-      { href: '/admin/revenue', label: '수익' },
-      { href: '/admin/ebooks', label: 'ebook' },
-      { href: '/admin/ebooks/customers', label: '구매 고객' },
     ],
   },
   {
