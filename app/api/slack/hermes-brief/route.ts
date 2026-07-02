@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import crypto from 'crypto';
 import { createSupabaseAdminClient } from '@/lib/supabase/admin';
+import { sourceFromLane } from '@/lib/seed-sources';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -119,6 +120,7 @@ export async function POST(req: NextRequest) {
           source_url: permalink,
           origin: 'hermes-slack',
           lane: laneLabel,
+          source_type: sourceFromLane(lane),
           slack_ts: slackTs || null,
           status: 'raw',
         },
