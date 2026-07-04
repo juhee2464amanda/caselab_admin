@@ -1,5 +1,6 @@
 import {
   LayoutDashboard,
+  Sparkles,
   FileText,
   Users,
   Wallet,
@@ -46,13 +47,24 @@ export const SECTIONS: Section[] = [
     ],
   },
   {
+    key: 'studio',
+    label: '스튜디오',
+    icon: Sparkles,
+    href: '/admin/studio',
+    tabs: [
+      { href: '/admin/studio', label: '작업실', exact: true },
+      { href: '/admin/studio/archive', label: '씨앗 아카이브' },
+    ],
+    // 스튜디오에서 생성→편집하는 초안(콘텐츠/자료)도 이 섹션 소속으로 강조
+    extraMatch: ['/admin/seeds'],
+  },
+  {
     key: 'content',
     label: '콘텐츠',
     icon: FileText,
     href: '/admin/contents',
     tabs: [
       { href: '/admin/contents', label: '콘텐츠' },
-      { href: '/admin/seeds', label: 'HERMES 씨앗' },
       { href: '/admin/contents/curation', label: '큐레이션' },
       { href: '/admin/categories', label: '카테고리·태그' },
       { href: '/admin/topics', label: '후보 카드' },

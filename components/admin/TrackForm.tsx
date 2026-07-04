@@ -19,6 +19,8 @@ import { TrendBodyEditor } from '@/components/admin/section-editors/TrendBodyEdi
 
 interface Props {
   initial?: Partial<ContentRow> & { id?: string };
+  /** 스튜디오 임베드용. 있으면 저장 후 /admin으로 이동하지 않고 콜백만 호출. */
+  onSaved?: (status: 'draft' | 'published', id?: string) => void;
 }
 
 // D70 정본 shape — 라이브 cases/[slug]·trends/[slug] 렌더 필드와 정합.
@@ -44,7 +46,7 @@ const EMPTY_TREND: ContentBody = {
   sources: [],
 };
 
-export function TrackForm({ initial }: Props) {
+export function TrackForm({ initial, onSaved }: Props) {
   const router = useRouter();
   const supabase = createSupabaseBrowserClient();
   const [pending, startTransition] = useTransition();
@@ -171,6 +173,12 @@ export function TrackForm({ initial }: Props) {
         });
         // HERMES 씨앗에서 생성된 콘텐츠면 씨앗도 발행됨으로 닫기(연결 없으면 no-op)
         await supabase.from('content_seeds').update({ status: 'published' }).eq('content_id', id);
+      }
+      // 스튜디오 임베드: 페이지 이동 없이 콜백으로 다음 단계(홈배치) 진행.
+      if (onSaved) {
+        onSaved(status, id);
+        router.refresh();
+        return;
       }
       router.push('/admin');
       router.refresh();

@@ -1,14 +1,42 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { ContentBodySchema, type ContentBody } from '@/types/content';
 import { runClaudeSubscription, extractJson } from '@/lib/claude-cli';
-import { BUCKETS, isSeedBucket, type SeedBucket } from '@/lib/seed-curation';
+import { BUCKETS, bucketProfile, isSeedBucket, type SeedBucket } from '@/lib/seed-curation';
 import { sourceProfile } from '@/lib/seed-sources';
+import type { SeedTrack } from '@/lib/seed-tracks';
 
 // 본문(블록 배열) 작성 규칙 — D70 스키마의 BlockSchema는 "type" 판별자가 필수다.
 // 초안 단계에선 가장 안전한 두 블록만 쓰게 강제(운영자가 폼에서 다른 블록 추가).
 const BLOCK_RULE = `[중요] "블록 배열" 필드는 각 원소가 아래 두 종류 중 하나여야 합니다(반드시 "type" 포함):
 - {"type":"text","markdown":"문단 텍스트(마크다운 허용, 여러 문장 가능)"}
 - {"type":"heading","level":2,"text":"소제목"}   // level은 2 또는 3만`;
+
+// 모든 생성 트랙 공통 리서치 규칙 — 지어내기 방지, 실제 확인된 것만.
+const RESEARCH_RULE = `[리서치 규칙] 이름·수치·날짜·URL은 WebSearch/WebFetch로 실제 확인한 것만 쓰세요. 확인 못 한 통계·인용·출처는 지어내지 말고 생략하세요. 출처/URL 필드에는 실제로 열어본 URL만 넣고, 확실하지 않으면 빈 문자열/생략하세요.`;
+
+// 씨앗의 출처(provenance)·AI 분류(bucket)를 생성 프롬프트에 컨텍스트로 주입(리서치 방향 grounding).
+function contextBlock(input: { sourceType?: string; bucket?: string }): string {
+  const lines: string[] = [];
+  const src = sourceProfile(input.sourceType);
+  if (src) lines.push(`[출처] ${src.label} — ${src.criteria}`);
+  const b = isSeedBucket(input.bucket) ? bucketProfile(input.bucket) : undefined;
+  if (b) lines.push(`[AI 분류 참고] ${b.label} — ${b.criteria} (참고용, 콘텐츠 방향은 아래 '기획방향'을 최우선으로)`);
+  return lines.length ? '\n' + lines.join('\n') : '';
+}
+
+// 사람이 작성한 '기획방향' — 모든 트랙에서 생성의 최우선 축. 소스를 이 방향에 맞게 재구성/variation한다.
+function directionBlock(direction?: string): string {
+  const d = direction?.trim();
+  if (!d) return '';
+  return `\n[기획방향 — 최우선] ${d}\n→ 위 기획방향을 반드시 중심축으로 삼으세요. 원문(소스)은 이 방향을 뒷받침하는 재료로 재구성·선별하고, 방향과 무관한 내용은 덜어내세요.`;
+}
+
+// 사람이 확정한 '개요(목차)' — 단계적 구체화의 뼈대. 본문은 이 구조를 따라 살을 붙인다.
+function outlineBlock(outline?: string[]): string {
+  const items = (outline ?? []).map((s) => s.trim()).filter(Boolean);
+  if (!items.length) return '';
+  return `\n[확정 개요 — 이 구조를 따르세요] 아래 항목 순서·범위를 유지하며 각 항목을 본문으로 구체화하세요(항목을 임의로 추가·삭제하지 말 것).\n${items.map((s, i) => `${i + 1}. ${s}`).join('\n')}`;
+}
 
 const CASE_SYSTEM = `당신은 케이스랩(Caselab)의 운영자 어시스턴트입니다.
 
@@ -143,17 +171,25 @@ export interface DraftInput {
   track: 'case' | 'trend';
   title: string;
   summary?: string;
-  /** 운영자가 triage에서 적은 기획 각도(content_seeds.note). 있으면 이 각도를 중심으로 서사 구성. */
-  angle?: string;
+  /** 사람이 작성한 기획방향(필수). 모든 트랙에서 이 방향을 중심축으로 소스를 재구성. */
+  direction?: string;
+  /** 사람이 확정한 개요(목차). 있으면 본문이 이 구조를 따른다(단계적 구체화). */
+  outline?: string[];
+  /** 씨앗 출처 provenance(source_type). 리서치 방향 grounding. */
+  sourceType?: string;
+  /** AI 분류(bucket). 참고용. */
+  bucket?: string;
 }
 
 /** 케이스/트렌드 초안 생성. ContentBodySchema 검증 + 실패 시 1회 repair 패스. */
 export async function generateDraft(input: DraftInput): Promise<ContentBody> {
-  const systemPrompt = input.track === 'case' ? CASE_SYSTEM : TREND_SYSTEM;
-  const angleLine = input.angle?.trim()
-    ? `\n[기획 각도] ${input.angle.trim()}\n→ 위 각도를 중심으로 서사를 구성하세요(대상·문제·핵심 메시지).`
-    : '';
-  const userPrompt = `제목: ${input.title}\n요약: ${input.summary ?? ''}${angleLine}\n\n위 주제로 초안 JSON만 반환하세요.`;
+  const systemPrompt = `${input.track === 'case' ? CASE_SYSTEM : TREND_SYSTEM}\n\n${RESEARCH_RULE}`;
+  const userPrompt =
+    `제목: ${input.title}\n요약: ${input.summary ?? ''}` +
+    contextBlock(input) +
+    directionBlock(input.direction) +
+    outlineBlock(input.outline) +
+    `\n\n위 주제로 초안 JSON만 반환하세요.`;
 
   let raw = await callModel(systemPrompt, userPrompt);
   let result = ContentBodySchema.safeParse(JSON.parse(extractJson(raw)));
@@ -182,10 +218,25 @@ export interface ToolDraft {
 
 const PRICING_TIERS = ['free', 'freemium', 'paid', 'custom'];
 
+/** 자료실(tool/prompt/guide) 생성 입력 — 기획방향(필수)·개요·출처·분류 컨텍스트 공통. */
+export interface LibraryDraftInput {
+  title: string;
+  summary?: string;
+  direction?: string;
+  outline?: string[];
+  sourceType?: string;
+  bucket?: string;
+}
+
 /** AI 도구 초안 생성. tools 테이블 body는 엄격 스키마가 없어 느슨하게 처리 + 파싱 실패 시 폴백. */
-export async function generateToolDraft(input: { title: string; summary?: string }): Promise<ToolDraft> {
-  const userPrompt = `도구명/주제: ${input.title}\n참고(브리핑 원문): ${input.summary ?? ''}\n\n위 도구를 리서치해 카드 초안 JSON만 반환하세요.`;
-  const raw = await callModel(TOOL_SYSTEM, userPrompt);
+export async function generateToolDraft(input: LibraryDraftInput): Promise<ToolDraft> {
+  const userPrompt =
+    `도구명/주제: ${input.title}\n참고(브리핑 원문): ${input.summary ?? ''}` +
+    contextBlock(input) +
+    directionBlock(input.direction) +
+    outlineBlock(input.outline) +
+    `\n\n위 도구를 리서치해 카드 초안 JSON만 반환하세요.`;
+  const raw = await callModel(`${TOOL_SYSTEM}\n\n${RESEARCH_RULE}`, userPrompt);
 
   try {
     const parsed = JSON.parse(extractJson(raw)) as Record<string, unknown>;
@@ -212,8 +263,13 @@ export async function generateToolDraft(input: { title: string; summary?: string
 }
 
 /** 프롬프트 카드 초안 생성. tools(category='prompt')로 적재. 파싱 실패 시 폴백. */
-export async function generatePromptDraft(input: { title: string; summary?: string }): Promise<ToolDraft> {
-  const userPrompt = `주제/제목: ${input.title}\n참고(브리핑 원문): ${input.summary ?? ''}\n\n위 주제로 바로 쓸 수 있는 프롬프트 카드 초안 JSON만 반환하세요.`;
+export async function generatePromptDraft(input: LibraryDraftInput): Promise<ToolDraft> {
+  const userPrompt =
+    `주제/제목: ${input.title}\n참고(브리핑 원문): ${input.summary ?? ''}` +
+    contextBlock(input) +
+    directionBlock(input.direction) +
+    outlineBlock(input.outline) +
+    `\n\n위 주제로 바로 쓸 수 있는 프롬프트 카드 초안 JSON만 반환하세요.`;
   const raw = await callModel(PROMPT_SYSTEM, userPrompt);
 
   try {
@@ -245,9 +301,14 @@ export interface GuideDraft {
 }
 
 /** 가이드(외부 링크) 카드 초안 생성. tools(category='guide')로 적재. 본문 없음(메타만). */
-export async function generateGuideDraft(input: { title: string; summary?: string }): Promise<GuideDraft> {
-  const userPrompt = `주제/제목: ${input.title}\n참고(브리핑 원문): ${input.summary ?? ''}\n\n위 주제의 외부 가이드 링크 카드 초안 JSON만 반환하세요.`;
-  const raw = await callModel(GUIDE_SYSTEM, userPrompt);
+export async function generateGuideDraft(input: LibraryDraftInput): Promise<GuideDraft> {
+  const userPrompt =
+    `주제/제목: ${input.title}\n참고(브리핑 원문): ${input.summary ?? ''}` +
+    contextBlock(input) +
+    directionBlock(input.direction) +
+    outlineBlock(input.outline) +
+    `\n\n위 주제의 외부 가이드 링크 카드 초안 JSON만 반환하세요.`;
+  const raw = await callModel(`${GUIDE_SYSTEM}\n\n${RESEARCH_RULE}`, userPrompt);
 
   try {
     const parsed = JSON.parse(extractJson(raw)) as Record<string, unknown>;
@@ -260,6 +321,58 @@ export async function generateGuideDraft(input: { title: string; summary?: strin
   } catch {
     // 파싱 실패 → 운영자가 GuideManager/ToolForm에서 URL·설명 보정
     return { name: input.title, description: raw.slice(0, 500), url: '' };
+  }
+}
+
+// ─────────────── 개요 생성(단계적 구체화 1단계) ───────────────
+
+export interface OutlineInput {
+  track: SeedTrack;
+  title: string;
+  summary?: string;
+  direction?: string;
+  sourceType?: string;
+  bucket?: string;
+}
+
+const TRACK_LABEL: Record<SeedTrack, string> = {
+  case: '실전 케이스',
+  trend: 'AI 트렌드',
+  tool: 'AI 도구 카드',
+  prompt: '프롬프트 카드',
+  guide: '외부 가이드 링크',
+};
+
+// 본문을 쓰기 전, 기획방향+소스로 "개요(목차)"만 먼저 제안. 사람이 확인·수정 후 본문 생성으로 넘어감.
+const OUTLINE_SYSTEM = `당신은 케이스랩(Caselab)의 운영자 어시스턴트입니다.
+콘텐츠 본문을 쓰기 전에, 소스와 사람이 준 '기획방향'을 바탕으로 **개요(목차)**만 먼저 제안합니다.
+- 기획방향을 최우선 축으로, 소스에서 그 방향을 뒷받침하는 뼈대만 추립니다.
+- 각 항목은 한 줄(소제목 또는 핵심 포인트). 5~9개.
+- 아직 본문 문장은 쓰지 마세요. 구조(뼈대)만.
+
+${RESEARCH_RULE}
+
+응답은 아래 JSON 객체 하나만 반환하세요(설명 없이):
+{ "title": "다듬은 제목", "outline": ["항목1", "항목2", "…"] }`;
+
+/** 개요(목차) 생성. 사람이 편집 후 generateDraft/Library에 outline으로 넘김. 로컬 전제. */
+export async function generateOutline(input: OutlineInput): Promise<{ title: string; outline: string[] }> {
+  const userPrompt =
+    `콘텐츠 종류: ${TRACK_LABEL[input.track]}\n제목: ${input.title}\n요약: ${input.summary ?? ''}` +
+    contextBlock(input) +
+    directionBlock(input.direction) +
+    `\n\n위를 바탕으로 개요 JSON만 반환하세요.`;
+  const raw = await callModel(OUTLINE_SYSTEM, userPrompt);
+
+  try {
+    const parsed = JSON.parse(extractJson(raw)) as Record<string, unknown>;
+    const outline = Array.isArray(parsed.outline)
+      ? parsed.outline.filter((x): x is string => typeof x === 'string' && x.trim().length > 0)
+      : [];
+    const title = typeof parsed.title === 'string' && parsed.title.trim() ? parsed.title.trim() : input.title;
+    return { title, outline };
+  } catch {
+    return { title: input.title, outline: [] };
   }
 }
 
@@ -301,7 +414,10 @@ ${BUCKETS.map((b) => `- ${b.key}: 시의성 ${b.weights.timeliness} / 실무 ${b
 export async function scoreSeed(input: { title: string; rawText?: string; sourceType?: string }): Promise<SeedScore> {
   const src = sourceProfile(input.sourceType);
   const sourceHint = src
-    ? `\n[출처] ${src.label} — ${src.criteria}${src.bucketHint ? ` (보통 '${src.bucketHint}' 버킷 소재)` : ''}`
+    ? `\n[출처] ${src.label} — ${src.criteria}${src.bucketHint ? ` (보통 '${src.bucketHint}' 버킷 소재)` : ''}` +
+      (src.qualitySignal
+        ? `\n[이 출처의 품질 신호] ${src.qualitySignal}\n→ 이 신호가 원문에 없으면 trust·practical을 낮게 매기세요(원문 근거 없는 얇은 씨앗은 감점).`
+        : '')
     : '';
   const userPrompt = `제목: ${input.title}\n원문: ${(input.rawText ?? '').slice(0, 4000)}${sourceHint}\n\n위 씨앗을 평가해 JSON만 반환하세요.`;
   const raw = await callModel(SCORE_SYSTEM, userPrompt);
