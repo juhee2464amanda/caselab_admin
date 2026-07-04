@@ -1,4 +1,5 @@
 import { createSupabaseServerClient, isSupabaseConfigured } from '@/lib/supabase/server';
+import InflowPanel from '@/components/admin/InflowPanel';
 
 export default async function AdminAnalytics() {
   if (!isSupabaseConfigured()) return <div className="p-4 sm:p-8 text-sm">Supabase 연결 필요</div>;
@@ -32,6 +33,7 @@ export default async function AdminAnalytics() {
           </div>
         ))}
       </div>
+      <InflowPanel />
       <section>
         <h2 className="font-semibold mb-3">콘텐츠별 메트릭 (TOP 20)</h2>
         <div className="card overflow-x-auto">
