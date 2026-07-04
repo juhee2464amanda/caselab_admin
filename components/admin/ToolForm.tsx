@@ -57,9 +57,11 @@ export interface ToolRow {
 
 interface Props {
   initial?: ToolRow;
+  /** 스튜디오 임베드용. 있으면 저장 후 /admin/tools로 이동하지 않고 콜백만 호출. */
+  onSaved?: (status: 'draft' | 'published' | 'archived', id?: string) => void;
 }
 
-export function ToolForm({ initial }: Props) {
+export function ToolForm({ initial, onSaved }: Props) {
   const router = useRouter();
   const supabase = createSupabaseBrowserClient();
   const [pending, startTransition] = useTransition();
@@ -173,6 +175,12 @@ export function ToolForm({ initial }: Props) {
         await supabase.from('content_seeds').update({ status: 'published' }).eq('tool_id', id);
       }
 
+      // 스튜디오 임베드: 페이지 이동 없이 콜백으로.
+      if (onSaved) {
+        onSaved(status, id);
+        router.refresh();
+        return;
+      }
       router.push('/admin/tools');
       router.refresh();
     });

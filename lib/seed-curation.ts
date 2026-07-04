@@ -1,6 +1,10 @@
 // HERMES 씨앗 큐레이션 기준 — 목적 버킷 정의 + 채점 rubric.
 // AI 채점기(lib/ai-draft.ts::scoreSeed)·채점 API·/admin/seeds 화면이 공유하는 단일 정의.
 // 서버/클라이언트 양쪽 import → 순수 모듈로 유지.
+//
+// [주의] 버킷은 더 이상 UI 컬럼/트랙을 "라우팅"하지 않는다. /admin/seeds는 통합 인박스이고
+// 버킷은 필터 facet + 추천 트랙 힌트로만 쓰인다(soft prior). defaultTrack·sources는 권고 메타.
+// 운영자는 어느 소스·버킷 씨앗이든 원하는 콘텐츠 트랙으로 자유롭게 생성한다.
 
 import type { SeedTrack } from '@/lib/seed-tracks';
 import type { SeedSource } from '@/lib/seed-sources';

@@ -1,5 +1,6 @@
 import {
   LayoutDashboard,
+  Sparkles,
   FileText,
   Sparkles,
   Users,
@@ -47,12 +48,18 @@ export const SECTIONS: Section[] = [
     ],
   },
   {
-    key: 'publish',
-    label: '새 콘텐츠 발행',
+    // 구 '새 콘텐츠 발행'(/admin/seeds) 섹션의 후신 — 씨앗→기획→생성→발행→홈배치의 진입점.
+    // /admin/seeds는 /admin/studio로 리다이렉트.
+    key: 'studio',
+    label: '스튜디오',
     icon: Sparkles,
-    href: '/admin/seeds',
-    // HERMES 씨앗 큐레이션 → 선택·조합 → AI 생성 → 발행의 진입점
-    tabs: [{ href: '/admin/seeds', label: 'HERMES 씨앗' }],
+    href: '/admin/studio',
+    tabs: [
+      { href: '/admin/studio', label: '작업실', exact: true },
+      { href: '/admin/studio/archive', label: '씨앗 아카이브' },
+    ],
+    // 스튜디오에서 생성→편집하는 초안(콘텐츠/자료)도 이 섹션 소속으로 강조
+    extraMatch: ['/admin/seeds'],
   },
   {
     key: 'content',
