@@ -2,7 +2,6 @@ import {
   LayoutDashboard,
   Sparkles,
   FileText,
-  Sparkles,
   Users,
   BookOpen,
   Settings,

@@ -103,12 +103,19 @@ export const SOURCES: SourceProfile[] = [
 // Slack lane(채널) → source_type 매핑.
 // 신규 소스 추가 = 이 맵에 한 줄 + Slack 채널 + SLACK_HERMES_CHANNELS env 한 항목.
 export const LANE_SOURCE: Record<string, SeedSource> = {
+  // 신규 소스별 전용 lane
   'ai-briefing': 'ai-briefing',
   'service-scout': 'service-scout',
   'painpoint-youtube': 'youtube',
   'painpoint-community': 'community',
   'painpoint-blog': 'blog',
   'painpoint-instagram': 'instagram',
+  // 레거시 lane(현재 HERMES가 실제로 쓰는 이름) → 신규 소스로 흡수.
+  //   briefing = 매일 AI 브리핑 → ai-briefing(trend)
+  //   scout/analyst = 도구 스카우팅·비교 → service-scout(service)
+  briefing: 'ai-briefing',
+  scout: 'service-scout',
+  analyst: 'service-scout',
 };
 
 /** lane 라벨을 source_type으로 변환. 미지정 lane은 'slack-brief'로 폴백(하위호환). */
