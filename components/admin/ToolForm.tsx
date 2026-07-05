@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useTransition, useEffect } from 'react';
+import { useMemo, useState, useTransition, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { Save, Send, Archive, AlertCircle, CheckCircle2 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
@@ -8,6 +8,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { lintToolBody } from '@/lib/tool-body';
 import { JOB_LABELS, JOB_TAGS } from '@/types/content';
 import type { JobTag } from '@/types/content';
 import { createSupabaseBrowserClient } from '@/lib/supabase/client';
@@ -57,9 +58,11 @@ export interface ToolRow {
 
 interface Props {
   initial?: ToolRow;
+  /** 스튜디오 임베드용. 있으면 저장 후 /admin/tools로 이동하지 않고 콜백만 호출. */
+  onSaved?: (status: 'draft' | 'published' | 'archived', id?: string) => void;
 }
 
-export function ToolForm({ initial }: Props) {
+export function ToolForm({ initial, onSaved }: Props) {
   const router = useRouter();
   const supabase = createSupabaseBrowserClient();
   const [pending, startTransition] = useTransition();
@@ -110,12 +113,24 @@ export function ToolForm({ initial }: Props) {
     return () => clearTimeout(t);
   }, [initial?.id, name, slug, category, description, url, pricingTier, jobTags, thumbnailUrl, thumbnailEmoji, pricingLabel, isPaid, proPricing, hasReview, subcategoryId, bodyJson]);
 
+  // 도구 body는 본가 ToolDetail이 렌더하는 ToolBody 계약과 일치해야 발행 가능
+  // (계약 밖 키/구조는 상세가 비거나 useCases href undefined로 크래시)
+  const toolBodyError = useMemo(() => {
+    if (category !== 'tool' || bodyError) return null;
+    try {
+      return lintToolBody(JSON.parse(bodyJson || '{}'));
+    } catch {
+      return null; // JSON 자체 오류는 bodyError 게이트가 담당
+    }
+  }, [category, bodyError, bodyJson]);
+
   const checks = [
     { id: 'name', label: '이름 입력', passed: name.trim().length > 0 },
     { id: 'slug', label: '슬러그 입력', passed: slug.trim().length > 0 },
     { id: 'category', label: '카테고리 선택', passed: !!category },
     { id: 'subcategory', label: '도구 분류 선택 (도구만)', passed: category !== 'tool' || !!subcategoryId },
     { id: 'body', label: '본문 JSON 파싱 가능', passed: !bodyError },
+    { id: 'toolbody', label: '본문이 상세페이지 스키마와 일치 (도구만)', passed: !toolBodyError },
   ];
   const canPublish = checks.every((c) => c.passed);
 
@@ -173,6 +188,12 @@ export function ToolForm({ initial }: Props) {
         await supabase.from('content_seeds').update({ status: 'published' }).eq('tool_id', id);
       }
 
+      // 스튜디오 임베드: 페이지 이동 없이 콜백으로.
+      if (onSaved) {
+        onSaved(status, id);
+        router.refresh();
+        return;
+      }
       router.push('/admin/tools');
       router.refresh();
     });
@@ -363,6 +384,11 @@ export function ToolForm({ initial }: Props) {
             {bodyError && (
               <p className="mt-2 text-xs text-red-600 flex items-center gap-1">
                 <AlertCircle className="h-3 w-3" /> {bodyError}
+              </p>
+            )}
+            {toolBodyError && (
+              <p className="mt-2 text-xs text-red-600 flex items-center gap-1">
+                <AlertCircle className="h-3 w-3" /> 상세페이지 스키마 위반 — {toolBodyError}
               </p>
             )}
             <p className="mt-2 text-xs text-ink/50">

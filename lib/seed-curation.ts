@@ -1,8 +1,13 @@
 // HERMES 씨앗 큐레이션 기준 — 목적 버킷 정의 + 채점 rubric.
 // AI 채점기(lib/ai-draft.ts::scoreSeed)·채점 API·/admin/seeds 화면이 공유하는 단일 정의.
 // 서버/클라이언트 양쪽 import → 순수 모듈로 유지.
+//
+// [주의] 버킷은 더 이상 UI 컬럼/트랙을 "라우팅"하지 않는다. /admin/seeds는 통합 인박스이고
+// 버킷은 필터 facet + 추천 트랙 힌트로만 쓰인다(soft prior). defaultTrack·sources는 권고 메타.
+// 운영자는 어느 소스·버킷 씨앗이든 원하는 콘텐츠 트랙으로 자유롭게 생성한다.
 
 import type { SeedTrack } from '@/lib/seed-tracks';
+import type { SeedSource } from '@/lib/seed-sources';
 
 export type SeedBucket = 'trend' | 'service' | 'painpoint' | 'etc';
 
@@ -16,6 +21,8 @@ export interface BucketProfile {
   weights: { timeliness: number; practical: number; fit: number; trust: number };
   /** AI가 이 버킷으로 분류하는 기준 설명(프롬프트용) */
   criteria: string;
+  /** 이 버킷을 먹이는 소스(화면 헤더에 "어디서 오나" 노출). lib/seed-sources.ts */
+  sources: SeedSource[];
 }
 
 // 노출 가능한 3버킷(+'etc'는 숨김). 화면 컬럼 순서이기도 함.
@@ -27,6 +34,7 @@ export const BUCKETS: BucketProfile[] = [
     defaultTrack: 'trend',
     weights: { timeliness: 40, practical: 30, fit: 20, trust: 10 },
     criteria: 'AI 업계의 새 소식·발표·동향. 지금 화제이고 직무인에게 시사점이 있는 것.',
+    sources: ['ai-briefing'],
   },
   {
     key: 'service',
@@ -35,6 +43,7 @@ export const BUCKETS: BucketProfile[] = [
     defaultTrack: 'tool',
     weights: { timeliness: 25, practical: 35, fit: 25, trust: 15 },
     criteria: '새로 나와 입소문 나는 쓸만한 AI 서비스/도구. 실무에 바로 적용 가능한 것.',
+    sources: ['service-scout'],
   },
   {
     key: 'painpoint',
@@ -43,6 +52,7 @@ export const BUCKETS: BucketProfile[] = [
     defaultTrack: 'case',
     weights: { timeliness: 15, practical: 40, fit: 30, trust: 15 },
     criteria: '직무인이 겪는 구체적 막힘/문제. 실전 케이스로 풀어낼 소재가 되는 것.',
+    sources: ['youtube', 'community', 'blog', 'instagram'],
   },
 ];
 
@@ -52,6 +62,16 @@ export const HIDDEN_BUCKET: SeedBucket = 'etc'; // 광고·루머·중복·off-t
 export const SCORE_CUT = 60; // 미만은 숨김
 export const WINDOW_HOURS = 72; // D-3
 export const TOP_N = 5; // 버킷별 최대 노출
+
+/**
+ * 아카이브 자동 정리(신선도 기반). 미사용 씨앗(raw·rejected & 콘텐츠 미연결)만 대상.
+ * 콘텐츠가 된(adopted/generating/published, content_id·tool_id 연결) 씨앗은 절대 삭제 안 함.
+ */
+export const RETENTION_DAYS = 14; // 이보다 오래된 미사용 씨앗 삭제
+export const MAX_UNUSED_SEEDS = 500; // 미사용 씨앗 상한. 초과분은 오래된 것부터 삭제(용량 방어)
+
+/** 인박스에서 버킷당 기본 노출 상한(균형). 초과분은 '더 보기'로 펼침. 한 버킷이 화면 독식 방지. */
+export const BUCKET_CAP = 6;
 
 export const VISIBLE_BUCKETS = BUCKETS.map((b) => b.key);
 
