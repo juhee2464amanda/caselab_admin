@@ -6,7 +6,7 @@ import { ExternalLink, ChevronDown, ChevronUp, Sparkles, Loader2, RefreshCw, X, 
 import { Button } from '@/components/ui/button';
 import { createSupabaseBrowserClient } from '@/lib/supabase/client';
 import { formatDate, cn } from '@/lib/utils';
-import { BUCKETS, SCORE_CUT, WINDOW_HOURS, bucketProfile, type SeedBucket } from '@/lib/seed-curation';
+import { BUCKETS, SCORE_CUT, WINDOW_HOURS, BUCKET_CAP, bucketProfile, type SeedBucket } from '@/lib/seed-curation';
 import { SEED_TRACKS, type SeedTrack } from '@/lib/seed-tracks';
 import { SOURCES, sourceProfile } from '@/lib/seed-sources';
 
@@ -84,6 +84,13 @@ export function SeedCuration({
   const [bucketFilter, setBucketFilter] = useState<SeedBucket | null>(null);
   const [showAll, setShowAll] = useState(false); // true면 점수컷(<60)·미채점도 노출
   const [query, setQuery] = useState('');
+  const [expandedBuckets, setExpandedBuckets] = useState<Set<string>>(new Set()); // 버킷별 '더 보기'
+  const toggleBucket = (k: string) =>
+    setExpandedBuckets((prev) => {
+      const next = new Set(prev);
+      next.has(k) ? next.delete(k) : next.add(k);
+      return next;
+    });
 
   // 수동 적재 컴포저
   const [composerOpen, setComposerOpen] = useState(false);
@@ -308,18 +315,42 @@ export function SeedCuration({
 
       {error && <p className="text-xs text-red-600">{error}</p>}
 
-      {/* 통합 인박스 */}
-      {filtered.length === 0 ? (
-        <p className="text-sm text-ink/30 py-8 text-center">
-          조건에 맞는 씨앗이 없어요.{!showAll && ' 점수컷을 낮춰 보세요.'}
+      {/* 카테고리(버킷)별 나열 + 버킷당 상한(균형). 초과분은 '더 보기'. */}
+      {filtered.length === 0 && (
+        <p className="text-sm text-ink/30 py-6 text-center">
+          조건에 맞는 씨앗이 없어요.{!showAll && ' 점수컷을 낮추거나 필터를 풀어 보세요.'}
         </p>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
-          {filtered.map((s) => (
-            <SeedCuratedCard key={s.id} seed={s} selected={selected.has(s.id)} onToggle={() => toggle(s.id)} />
-          ))}
-        </div>
       )}
+      <div className="space-y-6">
+        {BUCKETS.filter((b) => !bucketFilter || b.key === bucketFilter).map((b) => {
+          const list = filtered.filter((s) => s.bucket === b.key);
+          const expanded = expandedBuckets.has(b.key) || !!bucketFilter;
+          const shown = expanded ? list : list.slice(0, BUCKET_CAP);
+          const overflow = list.length - BUCKET_CAP;
+          return (
+            <section key={b.key} className="space-y-2">
+              <div className="flex items-center gap-2 border-b border-border pb-1">
+                <h2 className="font-serif text-base font-semibold">{b.emoji} {b.label}</h2>
+                <span className="text-xs text-ink/40 tabular-nums">{list.length}</span>
+                {overflow > 0 && !bucketFilter && (
+                  <button onClick={() => toggleBucket(b.key)} className="ml-auto text-xs text-accent hover:underline">
+                    {expanded ? '접기' : `+${overflow} 더 보기`}
+                  </button>
+                )}
+              </div>
+              {list.length === 0 ? (
+                <p className="text-sm text-ink/30 py-2">지금 이 카테고리엔 없어요.</p>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+                  {shown.map((s) => (
+                    <SeedCuratedCard key={s.id} seed={s} selected={selected.has(s.id)} onToggle={() => toggle(s.id)} />
+                  ))}
+                </div>
+              )}
+            </section>
+          );
+        })}
+      </div>
 
       {/* 선택 → 타입 선택 → 기획방향(필수) → 생성 */}
       {selected.size > 0 && (
