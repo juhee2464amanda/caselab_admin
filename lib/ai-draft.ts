@@ -383,6 +383,10 @@ export interface SeedScore {
   score: number; // 0~100
   reason: string;
   suggestedAngle: string;
+  /** 제목 대체용 한 줄 핵심(버킷 성격 반영) */
+  headline: string;
+  /** 버킷별 상세(카드 펼침): service={what,feature,category} / trend={whyNow} / painpoint={who,pain} */
+  essence: Record<string, string>;
 }
 
 // 채점 시스템 프롬프트는 lib/seed-curation.ts의 BUCKETS 정의에서 생성(단일 출처).
@@ -407,8 +411,19 @@ ${BUCKETS.map((b) => `- ${b.key}: 시의성 ${b.weights.timeliness} / 실무 ${b
 
 [suggestedAngle] 이 씨앗을 콘텐츠로 만든다면 어떤 각도로 풀지 한 줄(대상·핵심 메시지).
 
+[headline] 이 씨앗의 핵심을 한 줄로 정제(브리핑 원문 제목 대체용). 무엇에 관한 건지 즉시 파악되게.
+- service면 "서비스명 — 무엇을 하는지"(예: "Cursor — AI 페어프로그래밍 코드 에디터").
+- trend면 "무슨 트렌드인지"(예: "OpenAI GPT-5 멀티모달 에이전트 공개").
+- painpoint면 "누가 무엇에 막히는지"(예: "기획자, AI 자료조사 반복작업에 시간 낭비").
+
+[essence] 버킷별 상세를 아래 키로. 원문에서 근거를 못 찾으면 빈 문자열(지어내지 말 것 → 그런 씨앗은 감점).
+- service: {"what":"무엇을 하는 서비스","feature":"핵심 기능","category":"도구 카테고리(예: 코드/글쓰기/이미지/리서치/자동화)","useCase":"누가 어떤 업무를 할 때 효율을 높여주는지 한 줄"}
+- trend: {"whyNow":"왜 지금 중요한지 한 줄","implication":"이 트렌드가 현재 AI 전체 흐름에서 의미하는 바·시사점(해석) 한두 줄"}
+- painpoint: {"who":"대상 직무","pain":"핵심 페인 한 줄","suggest":"그래서 어떤 서비스/기능이 이들에게 필요한지 → 케이스랩이 콘텐츠로 제안할 방향 한 줄"}
+- etc: {}
+
 응답은 아래 JSON 객체 하나만 반환하세요(설명 없이):
-{ "bucket": "trend|service|painpoint|etc", "score": 0-100정수, "reason": "점수 근거 한 줄", "suggestedAngle": "콘텐츠화 각도 한 줄" }`;
+{ "bucket": "trend|service|painpoint|etc", "score": 0-100정수, "reason": "점수 근거 한 줄", "suggestedAngle": "콘텐츠화 각도 한 줄", "headline": "한 줄 핵심", "essence": { } }`;
 
 /** 씨앗 1개를 채점(버킷 분류 + 0~100). 로컬 작업장 전제. */
 export async function scoreSeed(input: { title: string; rawText?: string; sourceType?: string }): Promise<SeedScore> {
@@ -427,14 +442,23 @@ export async function scoreSeed(input: { title: string; rawText?: string; source
     const bucket = isSeedBucket(parsed.bucket) ? parsed.bucket : 'etc';
     const n = typeof parsed.score === 'number' ? Math.round(parsed.score) : Number(parsed.score);
     const score = Number.isFinite(n) ? Math.min(100, Math.max(0, n)) : 0;
+    // essence: 문자열 값만 추려 담는다(버킷별 키는 프롬프트가 결정).
+    const essence: Record<string, string> = {};
+    if (parsed.essence && typeof parsed.essence === 'object') {
+      for (const [k, v] of Object.entries(parsed.essence as Record<string, unknown>)) {
+        if (typeof v === 'string' && v.trim()) essence[k] = v.trim();
+      }
+    }
     return {
       bucket,
       score,
       reason: typeof parsed.reason === 'string' ? parsed.reason : '',
       suggestedAngle: typeof parsed.suggestedAngle === 'string' ? parsed.suggestedAngle : '',
+      headline: typeof parsed.headline === 'string' ? parsed.headline.trim() : '',
+      essence,
     };
   } catch {
     // 파싱 실패 → 보수적으로 etc/저점 처리(운영자가 재분석 가능)
-    return { bucket: 'etc', score: 0, reason: '자동 채점 실패(재분석 필요)', suggestedAngle: '' };
+    return { bucket: 'etc', score: 0, reason: '자동 채점 실패(재분석 필요)', suggestedAngle: '', headline: '', essence: {} };
   }
 }
