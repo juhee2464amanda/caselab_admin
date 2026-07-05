@@ -38,8 +38,9 @@ export async function runClaudeSubscription(opts: ClaudeCliOptions): Promise<str
     opts.model ?? 'opus',
     '--append-system-prompt',
     opts.system,
-    '--allowedTools',
-    ...tools,
+    // 도구가 있을 때만 allowlist 부여. 빈 배열이면 플래그 자체를 빼서(값 없는 --allowedTools 오류 방지)
+    // 아무 도구도 안 쓰게 한다 → 채점처럼 웹서치 불필요한 호출을 빠르게.
+    ...(tools.length ? ['--allowedTools', ...tools] : []),
   ];
 
   return new Promise<string>((resolve, reject) => {

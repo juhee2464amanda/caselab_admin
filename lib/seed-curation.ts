@@ -70,6 +70,9 @@ export const TOP_N = 5; // 버킷별 최대 노출
 export const RETENTION_DAYS = 14; // 이보다 오래된 미사용 씨앗 삭제
 export const MAX_UNUSED_SEEDS = 500; // 미사용 씨앗 상한. 초과분은 오래된 것부터 삭제(용량 방어)
 
+/** 인박스에서 버킷당 기본 노출 상한(균형). 초과분은 '더 보기'로 펼침. 한 버킷이 화면 독식 방지. */
+export const BUCKET_CAP = 6;
+
 export const VISIBLE_BUCKETS = BUCKETS.map((b) => b.key);
 
 export function bucketProfile(key: string | null | undefined): BucketProfile | undefined {

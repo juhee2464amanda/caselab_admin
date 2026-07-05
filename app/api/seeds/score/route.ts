@@ -44,11 +44,11 @@ export async function POST(req: NextRequest) {
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   if (!seeds?.length) return NextResponse.json({ scored: 0, remaining: 0 });
 
-  let scored = 0;
-  // CLI 동시 실행 방지 위해 순차 처리.
-  for (const seed of seeds) {
+  // 웹툴 없는 가벼운 채점이라 동시 3개까지 병렬(속도↑). 과도한 CLI 동시실행은 피함.
+  const CONCURRENCY = 3;
+  const scoreOne = async (seed: { id: string; title: string; raw_text: string; source_type: string | null }) => {
     try {
-      const s = await scoreSeed({ title: seed.title, rawText: seed.raw_text, sourceType: seed.source_type });
+      const s = await scoreSeed({ title: seed.title, rawText: seed.raw_text, sourceType: seed.source_type ?? undefined });
       await admin
         .from('content_seeds')
         .update({
@@ -61,10 +61,17 @@ export async function POST(req: NextRequest) {
           scored_at: new Date().toISOString(),
         })
         .eq('id', seed.id);
-      scored += 1;
+      return true;
     } catch {
       // 개별 실패는 건너뛰고 계속(다음 배치에서 재시도 가능)
+      return false;
     }
+  };
+
+  let scored = 0;
+  for (let i = 0; i < seeds.length; i += CONCURRENCY) {
+    const results = await Promise.all(seeds.slice(i, i + CONCURRENCY).map(scoreOne));
+    scored += results.filter(Boolean).length;
   }
 
   const { count } = await admin
