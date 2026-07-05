@@ -1,8 +1,9 @@
 import Link from 'next/link';
 import { createSupabaseServerClient, isSupabaseConfigured } from '@/lib/supabase/server';
 import { sourceProfile } from '@/lib/seed-sources';
-import { bucketProfile, isSeedBucket } from '@/lib/seed-curation';
+import { bucketProfile, isSeedBucket, RETENTION_DAYS, MAX_UNUSED_SEEDS } from '@/lib/seed-curation';
 import { formatDate, cn } from '@/lib/utils';
+import { SeedPurgeButton } from '@/components/admin/SeedPurgeButton';
 
 // /admin/studio/archive — 씨앗 아카이브. 유입된 모든 씨앗의 상태·출처·이력 관리 뷰.
 export const dynamic = 'force-dynamic';
@@ -53,9 +54,15 @@ export default async function SeedArchive({ searchParams }: { searchParams: Prom
 
   return (
     <div className="p-4 sm:p-8 space-y-5">
-      <header>
-        <h1 className="font-serif text-xl sm:text-2xl font-semibold">씨앗 아카이브</h1>
-        <p className="text-sm text-ink/60 mt-1">유입된 모든 씨앗의 상태·출처·이력. 콘텐츠 생성은 작업실에서.</p>
+      <header className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h1 className="font-serif text-xl sm:text-2xl font-semibold">씨앗 아카이브</h1>
+          <p className="text-sm text-ink/60 mt-1">유입된 모든 씨앗의 상태·출처·이력. 콘텐츠 생성은 작업실에서.</p>
+          <p className="text-[11px] text-ink/40 mt-1">
+            자동 정리: 미사용 씨앗은 {RETENTION_DAYS}일 경과 또는 {MAX_UNUSED_SEEDS}건 초과 시 오래된 것부터 삭제(매일). 콘텐츠가 된 씨앗은 보존.
+          </p>
+        </div>
+        <SeedPurgeButton />
       </header>
 
       {/* 상태 필터 */}

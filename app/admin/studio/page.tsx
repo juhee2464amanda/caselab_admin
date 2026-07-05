@@ -15,7 +15,7 @@ export default async function StudioPage() {
   const [curRes, pendingRes] = await Promise.all([
     supabase
       .from('content_seeds')
-      .select('id, title, raw_text, source_url, lane, source_type, status, note, created_at, bucket, score, score_reason, suggested_angle')
+      .select('id, title, raw_text, source_url, lane, source_type, status, note, created_at, bucket, score, score_reason, suggested_angle, essence')
       .gte('created_at', since)
       .not('scored_at', 'is', null)
       .in('status', ['raw', 'adopted'])
@@ -24,8 +24,8 @@ export default async function StudioPage() {
     supabase
       .from('content_seeds')
       .select('id', { count: 'exact', head: true })
-      .is('scored_at', null)
-      .eq('status', 'raw'),
+      .in('status', ['raw', 'adopted'])
+      .or('scored_at.is.null,essence.is.null'),
   ]);
 
   const seeds = (curRes.data ?? []) as CurSeed[];

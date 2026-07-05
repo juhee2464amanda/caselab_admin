@@ -63,6 +63,13 @@ export const SCORE_CUT = 60; // 미만은 숨김
 export const WINDOW_HOURS = 72; // D-3
 export const TOP_N = 5; // 버킷별 최대 노출
 
+/**
+ * 아카이브 자동 정리(신선도 기반). 미사용 씨앗(raw·rejected & 콘텐츠 미연결)만 대상.
+ * 콘텐츠가 된(adopted/generating/published, content_id·tool_id 연결) 씨앗은 절대 삭제 안 함.
+ */
+export const RETENTION_DAYS = 14; // 이보다 오래된 미사용 씨앗 삭제
+export const MAX_UNUSED_SEEDS = 500; // 미사용 씨앗 상한. 초과분은 오래된 것부터 삭제(용량 방어)
+
 export const VISIBLE_BUCKETS = BUCKETS.map((b) => b.key);
 
 export function bucketProfile(key: string | null | undefined): BucketProfile | undefined {

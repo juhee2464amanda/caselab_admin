@@ -6,7 +6,7 @@ import { ExternalLink, ChevronDown, ChevronUp, Sparkles, Loader2, RefreshCw, X, 
 import { Button } from '@/components/ui/button';
 import { createSupabaseBrowserClient } from '@/lib/supabase/client';
 import { formatDate, cn } from '@/lib/utils';
-import { BUCKETS, SCORE_CUT, bucketProfile, type SeedBucket } from '@/lib/seed-curation';
+import { BUCKETS, SCORE_CUT, WINDOW_HOURS, bucketProfile, type SeedBucket } from '@/lib/seed-curation';
 import { SEED_TRACKS, type SeedTrack } from '@/lib/seed-tracks';
 import { SOURCES, sourceProfile } from '@/lib/seed-sources';
 
@@ -24,6 +24,7 @@ export type CurSeed = {
   score: number | null;
   score_reason: string | null;
   suggested_angle: string | null;
+  essence: Record<string, string> | null; // { headline, ...버킷별 상세 }
 };
 
 // 채점·생성은 로컬 작업장(Claude CLI)에서만. Vercel에선 숨김.
@@ -33,6 +34,27 @@ function scoreCls(score: number) {
   if (score >= 80) return 'bg-emerald-100 text-emerald-700';
   if (score >= 70) return 'bg-amber-100 text-amber-700';
   return 'bg-orange-100 text-orange-700';
+}
+
+// essence 상세 키 라벨(버킷별). headline은 카드 제목으로 이미 노출되므로 제외.
+const ESSENCE_LABELS: Record<string, string> = {
+  // service
+  what: '무엇',
+  feature: '기능',
+  category: '카테고리',
+  useCase: '누가·효율',
+  // trend
+  whyNow: '왜 지금',
+  implication: 'AI 흐름·시사',
+  // painpoint
+  who: '대상',
+  pain: '페인',
+  suggest: '제안 콘텐츠',
+};
+
+function essenceRows(essence: Record<string, string> | null): [string, string][] {
+  if (!essence) return [];
+  return Object.entries(essence).filter(([k, v]) => k !== 'headline' && v && ESSENCE_LABELS[k]);
 }
 
 export function SeedCuration({
@@ -89,16 +111,25 @@ export function SeedCuration({
     return m;
   }, [seeds]);
 
-  // 필터 적용
+  // 필터 + 신선도 가중 정렬(최근×점수). 0h:가중1.0 → 72h:0.5(하한 0.3) → '지금 뜨는' 것이 위로.
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    return seeds.filter((s) => {
-      if (sourceFilter && (s.source_type ?? 'slack-brief') !== sourceFilter) return false;
-      if (bucketFilter && s.bucket !== bucketFilter) return false;
-      if (!showAll && (s.score == null || s.score < SCORE_CUT)) return false;
-      if (q && !s.title.toLowerCase().includes(q)) return false;
-      return true;
-    });
+    const now = Date.now();
+    const weight = (s: CurSeed) => {
+      const score = s.score ?? 0;
+      const ageH = (now - new Date(s.created_at).getTime()) / 3_600_000;
+      const decay = Math.max(0.3, 1 - 0.5 * (ageH / WINDOW_HOURS));
+      return score * decay;
+    };
+    return seeds
+      .filter((s) => {
+        if (sourceFilter && (s.source_type ?? 'slack-brief') !== sourceFilter) return false;
+        if (bucketFilter && s.bucket !== bucketFilter) return false;
+        if (!showAll && (s.score == null || s.score < SCORE_CUT)) return false;
+        if (q && !s.title.toLowerCase().includes(q)) return false;
+        return true;
+      })
+      .sort((a, b) => weight(b) - weight(a));
   }, [seeds, sourceFilter, bucketFilter, showAll, query]);
 
   // 선택된 씨앗의 대표 버킷 → 기본 추천 트랙 (제약 아님, 시각적 하이라이트만)
@@ -490,6 +521,7 @@ function SeedCuratedCard({
   const supabase = createSupabaseBrowserClient();
   const [open, setOpen] = useState(false);
   const [pending, setPending] = useState(false);
+  const [reanalyzing, setReanalyzing] = useState(false);
 
   const hide = async () => {
     setPending(true);
@@ -497,6 +529,21 @@ function SeedCuratedCard({
     await supabase.from('content_seeds').update({ status: 'rejected' }).eq('id', seed.id);
     setPending(false);
     router.refresh();
+  };
+
+  // 이 씨앗 강제 재채점(essence·헤드라인 갱신). 로컬 전용.
+  const reanalyze = async () => {
+    setReanalyzing(true);
+    try {
+      await fetch('/api/seeds/score', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ seedIds: [seed.id] }),
+      });
+      router.refresh();
+    } finally {
+      setReanalyzing(false);
+    }
   };
 
   return (
@@ -522,7 +569,7 @@ function SeedCuratedCard({
             )}
             <span className="text-[11px] text-ink/40">{formatDate(seed.created_at)}</span>
           </div>
-          <p className="text-sm font-medium leading-snug break-words">{seed.title}</p>
+          <p className="text-sm font-medium leading-snug break-words">{seed.essence?.headline || seed.title}</p>
           {seed.score_reason && <p className="mt-0.5 text-[11px] text-ink/50 leading-snug">{seed.score_reason}</p>}
         </div>
         <button onClick={() => setOpen((v) => !v)} className="shrink-0 text-ink/40 hover:text-ink" aria-label="펼치기">
@@ -532,6 +579,16 @@ function SeedCuratedCard({
 
       {open && (
         <div className="mt-2 space-y-2 pl-6">
+          {essenceRows(seed.essence).length > 0 && (
+            <dl className="rounded-md bg-muted/50 p-2 text-[11px] leading-snug">
+              {essenceRows(seed.essence).map(([k, v]) => (
+                <div key={k} className="flex gap-1.5">
+                  <dt className="shrink-0 font-medium text-ink/50">{ESSENCE_LABELS[k]}</dt>
+                  <dd className="text-ink/80">{v}</dd>
+                </div>
+              ))}
+            </dl>
+          )}
           {seed.suggested_angle && (
             <p className="text-xs text-ink/70">
               <span className="font-medium">각도</span> · {seed.suggested_angle}
@@ -546,9 +603,16 @@ function SeedCuratedCard({
                 <ExternalLink className="h-3 w-3" /> 원문
               </a>
             ) : <span />}
-            <Button size="sm" variant="ghost" disabled={pending} onClick={hide}>
-              <X className="h-3.5 w-3.5" /> 숨김
-            </Button>
+            <div className="flex items-center gap-1">
+              {LOCAL_AI && (
+                <Button size="sm" variant="ghost" disabled={reanalyzing} onClick={reanalyze}>
+                  {reanalyzing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />} 재분석
+                </Button>
+              )}
+              <Button size="sm" variant="ghost" disabled={pending} onClick={hide}>
+                <X className="h-3.5 w-3.5" /> 숨김
+              </Button>
+            </div>
           </div>
         </div>
       )}

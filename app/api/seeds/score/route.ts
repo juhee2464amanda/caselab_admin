@@ -36,7 +36,8 @@ export async function POST(req: NextRequest) {
   if (body.seedIds?.length) {
     query = admin.from('content_seeds').select('id, title, raw_text, source_type').in('id', body.seedIds);
   } else {
-    query = query.is('scored_at', null).eq('status', 'raw');
+    // 미채점 + 채점됐지만 essence 없는(구버전) 씨앗까지 = 헤드라인 backfill.
+    query = query.in('status', ['raw', 'adopted']).or('scored_at.is.null,essence.is.null');
   }
 
   const { data: seeds, error } = await query;
@@ -55,6 +56,8 @@ export async function POST(req: NextRequest) {
           score: s.score,
           score_reason: s.reason,
           suggested_angle: s.suggestedAngle,
+          // 카드 표시용 핵심: headline(한 줄) + 버킷별 essence 상세를 jsonb 한 컬럼에.
+          essence: { headline: s.headline, ...s.essence },
           scored_at: new Date().toISOString(),
         })
         .eq('id', seed.id);
