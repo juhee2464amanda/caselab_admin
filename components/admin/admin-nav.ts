@@ -93,6 +93,7 @@ export const SECTIONS: Section[] = [
     href: '/admin/users',
     tabs: [
       { href: '/admin/users', label: '가입자' },
+      { href: '/admin/subscribers', label: '구독자' },
       { href: '/admin/opinions', label: '의견함' },
       { href: '/admin/support', label: '1:1 문의' },
       { href: '/admin/faq', label: 'FAQ' },
