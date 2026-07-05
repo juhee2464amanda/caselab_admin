@@ -45,6 +45,35 @@ function channelLanes(): Record<string, string> {
   return map;
 }
 
+// HERMES 에이전트 상태/에러 메시지 — 브리핑이 아니므로 적재 스킵.
+// (Gateway shutting down, task interrupted, rate limit 등 운영 노이즈)
+const AGENT_NOISE = [
+  /gateway shutting down/i,
+  /task will be interrupted/i,
+  /rate limit/i,
+  /session (expired|timed out)/i,
+  /^:warning:/i,
+];
+
+function isAgentNoise(text: string): boolean {
+  return AGENT_NOISE.some((re) => re.test(text.trim()));
+}
+
+// HERMES 크론 래퍼 제거 — "Cronjob Response: <job>-daily (job_id: xxx) ----" 헤더를 벗겨
+// 실제 브리핑 본문만 남긴다(제목·채점 노이즈 방지). 껍데기만이면 빈 문자열 반환 → 적재 스킵.
+function stripCronEnvelope(text: string): string {
+  return text
+    // 1) "Cronjob Response: ... (job_id: hex)" 헤더 제거
+    .replace(/Cronjob Response:[^\n]*?\(job_id:\s*[a-f0-9]+\)/i, '')
+    // 2) 구분선(---) → 공백
+    .replace(/[-–—]{3,}/g, ' ')
+    // 3) 슬랙 이모지 숏코드(:date: :mag: :+1: 등) 제거 (시간 "9:00"은 letter/+로 시작 아님 → 안전)
+    .replace(/:[a-z+][a-z0-9_+-]*:/gi, ' ')
+    // 4) 남은 앞쪽 밑줄·불릿·공백·개행 정리
+    .replace(/^[\s_*>`|~-]+/, '')
+    .trim();
+}
+
 // 봇 메시지는 text 대신 attachments/blocks에 본문이 들어오는 경우가 있어 보강 추출.
 function extractText(ev: Record<string, any>): string {
   if (typeof ev.text === 'string' && ev.text.trim()) return ev.text;
@@ -101,6 +130,17 @@ export async function POST(req: NextRequest) {
   }
   const laneLabel = lane ?? 'slack';
 
+  // 에이전트 상태/에러 메시지는 브리핑이 아님 → 스킵.
+  if (isAgentNoise(text)) {
+    return NextResponse.json({ ok: true, skipped: 'agent-noise' });
+  }
+
+  // 크론 래퍼 제거 후 실제 브리핑만 적재. 껍데기(상태 에코)면 스킵.
+  const cleaned = stripCronEnvelope(text);
+  if (cleaned.length < 15) {
+    return NextResponse.json({ ok: true, skipped: 'cron-shell' });
+  }
+
   try {
     const ts: string = ev.ts ?? '';
     const slackTs = ts.replace('.', '');
@@ -108,7 +148,7 @@ export async function POST(req: NextRequest) {
 
     // 4) content_seeds 적재 (raw) — lane 태그를 제목에 붙여 triage 때 출처 lane 구분.
     //    중복 방지: slack_ts unique → onConflict 멱등 처리(Slack 재전송 대비).
-    const firstLine = text.split('\n').find((l) => l.trim()) ?? text;
+    const firstLine = cleaned.split('\n').find((l) => l.trim()) ?? cleaned;
     const permalink = `https://slack.com/archives/${ev.channel}/${needle}`;
     const supabase = createSupabaseAdminClient();
     const { data, error } = await supabase
@@ -116,7 +156,7 @@ export async function POST(req: NextRequest) {
       .upsert(
         {
           title: `[${laneLabel}] ${firstLine}`.slice(0, 300),
-          raw_text: text,
+          raw_text: cleaned,
           source_url: permalink,
           origin: 'hermes-slack',
           lane: laneLabel,
