@@ -1,7 +1,7 @@
 # GA4 연동 가이드 (본가 수집 → admin 읽기)
 
-> 작성 2026-07-02. 유저 사이트(본가)의 실제 방문자 GA4 데이터를 admin 대시보드에서
-> 읽어오기까지의 전체 작업 순서와, 각 프로젝트에서 줄 프롬프트.
+> 작성 2026-07-02 · 최종 갱신 2026-07-05. 본가에서 수집한 실제 방문자 GA4 데이터를
+> admin 대시보드에서 읽어오는 구조와 실제 구축 내역. **✅ 연동 완료 + 라이브 검증됨.**
 
 ---
 
@@ -21,102 +21,76 @@
    진짜 measurement ID로 켜져 있어야 데이터가 쌓인다. admin의 gtag는 운영자만
    측정하므로 유저 분석 소스가 아니다.
 2. GA4는 **소급(backfill)이 안 된다.** 트래킹 켠 시점부터만 쌓인다.
-   → 본가 수집을 가장 먼저 켜는 게 최우선.
+   → 본가 수집을 가장 먼저 켜는 게 최우선이었다.
 
 ---
 
-## 📊 현재 상태 (2026-07-02 확인)
+## ✅ 연동 상태: 완료 (2026-07-05 라이브 검증)
 
 | | 본가 (caselab) | admin (caselab_admin) |
 |---|---|---|
-| gtag 트래킹 인프라 | ✅ 이미 구축됨 (`GA4Provider` layout 마운트, `lib/analytics/ga4.ts`·`track.ts`) | ✅ 코드 있음 (운영자 측정용) |
-| Measurement ID | ⚠️ `G-XXXXXXXXXX` placeholder → **꺼짐** | ⚠️ placeholder → 꺼짐 |
-| GA4 Data API 읽기 | — (해당 없음) | ❌ 미구현 (`docs/06_admin_dev_plan.md` §7.1.5 / D33 계획만) |
+| gtag 수집 | ✅ 실 measurement ID `G-Z1HD…` 활성 · **고지 기반 자동수집** | — (운영자용, 유저 분석 소스 아님) |
+| GA4 Data API 읽기 | — | ✅ main 반영 (PR #20). property `544018475` |
+| 서비스 계정 | — | `ga4-reader@caseload-dashboard.iam.gserviceaccount.com` (Viewer) |
 
-→ **본가는 인프라는 있으나 "ID 교체 + 동의 브리지 수정" 2가지가 필요하다.**
-→ admin은 Data API 읽기를 새로 구현해야 한다.
-
-### ⚠️ 정밀 점검에서 드러난 함정 2가지 (2026-07-02)
-1. **placeholder가 truthy** — `G-XXXXXXXXXX`는 빈 문자열이 아니라서 `if(!GA_ID)` 가드를
-   통과한다. 즉 지금 상태는 "안 켜짐"이 아니라 **가짜 ID로 조용히 무효 전송** 중.
-   반드시 실제 `G-` ID로 교체해야 정상.
-2. **동의(consent) 브리지 끊김** — `GA4Provider`는 `setAnalyticsConsent()`
-   (localStorage + `gtag('consent','update')`)를 기다리는데, 이를 호출하는 곳이 없다.
-   `ProfileForm`의 `analytics_consent` 토글은 DB 컬럼만 갱신하고 GA4엔 연결 안 됨.
-   CookieConsent 배너도 없음 → consent 영구 `denied` → 진짜 ID를 넣어도 **쿠키리스
-   모델링만** 됨. 정식 쿠키 수집을 하려면 이 브리지를 배선해야 한다.
+**라이브 리드 테스트 (admin 자격증명 → 실제 GA4 호출):** 실시간 activeUsers 감지 ✅,
+인증·Viewer 권한·property 매칭 정상 ✅ → **본가 수집 → property 544018475 → admin
+Data API 읽기** 전 구간 작동 확인.
 
 ---
 
-## 📋 작업 순서 (3단계)
+## 📌 채택한 동의(consent) 방식 — 고지 기반 (동의 배너 없음)
 
-### STEP 0 — Google 콘솔 세팅 (코드 아님 · 사람이 클릭 · 30분)
-| # | 작업 | 위치 | 산출물 |
-|---|------|------|--------|
-| 0-1 | GA4 property 생성(없으면) | analytics.google.com | **Measurement ID** `G-XXXX`, **Property ID**(숫자) |
-| 0-2 | 서비스 계정 생성 + Key JSON 발급 | GCP → IAM | `service-account.json` |
-| 0-3 | GA4 → Admin → Account access에 서비스 계정 email 추가 (**Viewer**) | GA4 콘솔 | admin 읽기 권한 |
+초기엔 CookieConsent 배너/`ProfileForm` 토글로 `setAnalyticsConsent()`를 호출하는
+"동의 브리지"를 검토했으나, **최종적으로 동의 UI를 제거하고 개인정보처리방침 고지 기반
+자동수집으로 전환**했다 (§18.20).
 
-### STEP 1 — 본가 수집 켜기 🔴 최우선
-> 작업 프로젝트: **caselab (본가)**. 인프라는 있으나 아래 1·2가 실제 blocker.
-1. `.env.local` + **Vercel env**의 `NEXT_PUBLIC_GA_MEASUREMENT_ID`를 진짜 `G-XXXX`로 교체
-   (placeholder 잔존 금지 — 위 함정①)
-2. **동의 브리지 배선** (정식 쿠키 수집 시 필수 — 위 함정②): CookieConsent 배너 추가
-   또는 `ProfileForm` 토글이 `GA4Provider`의 `setAnalyticsConsent(true/false)`를 실제
-   호출하도록 연결 → `gtag('consent','update',{analytics_storage:'granted'})` 경로 확보
-3. 배포 후 **GA4 Realtime 리포트에서 본인 방문이 잡히는지 + 동의 ON 시 granted 전환**
-   확인 ← STEP1 완료 판정(체크포인트)
-4. (선택) 미발화 이벤트 정리: `react_down`·`ebook_read_page`·`ebook_finish`는 매핑만
-   있고 호출부 없음. `ebook_download`는 서버 DB-only라 GA4 미전송. 필요 시 배선.
+- `GA4Provider`가 `gtag('consent','default', { analytics_storage: 'granted' })`를 기본으로 config.
+  광고 스토리지(`ad_storage` 등)는 계속 `denied`.
+- `components/analytics/CookieConsent.tsx`, `PageviewTracker.tsx` **제거됨.**
 
-### STEP 2 — admin에서 읽어오기 (caselab_admin) — ✅ 코드 구현 완료
-> 작업 프로젝트: **caselab_admin**. 코드는 구현됨. **env 채우고 체크포인트 이후 검증만 남음.**
-- ✅ `@google-analytics/data` 설치
-- ✅ `lib/analytics/ga4-data-api.ts` — `server-only` + base64 서비스 계정 인증 + `getInflow()`
-  (env 없으면 `null` 반환 가드)
-- ✅ `components/admin/InflowPanel.tsx` — 채널·캠페인별 activeUsers/engagedSessions 표,
-  미연동 시 안내. `app/admin/analytics/page.tsx`에 마운트됨
-- ✅ `.env.local`/`.env.example`에 `GA4_PROPERTY_ID`·`GA4_SERVICE_ACCOUNT_JSON` 추가(빈 값)
-- ⬜ **남은 일**: STEP0 산출물로 두 env 채우기 + Vercel 등록 → 체크포인트 이후 `/admin/analytics`에서 실값 확인
-- 후속(범위 밖): 완독률/리텐션은 scroll이 GA4에서 `scroll` 하나로 합쳐져 depth 파라미터
-  쿼리 별도 필요. `/admin/revenue`·메인 대시보드 `—` 빈칸 보강은 InflowPanel 검증 후.
+→ 이 문서 이전 버전의 "동의 브리지 배선" 지시는 **폐기**됐다. 지금은 브리지가 없다.
 
 ---
 
-## ✅ 순서 요약
+## 🏗️ 구축 내역
 
-```
-STEP0 콘솔세팅(G-ID·서비스계정)
-  → STEP1 본가 .env에 진짜 ID 꽂고 배포 → GA4 Realtime 확인 (🔴먼저)
-  → [데이터 쌓이기 시작]
-  → STEP2 admin Data API 읽기 (§7.1.5 / D33)
-```
+### 본가 (수집측)
+- `.env.local` + Vercel env: 실제 `NEXT_PUBLIC_GA_MEASUREMENT_ID` (`G-Z1HD…`)
+- `components/analytics/GA4Provider.tsx`: `granted` 기본 + `send_page_view:false`.
+  pv는 라우트 변경 시 event 방식으로 1회만 발화 (**config 재호출 이중발화 제거**)
+- `lib/analytics/track.ts`: EventType → GA4 event name 매핑
+  (`page_view`/`deep_read`/`prompt_copy`/`save`/`search`…). `prompt_copy` 호출부 보강
+- 관련 커밋: `bd5bea5`(계측 정합) · `9bcda4e`/PR #63(동의 UI 제거)
 
-가장 흔한 실수: **admin부터 붙이는 것.** 본가 수집이 안 켜져 있으면 admin Data API는
-빈 응답만 받는다. 반드시 본가 STEP1 → Realtime 확인 → admin STEP2 순서.
+### admin (읽기측) — PR #20으로 main 머지
+- `@google-analytics/data ^6.1.0`
+- `lib/analytics/ga4-data-api.ts`: `server-only` + base64 서비스 계정 인증 + `getInflow()`
+  (env 미설정 시 `null` 반환 가드)
+- `components/admin/InflowPanel.tsx`: 채널·캠페인별 activeUsers/engagedSessions 표,
+  미연동 시 안내. `app/admin/analytics/page.tsx`에 마운트
+- `.env`: `GA4_PROPERTY_ID=544018475` · `GA4_SERVICE_ACCOUNT_JSON`(base64)
 
 ---
 
-## 📌 본가(유저 사이트)에 줄 프롬프트 (짧은 버전)
+## 🔑 인증 세팅 (재현·키 로테이션용)
+1. GCP → IAM → 서비스 계정(`ga4-reader@caseload-dashboard`) → Key JSON 발급
+2. `base64 -i service-account.json` → `GA4_SERVICE_ACCOUNT_JSON`에 저장 (admin `.env.local` + Vercel)
+3. GA4 property `544018475` → Admin → Account access에 서비스 계정 email을 **Viewer**로 추가
 
-> caselab(본가) repo에서 Claude Code 세션을 열고 붙여넣기. `G-XXXX`만 실제 값으로.
+---
 
-```
-이 유저 사이트에 GA4 실측정을 정식으로 켜려고 해. 트래킹 인프라(GA4Provider·
-lib/analytics)는 이미 있는데 (a) NEXT_PUBLIC_GA_MEASUREMENT_ID가 placeholder라 꺼져
-있고 (b) 동의(consent) 브리지가 끊겨 있어 쿠키 기반 정식 수집이 안 되는 상태야.
+## ⚙️ 운영 노트 / 후속
+- **소급 없음**: 켠 시점(2026-07-04)부터만 누적. 켠 직후 유입 데이터 희소는 정상.
+- **scroll**: `scroll_25/50/100`이 GA4에선 `scroll` 하나로 합쳐진다 → 완독률(100%)은
+  `depth` 파라미터 기준 별도 쿼리 필요 (후속).
+- **미발화 이벤트**: `react_down`·`ebook_read_page`·`ebook_finish`는 매핑만 존재.
+  `ebook_download`는 서버에서 DB-only 적재라 GA4로는 안 나감.
+- **다음 확장**: `/admin/revenue`·메인 대시보드의 `—` 빈칸 GA4 보강, UTM(§7.1.6) 채널 결합.
 
-1. .env.local의 NEXT_PUBLIC_GA_MEASUREMENT_ID를 G-XXXX(실제)로 교체. (참고: placeholder
-   G-XXXXXXXXXX가 truthy라 지금 가짜 ID로 무효 전송 중이니 반드시 실제 값으로.)
-2. 동의 브리지 배선 — 지금 GA4Provider의 setAnalyticsConsent()를 아무도 호출하지 않고,
-   ProfileForm의 analytics_consent 토글은 DB 컬럼만 갱신함. CookieConsent 배너를 추가
-   하거나 그 토글이 setAnalyticsConsent(true/false)를 실제 호출하도록 배선해서
-   gtag('consent','update',{analytics_storage:'granted'}) 경로를 만들어줘.
-3. deep_read / prompt_copy / save / search 이벤트 호출 지점을 grep해서 커버리지 점검,
-   빠진 것 목록화. (admin이 이 이벤트 이름으로 GA4를 해석하니 이름 규약 유지 필수)
-4. Vercel 환경변수 등록 + 배포 후 GA4 Realtime에서 방문·동의 granted 전환 확인 절차 정리.
+## 🔍 검증 방법 (재현)
+admin repo에서 `.env.local`의 `GA4_PROPERTY_ID`/`GA4_SERVICE_ACCOUNT_JSON`으로
+`runRealtimeReport`(활성 사용자)·`runReport`(채널별 7일) 호출 → 행이 반환되면 정상.
+`PERMISSION_DENIED`면 서비스 계정 Viewer 미부여 또는 property ID 불일치.
 
-코드 대량 수정 전에 2·3번 점검 결과부터 보고해줘.
-```
-
-관련: `docs/06_admin_dev_plan.md` §7.1.5(D33) · §7.1.6(UTM) · §5-5(유입 패널 P0)
+관련: `docs/06_admin_dev_plan.md` §7.1.5(D33) · §7.1.6(UTM) · §5-5 · §18.20(동의 제거)
