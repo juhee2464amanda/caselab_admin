@@ -59,12 +59,12 @@ function isAgentNoise(text: string): boolean {
   return AGENT_NOISE.some((re) => re.test(text.trim()));
 }
 
-// HERMES 크론 래퍼 제거 — "Cronjob Response: <job>-daily (job_id: xxx) ----" 헤더를 벗겨
+// HERMES 크론 래퍼 제거 — "Cronjob Response: <job>-daily\n(job_id: xxx) ----" 헤더를 벗겨
 // 실제 브리핑 본문만 남긴다(제목·채점 노이즈 방지). 껍데기만이면 빈 문자열 반환 → 적재 스킵.
 function stripCronEnvelope(text: string): string {
   return text
-    // 1) "Cronjob Response: ... (job_id: hex)" 헤더 제거
-    .replace(/Cronjob Response:[^\n]*?\(job_id:\s*[a-f0-9]+\)/i, '')
+    // 1) "Cronjob Response: ... (job_id: hex)" 헤더 제거 — job_id가 다음 줄에 와도 매칭([^(]는 개행 포함)
+    .replace(/Cronjob Response:[^(]*\(job_id:\s*[a-f0-9]+\)/i, '')
     // 2) 구분선(---) → 공백
     .replace(/[-–—]{3,}/g, ' ')
     // 3) 슬랙 이모지 숏코드(:date: :mag: :+1: 등) 제거 (시간 "9:00"은 letter/+로 시작 아님 → 안전)
@@ -72,6 +72,24 @@ function stripCronEnvelope(text: string): string {
     // 4) 남은 앞쪽 밑줄·불릿·공백·개행 정리
     .replace(/^[\s_*>`|~-]+/, '')
     .trim();
+}
+
+// 다이제스트 분할 — 브리핑 한 메시지에 "1) …\n2) …" 여러 소식이 오면 항목별 씨앗으로 쪼갠다.
+// (씨앗 1건=소재 1건 계약. 안 쪼개면 여러 소식이 한 카드에 뭉개져 채점·헤드라인이 어긋남.)
+// 번호 헤더가 없거나 1개면 통짜 유지. 첫 번호 앞 프리앰블("오늘의 AI 브리핑", 에이전트 검색로그 등)은 버림.
+function splitDigestItems(text: string): string[] {
+  const parts = text.split(/(?=^\s*\d+\)\s)/m).map((s) => s.trim()).filter(Boolean);
+  const items = parts.filter((p) => /^\d+\)\s/.test(p));
+  if (items.length < 2) return [text];
+  return items;
+}
+
+// 항목 본문에서 실제 기사/원문 URL 추출 (Slack은 링크를 <url> 또는 <url|label>로 감싼다).
+function extractItemUrl(item: string): string | null {
+  const slackLink = item.match(/<(https?:\/\/[^>|]+)(?:\|[^>]*)?>/);
+  if (slackLink) return slackLink[1];
+  const plain = item.match(/https?:\/\/[^\s<>"']+/);
+  return plain ? plain[0] : null;
 }
 
 // 봇 메시지는 text 대신 attachments/blocks에 본문이 들어오는 경우가 있어 보강 추출.
@@ -145,32 +163,34 @@ export async function POST(req: NextRequest) {
     const ts: string = ev.ts ?? '';
     const slackTs = ts.replace('.', '');
     const needle = `p${slackTs}`;
-
-    // 4) content_seeds 적재 (raw) — lane 태그를 제목에 붙여 triage 때 출처 lane 구분.
-    //    중복 방지: slack_ts unique → onConflict 멱등 처리(Slack 재전송 대비).
-    const firstLine = cleaned.split('\n').find((l) => l.trim()) ?? cleaned;
     const permalink = `https://slack.com/archives/${ev.channel}/${needle}`;
+
+    // 4) 다이제스트 분할 → 항목별 씨앗 적재 (씨앗 1건 = 소재 1건).
+    //    멱등: 다항목이면 slack_ts에 ":i<번호>" 접미(재전송에도 항목별 중복 방지), 단일이면 기존 그대로.
+    //    source_url: 항목 안의 실제 기사 링크 우선, 없으면 Slack permalink.
+    const items = splitDigestItems(cleaned);
+    const rows = items.map((item, i) => {
+      const firstLine = item.split('\n').find((l) => l.trim()) ?? item;
+      return {
+        title: `[${laneLabel}] ${firstLine}`.slice(0, 300),
+        raw_text: item,
+        source_url: extractItemUrl(item) ?? permalink,
+        origin: 'hermes-slack',
+        lane: laneLabel,
+        source_type: sourceFromLane(lane),
+        slack_ts: slackTs ? (items.length > 1 ? `${slackTs}:i${i + 1}` : slackTs) : null,
+        status: 'raw',
+      };
+    });
+
     const supabase = createSupabaseAdminClient();
     const { data, error } = await supabase
       .from('content_seeds')
-      .upsert(
-        {
-          title: `[${laneLabel}] ${firstLine}`.slice(0, 300),
-          raw_text: cleaned,
-          source_url: permalink,
-          origin: 'hermes-slack',
-          lane: laneLabel,
-          source_type: sourceFromLane(lane),
-          slack_ts: slackTs || null,
-          status: 'raw',
-        },
-        { onConflict: 'slack_ts', ignoreDuplicates: true }
-      )
-      .select('id')
-      .maybeSingle();
+      .upsert(rows, { onConflict: 'slack_ts', ignoreDuplicates: true })
+      .select('id');
     if (error) throw new Error(error.message);
 
-    return NextResponse.json({ ok: true, seedId: data?.id ?? null });
+    return NextResponse.json({ ok: true, seeds: data?.length ?? 0, items: items.length });
   } catch (e) {
     // 500 → Slack이 재전송. slack_ts unique upsert로 중복 적재는 방지됨.
     console.error('[hermes-brief] failed:', e);
