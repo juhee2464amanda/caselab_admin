@@ -1,0 +1,26 @@
+# 마이그레이션 번호 네임스페이스 가드 — supabase/migrations/README.md 규칙 강제.
+# admin 전용 DDL은 1xxx만 허용. 0012~0999는 본가(caselab) 예약 영역이라
+# 같은 번호·다른 내용 충돌(공유 prod에서 silent skip/오적용 위험)을 CI에서 차단한다.
+name: migrations-guard
+
+on:
+  pull_request:
+    paths: ['supabase/migrations/**']
+  push:
+    branches: [main]
+    paths: ['supabase/migrations/**']
+
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: admin 마이그레이션은 1xxx만 (0012~0999 = 본가 예약)
+        run: |
+          bad=$(ls supabase/migrations/ | grep -E '^0[0-9]{3}_' | awk -F_ '$1+0 >= 12' || true)
+          if [ -n "$bad" ]; then
+            echo "::error::0012~0999는 본가(caselab) 예약 번호입니다. admin 전용 마이그레이션은 1xxx_이름.sql 로 만드세요."
+            echo "$bad"
+            exit 1
+          fi
+          echo "OK — 번호 네임스페이스 규칙 준수"
