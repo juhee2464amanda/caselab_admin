@@ -47,6 +47,12 @@
 | `ANTHROPIC_API_KEY` | Anthropic 콘솔 | Production | `/api/ai-draft` 활성화 시 필요 |
 | `NEXT_PUBLIC_AI_DRAFT_ENABLED` | `true` | Production | 위와 세트 |
 
+### HERMES 직접 적재 키 (씨앗 파이프라인)
+
+| Key | 값 출처 | 환경 | 비고 |
+|---|---|---|---|
+| `HERMES_INGEST_TOKEN` | `openssl rand -hex 32`로 신규 생성 | Production | `/api/seeds/ingest` Bearer 토큰. HERMES 크론에 같은 값 설정. 시크릿 — 채팅·git 노출 X |
+
 ### 생략 가능
 
 - `KAKAO_REST_API_KEY`, `KAKAO_CLIENT_SECRET` — admin 로그인은 **비밀번호 only**이므로 불필요
