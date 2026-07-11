@@ -85,6 +85,7 @@ function renderBlock(block: Block, key: string | number, onBlock?: (nb: Block) =
           key={key}
           as="p"
           multiline
+          rich
           value={block.markdown}
           onCommit={onBlock && ((v) => onBlock({ ...block, markdown: v }))}
           className="text-[16px] leading-[1.75] text-ink/85 my-4 whitespace-pre-wrap block"
@@ -114,6 +115,7 @@ function renderBlock(block: Block, key: string | number, onBlock?: (nb: Block) =
             <Editable
               as="p"
               multiline
+              rich
               value={block.good}
               onCommit={onBlock && ((v) => onBlock({ ...block, good: v }))}
               className="text-sm text-ink/85 leading-relaxed whitespace-pre-wrap block"
@@ -124,6 +126,7 @@ function renderBlock(block: Block, key: string | number, onBlock?: (nb: Block) =
             <Editable
               as="p"
               multiline
+              rich
               value={block.bad}
               onCommit={onBlock && ((v) => onBlock({ ...block, bad: v }))}
               className="text-sm text-ink/85 leading-relaxed whitespace-pre-wrap block"
@@ -141,6 +144,7 @@ function renderBlock(block: Block, key: string | number, onBlock?: (nb: Block) =
             <Editable
               as="p"
               multiline
+              rich
               value={block.human}
               onCommit={onBlock && ((v) => onBlock({ ...block, human: v }))}
               className="text-sm text-ink/85 leading-relaxed block"
@@ -153,6 +157,7 @@ function renderBlock(block: Block, key: string | number, onBlock?: (nb: Block) =
             <Editable
               as="p"
               multiline
+              rich
               value={block.ai}
               onCommit={onBlock && ((v) => onBlock({ ...block, ai: v }))}
               className="text-sm text-ink/85 leading-relaxed block"
@@ -168,7 +173,7 @@ function renderBlock(block: Block, key: string | number, onBlock?: (nb: Block) =
             {block.items.map((it, i) => (
               <li key={i} className="flex gap-2 text-sm text-ink/85">
                 <span className="text-accent">✓</span>
-                <Editable value={it} onCommit={onBlock && ((v) => onBlock({ ...block, items: upd(block.items, i, v) }))} />
+                <Editable value={it} rich onCommit={onBlock && ((v) => onBlock({ ...block, items: upd(block.items, i, v) }))} />
               </li>
             ))}
           </ul>
@@ -233,7 +238,7 @@ function CasePreviewBody({ body, onBody }: { body: CaseBodyT; onBody?: (next: Co
               {body.forWho.map((t, i) => (
                 <div key={i} className="flex items-start gap-2 text-[14.5px] text-ink/80 leading-[1.55]">
                   <span className="text-ink/50 font-bold flex-shrink-0 mt-0.5">✓</span>
-                  <Editable value={t} onCommit={set && ((v) => set({ forWho: upd(body.forWho!, i, v) }))} className="break-keep" />
+                  <Editable value={t} rich onCommit={set && ((v) => set({ forWho: upd(body.forWho!, i, v) }))} className="break-keep" />
                 </div>
               ))}
             </div>
@@ -264,9 +269,9 @@ function CasePreviewBody({ body, onBody }: { body: CaseBodyT; onBody?: (next: Co
                     className="text-[15px] font-bold tracking-[-0.02em] mb-2 text-ink leading-[1.4] block"
                   />
                   <div className="text-[13.5px] text-ink/60 leading-[1.65] break-keep">
-                    <Editable value={p.symptom} multiline onCommit={setP && ((v) => setP({ symptom: v }))} />{' '}
+                    <Editable value={p.symptom} multiline rich onCommit={setP && ((v) => setP({ symptom: v }))} />{' '}
                     <strong className="text-ink font-semibold">원인</strong>:{' '}
-                    <Editable value={p.rootCause} multiline onCommit={setP && ((v) => setP({ rootCause: v }))} />
+                    <Editable value={p.rootCause} multiline rich onCommit={setP && ((v) => setP({ rootCause: v }))} />
                   </div>
                 </div>
               );
@@ -288,6 +293,7 @@ function CasePreviewBody({ body, onBody }: { body: CaseBodyT; onBody?: (next: Co
             <Editable
               as="p"
               multiline
+              rich
               value={body.frameworkReference.description}
               onCommit={set && ((v) => set({ frameworkReference: { ...body.frameworkReference!, description: v } }))}
               className="text-sm text-ink/60 leading-[1.65] break-keep block"
@@ -328,7 +334,7 @@ function CasePreviewBody({ body, onBody }: { body: CaseBodyT; onBody?: (next: Co
                   {items.map((t, i) => (
                     <li key={i} className="text-[14.5px] leading-[1.65] text-ink/80 flex gap-2.5 items-start break-keep">
                       <span className="w-1 h-1 rounded-full bg-ink/40 flex-shrink-0 mt-2.5" />
-                      <Editable value={t} multiline onCommit={set && ((v) => commit(upd(items, i, v)))} />
+                      <Editable value={t} multiline rich onCommit={set && ((v) => commit(upd(items, i, v)))} />
                     </li>
                   ))}
                 </ul>
@@ -359,6 +365,7 @@ function CasePreviewBody({ body, onBody }: { body: CaseBodyT; onBody?: (next: Co
                     <Editable
                       as="div"
                       multiline
+                      rich
                       value={tp.description}
                       onCommit={setT && ((v) => setT({ description: v }))}
                       className="text-sm text-ink/60 leading-[1.65] mb-2.5 break-keep block"
@@ -397,11 +404,11 @@ function StepCardView({ step, onStep }: { step: StepCard; onStep?: (next: StepCa
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 mb-3.5">
         <div className="bg-muted rounded-xl p-4">
           <div className="text-[11px] font-bold text-ink/50 uppercase tracking-[0.06em] mb-1.5">사람이 할 일</div>
-          <Editable as="p" multiline value={step.human} onCommit={set && ((v) => set({ human: v }))} className="text-sm text-ink/80 leading-[1.6] block" />
+          <Editable as="p" multiline rich value={step.human} onCommit={set && ((v) => set({ human: v }))} className="text-sm text-ink/80 leading-[1.6] block" />
         </div>
         <div className="bg-muted rounded-xl p-4">
           <div className="text-[11px] font-bold text-ink/50 uppercase tracking-[0.06em] mb-1.5">AI에게 시킬 것</div>
-          <Editable as="p" multiline value={step.ai} onCommit={set && ((v) => set({ ai: v }))} className="text-sm text-ink/80 leading-[1.6] block" />
+          <Editable as="p" multiline rich value={step.ai} onCommit={set && ((v) => set({ ai: v }))} className="text-sm text-ink/80 leading-[1.6] block" />
         </div>
       </div>
       {step.prompt !== undefined && (
@@ -412,13 +419,13 @@ function StepCardView({ step, onStep }: { step: StepCard; onStep?: (next: StepCa
           {step.goodResult && (
             <div className="bg-muted rounded-xl p-4 text-sm leading-[1.6]">
               <div className="text-xs font-bold text-ink/50 mb-2">✓ 잘된 것</div>
-              <Editable as="div" multiline value={step.goodResult} onCommit={set && ((v) => set({ goodResult: v }))} className="text-ink/80 break-keep block" />
+              <Editable as="div" multiline rich value={step.goodResult} onCommit={set && ((v) => set({ goodResult: v }))} className="text-ink/80 break-keep block" />
             </div>
           )}
           {step.badResult && (
             <div className="bg-muted rounded-xl p-4 text-sm leading-[1.6]">
               <div className="text-xs font-bold text-ink/40 mb-2">✗ 별로인 것</div>
-              <Editable as="div" multiline value={step.badResult} onCommit={set && ((v) => set({ badResult: v }))} className="text-ink/80 break-keep block" />
+              <Editable as="div" multiline rich value={step.badResult} onCommit={set && ((v) => set({ badResult: v }))} className="text-ink/80 break-keep block" />
             </div>
           )}
         </div>
@@ -461,6 +468,7 @@ function TrendPreviewBody({ body, onBody }: { body: TrendBodyT; onBody?: (next: 
                 <Editable
                   as="div"
                   multiline
+                  rich
                   value={w.why}
                   onCommit={set && ((v) => set({ forWho: upd(body.forWho!, i, { ...w, why: v }) }))}
                   className="text-[13.5px] text-ink/70 leading-relaxed break-keep block"
@@ -483,6 +491,7 @@ function TrendPreviewBody({ body, onBody }: { body: TrendBodyT; onBody?: (next: 
                 <Editable
                   value={k}
                   multiline
+                  rich
                   onCommit={set && ((v) => set({ keyPoints: upd(body.keyPoints!, i, v) }))}
                   className="text-[15px] text-ink/80 leading-relaxed break-keep"
                 />

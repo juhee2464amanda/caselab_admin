@@ -171,6 +171,7 @@ function ToolDetailPreview({
                 key={i}
                 as="p"
                 multiline
+                rich
                 value={p}
                 onCommit={set && ((v) => set({ about: { ...body.about!, paragraphs: upd(body.about!.paragraphs, i, v) } }))}
                 className="text-[15.5px] leading-[1.75] text-ink/80 max-w-[680px] break-keep block"
@@ -194,6 +195,7 @@ function ToolDetailPreview({
                 <Editable
                   as="div"
                   multiline
+                  rich
                   value={w.desc}
                   onCommit={set && ((v) => set({ whenToUse: upd(body.whenToUse!, i, { ...w, desc: v }) }))}
                   className="text-[13px] text-ink/60 leading-relaxed break-keep block"
@@ -219,6 +221,7 @@ function ToolDetailPreview({
                   <Editable
                     as="div"
                     multiline
+                    rich
                     value={f.desc}
                     onCommit={set && ((v) => set({ features: upd(body.features!, i, { ...f, desc: v }) }))}
                     className="text-[13.5px] text-ink/60 leading-relaxed break-keep block"
@@ -259,6 +262,7 @@ function ToolDetailPreview({
                 <Editable
                   as="div"
                   multiline
+                  rich
                   value={p.includes}
                   onCommit={set && ((v) => set({ pricing: upd(body.pricing!, i, { ...p, includes: v }) }))}
                   className="text-[13px] text-ink/60 leading-relaxed break-keep block"
