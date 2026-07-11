@@ -179,7 +179,7 @@ export function PromptManager({ initial }: { initial: PromptRow[] }) {
             </Select>
           </div>
         </div>
-        <div><Label className="text-xs">설명 <span className="text-ink/40">(복사 박스 밖에 노출 · 배경·주의사항은 여기에)</span></Label><Textarea className="mt-1 text-xs" rows={2} value={f.description} onChange={(e) => setF((p) => ({ ...p, description: e.target.value }))} placeholder="언제 쓰는 프롬프트인지, 주의할 점은 무엇인지" /></div>
+        <div><Label className="text-xs">설명 <span className="text-ink/40">(복사 박스 밖에 노출 · 어떤 프롬프트인지 → 어떤 상황에서 쓰는지 → 누구를 위한 것인지 순서로, 줄바꿈 구분)</span></Label><Textarea className="mt-1 text-xs" rows={3} value={f.description} onChange={(e) => setF((p) => ({ ...p, description: e.target.value }))} placeholder={'회의록을 결정사항·액션아이템으로 정리하는 프롬프트입니다.\n회의 직후 공유용 요약이 필요할 때 씁니다.\n반복 회의를 운영하는 PM·팀 리드를 위한 프롬프트입니다.'} /></div>
         <div><Label className="text-xs">프롬프트 본문 * <span className="text-ink/40">(사용자가 복사해 가는 텍스트만 — 설명 섞지 않기)</span></Label><Textarea className="mt-1 font-mono text-xs" rows={6} value={f.prompt} onChange={(e) => setF((p) => ({ ...p, prompt: e.target.value }))} /></div>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           <div><Label className="text-xs">출처 라벨</Label><Input className="mt-1" value={f.source} onChange={(e) => setF((p) => ({ ...p, source: e.target.value }))} placeholder="Anthropic 공식" /></div>
