@@ -103,24 +103,39 @@ export function SeedCuration({
       return next;
     });
 
-  // facet 카운트 — 소스/버킷별 (전체 리스트 기준)
+  // 공통 노출 조건(점수컷·검색어). 칩 카운트와 목록이 같은 기준을 쓰도록 단일화.
+  const passesBase = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return (s: CurSeed) => {
+      if (!showAll && (s.score == null || s.score < SCORE_CUT)) return false;
+      if (q && !s.title.toLowerCase().includes(q)) return false;
+      return true;
+    };
+  }, [showAll, query]);
+
+  // facet 카운트 — 자기 축을 제외한 나머지 필터를 적용해 '누르면 몇 개 보일지'를 표시.
   const sourceFacets = useMemo(() => {
     const m = new Map<string, number>();
     for (const s of seeds) {
+      if (!passesBase(s)) continue;
+      if (bucketFilter && s.bucket !== bucketFilter) continue;
       const k = s.source_type ?? 'slack-brief';
       m.set(k, (m.get(k) ?? 0) + 1);
     }
     return m;
-  }, [seeds]);
+  }, [seeds, passesBase, bucketFilter]);
   const bucketFacets = useMemo(() => {
     const m = new Map<string, number>();
-    for (const s of seeds) if (s.bucket) m.set(s.bucket, (m.get(s.bucket) ?? 0) + 1);
+    for (const s of seeds) {
+      if (!passesBase(s)) continue;
+      if (sourceFilter && (s.source_type ?? 'slack-brief') !== sourceFilter) continue;
+      if (s.bucket) m.set(s.bucket, (m.get(s.bucket) ?? 0) + 1);
+    }
     return m;
-  }, [seeds]);
+  }, [seeds, passesBase, sourceFilter]);
 
   // 필터 + 신선도 가중 정렬(최근×점수). 0h:가중1.0 → 72h:0.5(하한 0.3) → '지금 뜨는' 것이 위로.
   const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
     const now = Date.now();
     const weight = (s: CurSeed) => {
       const score = s.score ?? 0;
@@ -132,12 +147,10 @@ export function SeedCuration({
       .filter((s) => {
         if (sourceFilter && (s.source_type ?? 'slack-brief') !== sourceFilter) return false;
         if (bucketFilter && s.bucket !== bucketFilter) return false;
-        if (!showAll && (s.score == null || s.score < SCORE_CUT)) return false;
-        if (q && !s.title.toLowerCase().includes(q)) return false;
-        return true;
+        return passesBase(s);
       })
       .sort((a, b) => weight(b) - weight(a));
-  }, [seeds, sourceFilter, bucketFilter, showAll, query]);
+  }, [seeds, sourceFilter, bucketFilter, passesBase]);
 
   // 선택된 씨앗의 대표 버킷 → 기본 추천 트랙 (제약 아님, 시각적 하이라이트만)
   const firstSelected = seeds.find((s) => selected.has(s.id));
@@ -282,11 +295,11 @@ export function SeedCuration({
         <div className="flex flex-wrap items-center gap-1.5">
           <span className="text-[11px] font-medium text-ink/40 mr-1">소스</span>
           <FilterChip active={sourceFilter === null} onClick={() => setSourceFilter(null)}>
-            전체 <span className="tabular-nums text-ink/40">{seeds.length}</span>
+            전체 <span className="tabular-nums text-ink/40">{[...sourceFacets.values()].reduce((a, n) => a + n, 0)}</span>
           </FilterChip>
-          {SOURCES.filter((src) => (sourceFacets.get(src.key) ?? 0) > 0).map((src) => (
+          {SOURCES.filter((src) => (sourceFacets.get(src.key) ?? 0) > 0 || sourceFilter === src.key).map((src) => (
             <FilterChip key={src.key} active={sourceFilter === src.key} onClick={() => setSourceFilter(src.key)}>
-              {src.badge} <span className="tabular-nums text-ink/40">{sourceFacets.get(src.key)}</span>
+              {src.badge} <span className="tabular-nums text-ink/40">{sourceFacets.get(src.key) ?? 0}</span>
             </FilterChip>
           ))}
         </div>
