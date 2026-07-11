@@ -5,6 +5,7 @@ import { BUCKETS, bucketProfile, isSeedBucket, type SeedBucket } from '@/lib/see
 import { lintToolBody } from '@/lib/tool-body';
 import { sourceProfile } from '@/lib/seed-sources';
 import type { SeedTrack } from '@/lib/seed-tracks';
+import { trackEdge } from '@/lib/track-edges';
 
 // 본문(블록 배열) 작성 규칙 — D70 스키마의 BlockSchema는 "type" 판별자가 필수다.
 // 초안 단계에선 가장 안전한 두 블록만 쓰게 강제(운영자가 폼에서 다른 블록 추가).
@@ -412,6 +413,71 @@ export async function generateOutline(input: OutlineInput): Promise<{ title: str
     return { title, outline };
   } catch {
     return { title: input.title, outline: [] };
+  }
+}
+
+// ─────────────── 엣지 제안(MD 직행 레인) ───────────────
+
+export interface EdgeProposal {
+  /** 이 트랙으로 풀 때의 각도 한 줄 */
+  angle: string;
+  /** 트랙 상세 페이지 섹션별 — 문서의 어떤 내용을 어떻게 배치할지 */
+  plan: { section: string; note: string }[];
+  /** 트랙 형식이 요구하지만 문서에 없는 것(지어내지 말고 보강·생략 판단용) */
+  missing: string[];
+}
+
+/**
+ * 완성 MD 문서를 특정 트랙의 상세 형식(lib/track-edges.ts 프로파일)에 대고 분석해
+ * 각도·섹션별 배치·부족한 부분을 제안. 사람이 확인·수정 후 생성에 주입한다.
+ * 분류·배치 작업이므로 웹서치 불필요 + 가벼운 모델(채점과 동일 설정).
+ */
+export async function proposeEdge(input: { track: SeedTrack; title: string; markdown: string }): Promise<EdgeProposal> {
+  const edge = trackEdge(input.track);
+  const system = `당신은 케이스랩(Caselab)의 콘텐츠 에디터입니다.
+기획·리서치가 끝난 MD 문서를 "${TRACK_LABEL[input.track]}" 형식으로 재구성하기 전에, 배치 계획만 제안합니다.
+
+[이 형식의 엣지] ${edge.edge}
+[상세 페이지 섹션 — 이 이름 그대로 계획을 세우세요]
+${edge.sections.map((s) => `- ${s.name}: ${s.need}`).join('\n')}
+[이 형식에 맞는 소재] ${edge.fits}
+[덜어낼 것] ${edge.cuts}
+[형식 규칙] ${edge.guide}
+
+- angle: 이 문서를 이 형식으로 풀 때의 각도 한 줄(문서의 논지를 형식의 엣지에 맞게).
+- plan: 위 섹션 각각에 대해, 문서의 어떤 내용을 어떻게 배치·압축할지 한 줄씩. 문서에 근거가 없는 섹션은 note에 "문서에 없음 — " 으로 시작해 대안(생략/보강)을 적으세요.
+- missing: 이 형식이 요구하지만 문서에 없는 것들(지어내면 안 되는 것). 없으면 빈 배열.
+
+응답은 아래 JSON 객체 하나만 반환하세요(설명 없이):
+{ "angle": "…", "plan": [{ "section": "섹션 이름", "note": "배치 계획 한 줄" }], "missing": ["…"] }`;
+
+  const userPrompt = `제목: ${input.title}\n\n[문서]\n${input.markdown.slice(0, 16000)}\n\n위 문서의 배치 계획 JSON만 반환하세요.`;
+  const raw = await callModel(system, userPrompt, { allowedTools: [], model: 'sonnet', timeoutMs: 90_000 });
+
+  try {
+    const parsed = JSON.parse(extractJson(raw)) as Record<string, unknown>;
+    const plan = Array.isArray(parsed.plan)
+      ? parsed.plan
+          .map((p) => {
+            const o = p as Record<string, unknown>;
+            return {
+              section: typeof o.section === 'string' ? o.section.trim() : '',
+              note: typeof o.note === 'string' ? o.note.trim() : '',
+            };
+          })
+          .filter((p) => p.section && p.note)
+      : [];
+    const missing = Array.isArray(parsed.missing)
+      ? parsed.missing.filter((x): x is string => typeof x === 'string' && x.trim().length > 0)
+      : [];
+    return {
+      angle: typeof parsed.angle === 'string' ? parsed.angle.trim() : '',
+      plan,
+      missing,
+    };
+  } catch {
+    // 파싱 실패 → 빈 제안(운영자가 직접 작성하거나 제안 없이 생성)
+    return { angle: '', plan: [], missing: [] };
   }
 }
 

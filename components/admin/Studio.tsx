@@ -75,11 +75,13 @@ export function Studio({ seeds, pending }: { seeds: CurSeed[]; pending: number }
         {phase.kind === 'content' ? (
           <TrackForm
             initial={phase.row as never}
+            startInPreview
             onSaved={(status, id) => onSaved(status, id, 'content', title)}
           />
         ) : (
           <ToolForm
             initial={phase.row as never}
+            startInPreview
             onSaved={(status, id) => onSaved(status, id, 'tool', title)}
           />
         )}
@@ -139,7 +141,8 @@ export function Studio({ seeds, pending }: { seeds: CurSeed[]; pending: number }
 }
 
 // 발행된 콘텐츠를 홈 대표 영역(featured_contents)에 바로 배치. 빈 슬롯 자동 선택.
-function FeaturedPlacer({ contentId, title }: { contentId: string; title: string }) {
+// MD 직행 레인(MdImport)의 발행 단계에서도 재사용.
+export function FeaturedPlacer({ contentId, title }: { contentId: string; title: string }) {
   const router = useRouter();
   const supabase = createSupabaseBrowserClient();
   const [busy, setBusy] = useState<'hero' | 'highlight' | null>(null);

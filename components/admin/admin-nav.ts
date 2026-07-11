@@ -55,6 +55,8 @@ export const SECTIONS: Section[] = [
     href: '/admin/studio',
     tabs: [
       { href: '/admin/studio', label: '작업실', exact: true },
+      // 텔레그램(HERMES 봇)에서 논의·리서치 마친 MD 문서를 씨앗 경유 없이 바로 초안으로
+      { href: '/admin/studio/import', label: 'MD로 시작' },
       { href: '/admin/studio/archive', label: '씨앗 아카이브' },
       // 본가 /prompts·/guides(둘 다 tools 테이블)에 노출되는 자료의 등록·큐레이션 데스크
       { href: '/admin/prompts', label: '바로쓰는 프롬프트' },
