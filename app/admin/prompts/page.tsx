@@ -11,7 +11,7 @@ export default async function AdminPrompts() {
   const supabase = await createSupabaseServerClient();
   const { data } = await supabase
     .from('tools')
-    .select('id, name, status, pick_order, job_tags, body')
+    .select('id, name, description, status, pick_order, job_tags, body')
     .eq('category', 'prompt')
     .order('created_at', { ascending: false });
   const prompts = (data ?? []) as PromptRow[];
