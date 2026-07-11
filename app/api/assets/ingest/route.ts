@@ -31,11 +31,11 @@ interface AssetItem {
   job_tags?: string[];
   // guide 전용
   url?: string;
-  description?: string;
   guideCategory?: string;
   sourceType?: string;
   // 공통
   source?: string;
+  description?: string; // 복사 박스 밖 설명(prompt) / 카드 한 줄 설명(guide)
 }
 
 function slugify(s: string): string {
@@ -75,6 +75,7 @@ function buildRow(item: AssetItem): ToolRow | { error: string } {
       name: name.slice(0, 200),
       category: 'prompt',
       status: 'draft',
+      description: item.description?.trim() || null,
       job_tags: (item.job_tags ?? []).map((t) => String(t).trim()).filter(Boolean).slice(0, 10),
       body: {
         prompt,

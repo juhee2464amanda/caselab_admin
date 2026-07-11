@@ -25,6 +25,7 @@ export const PROMPT_CATEGORY_LABELS: Record<PromptCategory, string> = {
 export type PromptRow = {
   id: string;
   name: string;
+  description: string | null; // 복사 박스 밖 설명 (본가 카드에서 박스 위에 노출)
   status: string;
   pick_order: number | null;
   job_tags: string[] | null; // admin 분류·검색용 태그 (본가 /prompts는 아직 미노출)
@@ -40,7 +41,7 @@ function slugify(s: string): string {
   return s.toLowerCase().trim().replace(/[^a-z0-9가-힣]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 50) || 'prompt';
 }
 
-const EMPTY = { name: '', prompt: '', category: 'think' as PromptCategory, source: '', sourceUrl: '', pickOrder: '', tags: '' };
+const EMPTY = { name: '', description: '', prompt: '', category: 'think' as PromptCategory, source: '', sourceUrl: '', pickOrder: '', tags: '' };
 
 export function PromptManager({ initial }: { initial: PromptRow[] }) {
   const router = useRouter();
@@ -56,6 +57,7 @@ export function PromptManager({ initial }: { initial: PromptRow[] }) {
     setEditId(p.id);
     setF({
       name: p.name,
+      description: p.description ?? '',
       prompt: b.prompt ?? '',
       category: (PROMPT_CATEGORIES as readonly string[]).includes(b.promptCategory ?? '') ? (b.promptCategory as PromptCategory) : 'think',
       source: b.source ?? '',
@@ -76,6 +78,7 @@ export function PromptManager({ initial }: { initial: PromptRow[] }) {
     // body는 통째로 재작성 — 프롬프트 계약 4필드가 body의 전부라서 병합 불필요
     const payload = {
       name: f.name.trim(),
+      description: f.description.trim() || null,
       pick_order: pickOrder,
       job_tags: f.tags.split(',').map((t) => t.trim()).filter(Boolean),
       body: {
@@ -145,12 +148,17 @@ export function PromptManager({ initial }: { initial: PromptRow[] }) {
               <span key={t} className="text-[11px] text-ink/50 bg-ink/5 rounded px-1.5 py-0.5">#{t}</span>
             ))}
           </div>
-          {p.body?.prompt && <p className="text-xs text-ink/50 mt-1 line-clamp-2 whitespace-pre-line">{p.body.prompt}</p>}
+          {p.description && <p className="text-xs text-ink/60 mt-1 line-clamp-1">{p.description}</p>}
+          {p.body?.prompt && <p className="text-xs text-ink/50 mt-1 line-clamp-2 whitespace-pre-line font-mono">{p.body.prompt}</p>}
         </div>
         <div className="flex items-center gap-2 shrink-0 text-xs">
           <span className={`badge ${p.status === 'published' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}>{p.status === 'published' ? '발행' : '비공개'}</span>
           <button onClick={() => startEdit(p)} className="text-accent hover:underline">수정</button>
-          <button onClick={() => togglePublish(p)} className="text-ink/60 hover:underline">{p.status === 'published' ? '비공개' : '발행'}</button>
+          {p.status === 'published' ? (
+            <button onClick={() => togglePublish(p)} className="rounded-md border border-border px-2.5 py-1 font-semibold text-ink/60 hover:bg-ink/5 transition-colors">비공개로</button>
+          ) : (
+            <button onClick={() => togglePublish(p)} className="rounded-md bg-accent px-2.5 py-1 font-semibold text-white hover:opacity-90 transition-opacity">발행</button>
+          )}
           <button onClick={() => remove(p)} className="text-red-600 hover:underline">삭제</button>
         </div>
       </div>
@@ -175,7 +183,8 @@ export function PromptManager({ initial }: { initial: PromptRow[] }) {
             </Select>
           </div>
         </div>
-        <div><Label className="text-xs">프롬프트 본문 * <span className="text-ink/40">(사용자가 복사해 가는 텍스트)</span></Label><Textarea className="mt-1 font-mono text-xs" rows={6} value={f.prompt} onChange={(e) => setF((p) => ({ ...p, prompt: e.target.value }))} /></div>
+        <div><Label className="text-xs">설명 <span className="text-ink/40">(복사 박스 밖에 노출 · 어떤 프롬프트인지 → 어떤 상황에서 쓰는지 → 누구를 위한 것인지 순서로, 줄바꿈 구분)</span></Label><Textarea className="mt-1 text-xs" rows={3} value={f.description} onChange={(e) => setF((p) => ({ ...p, description: e.target.value }))} placeholder={'회의록을 결정사항·액션아이템으로 정리하는 프롬프트입니다.\n회의 직후 공유용 요약이 필요할 때 씁니다.\n반복 회의를 운영하는 PM·팀 리드를 위한 프롬프트입니다.'} /></div>
+        <div><Label className="text-xs">프롬프트 본문 * <span className="text-ink/40">(사용자가 복사해 가는 텍스트만 — 설명 섞지 않기)</span></Label><Textarea className="mt-1 font-mono text-xs" rows={6} value={f.prompt} onChange={(e) => setF((p) => ({ ...p, prompt: e.target.value }))} /></div>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           <div><Label className="text-xs">출처 라벨</Label><Input className="mt-1" value={f.source} onChange={(e) => setF((p) => ({ ...p, source: e.target.value }))} placeholder="Anthropic 공식" /></div>
           <div><Label className="text-xs">출처 URL</Label><Input className="mt-1" value={f.sourceUrl} onChange={(e) => setF((p) => ({ ...p, sourceUrl: e.target.value }))} placeholder="https://…" /></div>
