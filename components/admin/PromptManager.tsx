@@ -154,7 +154,11 @@ export function PromptManager({ initial }: { initial: PromptRow[] }) {
         <div className="flex items-center gap-2 shrink-0 text-xs">
           <span className={`badge ${p.status === 'published' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}>{p.status === 'published' ? '발행' : '비공개'}</span>
           <button onClick={() => startEdit(p)} className="text-accent hover:underline">수정</button>
-          <button onClick={() => togglePublish(p)} className="text-ink/60 hover:underline">{p.status === 'published' ? '비공개' : '발행'}</button>
+          {p.status === 'published' ? (
+            <button onClick={() => togglePublish(p)} className="rounded-md border border-border px-2.5 py-1 font-semibold text-ink/60 hover:bg-ink/5 transition-colors">비공개로</button>
+          ) : (
+            <button onClick={() => togglePublish(p)} className="rounded-md bg-accent px-2.5 py-1 font-semibold text-white hover:opacity-90 transition-opacity">발행</button>
+          )}
           <button onClick={() => remove(p)} className="text-red-600 hover:underline">삭제</button>
         </div>
       </div>
