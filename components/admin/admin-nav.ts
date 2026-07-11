@@ -50,12 +50,15 @@ export const SECTIONS: Section[] = [
     // 구 '새 콘텐츠 발행'(/admin/seeds) 섹션의 후신 — 씨앗→기획→생성→발행→홈배치의 진입점.
     // /admin/seeds는 /admin/studio로 리다이렉트.
     key: 'studio',
-    label: '스튜디오',
+    label: '콘텐츠 스튜디오',
     icon: Sparkles,
     href: '/admin/studio',
     tabs: [
       { href: '/admin/studio', label: '작업실', exact: true },
       { href: '/admin/studio/archive', label: '씨앗 아카이브' },
+      // 본가 /prompts·/guides(둘 다 tools 테이블)에 노출되는 자료의 등록·큐레이션 데스크
+      { href: '/admin/prompts', label: '바로쓰는 프롬프트' },
+      { href: '/admin/guides', label: '공식 가이드' },
     ],
     // 스튜디오에서 생성→편집하는 초안(콘텐츠/자료)도 이 섹션 소속으로 강조
     extraMatch: ['/admin/seeds'],

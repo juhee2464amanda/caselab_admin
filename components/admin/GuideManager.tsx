@@ -6,9 +6,32 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { createSupabaseBrowserClient } from '@/lib/supabase/client';
 
-// 피드백 #7 — 공식 가이드 관리. tools(category='guide'). 분류는 job_tags[0]에 저장.
+// 공식 가이드 관리 — tools(category='guide').
+// 본가 /guides가 읽는 계약: name, description, url, body{guideCategory, source, sourceType, …}.
+// (본가 lib/data/guides.ts · types/guide.ts 정합, 2026-07-07 — 구 job_tags[0] 분류에서 이행,
+//  job_tags[0]에는 출처 라벨을 계속 함께 써서 기존 데이터·화면과 호환 유지)
+
+export const GUIDE_CATEGORIES = ['prompt', 'cases', 'education', 'skills', 'agents'] as const;
+export type GuideCategory = (typeof GUIDE_CATEGORIES)[number];
+export const GUIDE_CATEGORY_LABELS: Record<GuideCategory, string> = {
+  prompt: '프롬프트 작성법',
+  cases: '활용 사례',
+  education: '교육 · 튜토리얼',
+  skills: 'Skills · Cookbook',
+  agents: '에이전트 · 자동화',
+};
+
+const SOURCE_TYPES = ['default', 'github', 'course'] as const;
+type SourceType = (typeof SOURCE_TYPES)[number];
+const SOURCE_TYPE_LABELS: Record<SourceType, string> = {
+  default: '공식 문서',
+  github: 'GitHub',
+  course: '강의 · 코스',
+};
+
 export type Guide = {
   id: string;
   name: string;
@@ -16,13 +39,26 @@ export type Guide = {
   description: string | null;
   status: string;
   job_tags: string[] | null;
+  body: {
+    guideCategory?: string;
+    source?: string;
+    sourceType?: string;
+    thumbLabel?: string;
+    thumbBg?: string;
+    thumbColor?: string;
+    linkLabel?: string;
+  } | null;
 };
 
 function slugify(s: string): string {
   return s.toLowerCase().trim().replace(/[^a-z0-9가-힣]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 50) || 'guide';
 }
 
-const EMPTY = { name: '', url: '', description: '', category: '' };
+function asCategory(v: unknown): GuideCategory {
+  return typeof v === 'string' && (GUIDE_CATEGORIES as readonly string[]).includes(v) ? (v as GuideCategory) : 'prompt';
+}
+
+const EMPTY = { name: '', url: '', description: '', source: '', guideCategory: 'prompt' as GuideCategory, sourceType: 'default' as SourceType };
 
 export function GuideManager({ initial }: { initial: Guide[] }) {
   const router = useRouter();
@@ -34,8 +70,16 @@ export function GuideManager({ initial }: { initial: Guide[] }) {
 
   function reset() { setEditId(null); setF(EMPTY); setError(null); }
   function startEdit(g: Guide) {
+    const b = g.body ?? {};
     setEditId(g.id);
-    setF({ name: g.name, url: g.url ?? '', description: g.description ?? '', category: g.job_tags?.[0] ?? '' });
+    setF({
+      name: g.name,
+      url: g.url ?? '',
+      description: g.description ?? '',
+      source: b.source ?? g.job_tags?.[0] ?? '',
+      guideCategory: asCategory(b.guideCategory),
+      sourceType: (SOURCE_TYPES as readonly string[]).includes(b.sourceType ?? '') ? (b.sourceType as SourceType) : 'default',
+    });
     if (typeof window !== 'undefined') window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
@@ -44,11 +88,20 @@ export function GuideManager({ initial }: { initial: Guide[] }) {
     setError(null);
     if (!f.name.trim() || !f.url.trim()) { setError('이름과 링크는 필수예요.'); return; }
     setPending(true);
+    const source = f.source.trim();
+    // body는 기존 값(썸네일 커스텀 등)을 보존하고 계약 3필드만 갱신
+    const prevBody = (editId ? initial.find((g) => g.id === editId)?.body : null) ?? {};
     const payload = {
       name: f.name.trim(),
       url: f.url.trim(),
       description: f.description.trim() || null,
-      job_tags: f.category.trim() ? [f.category.trim()] : [],
+      job_tags: source ? [source] : [],
+      body: {
+        ...prevBody,
+        guideCategory: f.guideCategory,
+        source: source || undefined,
+        sourceType: f.sourceType,
+      },
     };
     let err;
     if (editId) {
@@ -74,10 +127,10 @@ export function GuideManager({ initial }: { initial: Guide[] }) {
     router.refresh();
   }
 
-  // 분류별 그룹
-  const groups = new Map<string, Guide[]>();
+  // 본가 /guides 탭과 같은 축으로 그룹 (guideCategory 미지정 구데이터는 '프롬프트 작성법'으로 노출됨)
+  const groups = new Map<GuideCategory, Guide[]>();
   for (const g of initial) {
-    const cat = g.job_tags?.[0] ?? '미분류';
+    const cat = asCategory(g.body?.guideCategory);
     groups.set(cat, [...(groups.get(cat) ?? []), g]);
   }
 
@@ -87,7 +140,31 @@ export function GuideManager({ initial }: { initial: Guide[] }) {
         <div className="text-sm font-semibold">{editId ? '가이드 수정' : '공식 가이드 추가'}</div>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div><Label className="text-xs">이름 *</Label><Input className="mt-1" value={f.name} onChange={(e) => setF((p) => ({ ...p, name: e.target.value }))} placeholder="OpenAI Prompt Engineering Guide" /></div>
-          <div><Label className="text-xs">분류</Label><Input className="mt-1" value={f.category} onChange={(e) => setF((p) => ({ ...p, category: e.target.value }))} placeholder="OpenAI / Anthropic / Google …" /></div>
+          <div><Label className="text-xs">출처 라벨</Label><Input className="mt-1" value={f.source} onChange={(e) => setF((p) => ({ ...p, source: e.target.value }))} placeholder="OpenAI 공식 / Anthropic 공식 …" /></div>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
+            <Label className="text-xs">분류 * <span className="text-ink/40">(본가 /guides 탭)</span></Label>
+            <Select value={f.guideCategory} onValueChange={(v) => setF((p) => ({ ...p, guideCategory: v as GuideCategory }))}>
+              <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {GUIDE_CATEGORIES.map((c) => (
+                  <SelectItem key={c} value={c}>{GUIDE_CATEGORY_LABELS[c]}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
+            <Label className="text-xs">자료 유형</Label>
+            <Select value={f.sourceType} onValueChange={(v) => setF((p) => ({ ...p, sourceType: v as SourceType }))}>
+              <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {SOURCE_TYPES.map((t) => (
+                  <SelectItem key={t} value={t}>{SOURCE_TYPE_LABELS[t]}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
         </div>
         <div><Label className="text-xs">링크 (URL) *</Label><Input className="mt-1" value={f.url} onChange={(e) => setF((p) => ({ ...p, url: e.target.value }))} placeholder="https://platform.openai.com/docs/..." /></div>
         <div><Label className="text-xs">설명</Label><Textarea className="mt-1" rows={2} value={f.description} onChange={(e) => setF((p) => ({ ...p, description: e.target.value }))} /></div>
@@ -98,14 +175,20 @@ export function GuideManager({ initial }: { initial: Guide[] }) {
         </div>
       </form>
 
-      {[...groups.entries()].map(([cat, items]) => (
+      {GUIDE_CATEGORIES.filter((c) => groups.has(c)).map((cat) => (
         <section key={cat}>
-          <h2 className="font-serif text-base font-semibold mb-3">{cat} <span className="text-xs text-ink/40 font-normal">{items.length}</span></h2>
+          <h2 className="font-serif text-base font-semibold mb-3">{GUIDE_CATEGORY_LABELS[cat]} <span className="text-xs text-ink/40 font-normal">{groups.get(cat)!.length}</span></h2>
           <div className="card divide-y divide-border">
-            {items.map((g) => (
+            {groups.get(cat)!.map((g) => (
               <div key={g.id} className="flex items-start justify-between gap-3 px-4 py-3">
                 <div className="min-w-0">
-                  <a href={g.url ?? '#'} target="_blank" rel="noopener noreferrer" className="font-medium text-accent hover:underline">{g.name}</a>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <a href={g.url ?? '#'} target="_blank" rel="noopener noreferrer" className="font-medium text-accent hover:underline">{g.name}</a>
+                    {(g.body?.source ?? g.job_tags?.[0]) && <span className="text-xs text-ink/40">{g.body?.source ?? g.job_tags?.[0]}</span>}
+                    {g.body?.sourceType && g.body.sourceType !== 'default' && (
+                      <span className="badge bg-ink/5 text-ink/60">{SOURCE_TYPE_LABELS[(SOURCE_TYPES as readonly string[]).includes(g.body.sourceType) ? (g.body.sourceType as SourceType) : 'default']}</span>
+                    )}
+                  </div>
                   {g.description && <p className="text-sm text-ink/60 mt-0.5">{g.description}</p>}
                   <p className="text-xs text-ink/40 mt-0.5 break-all">{g.url}</p>
                 </div>
