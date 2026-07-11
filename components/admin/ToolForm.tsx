@@ -286,6 +286,9 @@ export function ToolForm({ initial, onSaved }: Props) {
               })()}
               pricingLabel={pricingLabel}
               isPaid={isPaid}
+              proPricing={proPricing}
+              thumbnailUrl={thumbnailUrl}
+              thumbnailEmoji={thumbnailEmoji}
               jobTags={jobTags}
             />
           )}
