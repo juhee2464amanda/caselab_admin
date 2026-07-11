@@ -3,6 +3,7 @@ import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { createSupabaseAdminClient } from '@/lib/supabase/admin';
 import { generateDraft, generateToolDraft, generatePromptDraft, generateGuideDraft } from '@/lib/ai-draft';
 import { isSeedTrack, type SeedTrack } from '@/lib/seed-tracks';
+import { trackEdge } from '@/lib/track-edges';
 import { slugify } from '@/lib/utils';
 
 export const runtime = 'nodejs';
@@ -39,6 +40,12 @@ export async function POST(req: NextRequest) {
     markdown?: string;
     track?: SeedTrack;
     direction?: string;
+    /** 엣지 제안(사람이 확인·수정) — 각도 한 줄 */
+    angle?: string;
+    /** 엣지 제안 — 섹션별 배치 계획(줄 단위). 생성 시 확정 개요(outline)로 주입 */
+    edgePlan?: string[];
+    /** 엣지 제안 — 형식이 요구하지만 문서에 없는 것(지어내기 방지 경고로 주입) */
+    missing?: string[];
   };
   const title = parsed.title?.trim();
   const markdown = parsed.markdown?.trim();
@@ -50,7 +57,23 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'invalid track' }, { status: 400 });
   }
   const extra = parsed.direction?.trim();
-  const direction = extra ? `${DOC_DIRECTION}\n[보강 지시] ${extra}` : DOC_DIRECTION;
+  const angle = parsed.angle?.trim();
+  const edgePlan = Array.isArray(parsed.edgePlan)
+    ? parsed.edgePlan.map((s) => String(s).trim()).filter(Boolean)
+    : undefined;
+  const missing = Array.isArray(parsed.missing)
+    ? parsed.missing.map((s) => String(s).trim()).filter(Boolean)
+    : [];
+
+  // direction 조립: 문서 보존 모드 + 트랙 형식 지침(목업 스터디 정본) + 확정 각도 + 결핍 경고 + 보강 지시
+  const edge = trackEdge(track);
+  const parts = [DOC_DIRECTION, `[트랙 형식 지침] ${edge.edge} ${edge.guide}`];
+  if (angle) parts.push(`[확정 각도] ${angle}`);
+  if (missing.length) {
+    parts.push(`[문서에 없는 것 — 지어내지 말 것] ${missing.join(' / ')} → 근거 없이 채우지 말고 생략하거나 문서 범위에서만 다루세요.`);
+  }
+  if (extra) parts.push(`[보강 지시] ${extra}`);
+  const direction = parts.join('\n');
 
   const admin = createSupabaseAdminClient();
 
@@ -77,7 +100,7 @@ export async function POST(req: NextRequest) {
 
     // 자료실 트랙(tool/prompt/guide) → tools 테이블 (generate/route.ts와 동일 분기)
     if (track === 'tool' || track === 'prompt') {
-      const libInput = { title, summary: markdown, direction, sourceType: 'manual' };
+      const libInput = { title, summary: markdown, direction, outline: edgePlan, sourceType: 'manual' };
       const draft = track === 'tool' ? await generateToolDraft(libInput) : await generatePromptDraft(libInput);
       const { data: tool, error } = await admin
         .from('tools')
@@ -101,7 +124,7 @@ export async function POST(req: NextRequest) {
     }
 
     if (track === 'guide') {
-      const draft = await generateGuideDraft({ title, summary: markdown, direction, sourceType: 'manual' });
+      const draft = await generateGuideDraft({ title, summary: markdown, direction, outline: edgePlan, sourceType: 'manual' });
       const { data: tool, error } = await admin
         .from('tools')
         .insert({
@@ -123,7 +146,7 @@ export async function POST(req: NextRequest) {
     }
 
     // case | trend → contents
-    const body = await generateDraft({ track, title, summary: markdown, direction, sourceType: 'manual' });
+    const body = await generateDraft({ track, title, summary: markdown, direction, outline: edgePlan, sourceType: 'manual' });
     const { data: content, error } = await admin
       .from('contents')
       .insert({

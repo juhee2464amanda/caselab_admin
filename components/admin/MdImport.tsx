@@ -3,11 +3,12 @@
 import { useRef, useState, type DragEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { ArrowLeft, CheckCircle2, ExternalLink, FileText, Loader2, Sparkles, Upload, X } from 'lucide-react';
+import { ArrowLeft, CheckCircle2, ExternalLink, FileText, Loader2, Sparkles, Upload, Wand2, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { createSupabaseBrowserClient } from '@/lib/supabase/client';
 import { cn } from '@/lib/utils';
 import { SEED_TRACKS, type SeedTrack } from '@/lib/seed-tracks';
+import { trackEdge } from '@/lib/track-edges';
 import { TrackForm } from '@/components/admin/TrackForm';
 import { ToolForm } from '@/components/admin/ToolForm';
 import { FeaturedPlacer } from '@/components/admin/Studio';
@@ -42,6 +43,50 @@ export function MdImport() {
   const [busy, setBusy] = useState(false);
   const [dragOver, setDragOver] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
+
+  // 엣지 제안 — 트랙 형식(목업 스터디 프로파일)에 대고 각도·섹션 배치를 제안받아 수정 후 생성에 주입
+  const [edgeBusy, setEdgeBusy] = useState(false);
+  const [angle, setAngle] = useState('');
+  const [planText, setPlanText] = useState(''); // 줄 단위 "섹션 — 배치 계획"
+  const [missing, setMissing] = useState<string[]>([]);
+  const [proposed, setProposed] = useState(false);
+
+  // 트랙이 바뀌면 형식도 바뀌므로 제안 초기화
+  const selectTrack = (t: SeedTrack) => {
+    setTrack(t);
+    setAngle('');
+    setPlanText('');
+    setMissing([]);
+    setProposed(false);
+  };
+
+  const propose = async () => {
+    if (!markdown.trim() || !title.trim() || !track) return;
+    setEdgeBusy(true);
+    setError(null);
+    try {
+      const res = await fetch('/api/studio/edge', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title: title.trim(), markdown, track }),
+      });
+      const json = (await res.json()) as {
+        angle?: string;
+        plan?: { section: string; note: string }[];
+        missing?: string[];
+        error?: string;
+      };
+      if (!res.ok) throw new Error(json.error ?? '엣지 제안 실패');
+      setAngle(json.angle ?? '');
+      setPlanText((json.plan ?? []).map((p) => `${p.section} — ${p.note}`).join('\n'));
+      setMissing(json.missing ?? []);
+      setProposed(true);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setEdgeBusy(false);
+    }
+  };
 
   const applyMarkdown = (text: string, name?: string) => {
     setMarkdown(text);
@@ -82,7 +127,18 @@ export function MdImport() {
       const res = await fetch('/api/studio/import', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title: title.trim(), markdown, track, direction: extra.trim() || undefined }),
+        body: JSON.stringify({
+          title: title.trim(),
+          markdown,
+          track,
+          direction: extra.trim() || undefined,
+          angle: angle.trim() || undefined,
+          edgePlan: planText
+            .split('\n')
+            .map((s) => s.trim())
+            .filter(Boolean),
+          missing,
+        }),
       });
       const json = (await res.json()) as { id?: string; kind?: Kind; error?: string };
       if (!res.ok || !json.id || !json.kind) throw new Error(json.error ?? '생성 실패');
@@ -292,16 +348,82 @@ export function MdImport() {
               <div className="flex flex-wrap items-center gap-2">
                 <span className="text-xs text-ink/40 w-12">콘텐츠</span>
                 {contentTracks.map((t) => (
-                  <TrackChip key={t.track} label={t.label} active={track === t.track} onClick={() => setTrack(t.track)} />
+                  <TrackChip key={t.track} label={t.label} active={track === t.track} onClick={() => selectTrack(t.track)} />
                 ))}
               </div>
               <div className="flex flex-wrap items-center gap-2">
                 <span className="text-xs text-ink/40 w-12">자료실</span>
                 {libraryTracks.map((t) => (
-                  <TrackChip key={t.track} label={t.label} active={track === t.track} onClick={() => setTrack(t.track)} />
+                  <TrackChip key={t.track} label={t.label} active={track === t.track} onClick={() => selectTrack(t.track)} />
                 ))}
               </div>
             </div>
+
+            {/* 타입별 엣지 카드 — 같은 소재라도 형식마다 살릴 각도가 다르다(목업 스터디 프로파일) */}
+            {track && (
+              <div className="mt-2 space-y-3 rounded-lg border border-border bg-muted/40 p-3">
+                {(() => {
+                  const e = trackEdge(track);
+                  return (
+                    <>
+                      <p className="text-xs font-medium text-ink/80">{e.edge}</p>
+                      <ul className="space-y-1">
+                        {e.sections.map((s) => (
+                          <li key={s.name} className="text-xs text-ink/60">
+                            <span className="font-medium text-ink/75">{s.name}</span> · {s.need}
+                          </li>
+                        ))}
+                      </ul>
+                      <p className="text-[11px] text-ink/45">
+                        맞는 소재: {e.fits} <br /> 덜어낼 것: {e.cuts}
+                      </p>
+                    </>
+                  );
+                })()}
+
+                {/* 엣지 제안 — MD를 이 형식에 대고 각도·섹션 배치를 제안받아 수정 후 생성에 주입 */}
+                {!proposed ? (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={edgeBusy || !markdown.trim() || !title.trim() || !LOCAL_AI}
+                    onClick={propose}
+                  >
+                    {edgeBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Wand2 className="h-3.5 w-3.5" />}
+                    {edgeBusy ? '문서를 형식에 대보는 중…' : '이 타입으로 엣지 제안'}
+                  </Button>
+                ) : (
+                  <div className="space-y-2 border-t border-border pt-3">
+                    <label className="block text-xs font-medium text-ink/70">
+                      각도 <span className="font-normal text-ink/40">(수정 가능)</span>
+                    </label>
+                    <input
+                      value={angle}
+                      onChange={(e) => setAngle(e.target.value)}
+                      className="w-full rounded-lg border border-border bg-white px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-accent"
+                    />
+                    <label className="block text-xs font-medium text-ink/70">
+                      섹션 배치 계획 <span className="font-normal text-ink/40">(한 줄 = 한 섹션, 수정 가능)</span>
+                    </label>
+                    <textarea
+                      value={planText}
+                      onChange={(e) => setPlanText(e.target.value)}
+                      rows={Math.min(10, Math.max(4, planText.split('\n').length + 1))}
+                      className="w-full rounded-lg border border-border bg-white px-3 py-2 text-xs leading-relaxed focus:outline-none focus:ring-1 focus:ring-accent"
+                    />
+                    {missing.length > 0 && (
+                      <p className="text-[11px] text-amber-700">
+                        문서에 없는 것(지어내지 않고 생략·문서 범위로 제한): {missing.join(' · ')}
+                      </p>
+                    )}
+                    <Button size="sm" variant="ghost" disabled={edgeBusy} onClick={propose}>
+                      {edgeBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Wand2 className="h-3.5 w-3.5" />} 다시
+                      제안
+                    </Button>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           <div className="space-y-2">
