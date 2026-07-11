@@ -9,7 +9,7 @@ HERMES 봇 (맥 로컬, launchd 게이트웨이, 봇 1개 = 프로필 1개)
   └─ cron 잡: 수집 프롬프트 실행 → curl POST /api/seeds/ingest (Bearer HERMES_INGEST_TOKEN)
        └─ content_seeds (origin='hermes-direct', status='raw', 미채점)
             └─ [로컬 admin] 채점(scoreSeed) → bucket/score/essence
-                 └─ /admin/studio 인박스 (72h · score 60↑ · 버킷별 top5) → 개요 → 생성 → 발행
+                 └─ /admin/studio 인박스 (72h · score 60↑ · 버킷당 6개+더 보기) → 개요 → 생성 → 발행
 ```
 
 - 적재만으로는 인박스에 **안 뜬다**. 채점은 로컬 admin(`NEXT_PUBLIC_LOCAL_AI=true`)에서 수동 실행.
@@ -17,12 +17,14 @@ HERMES 봇 (맥 로컬, launchd 게이트웨이, 봇 1개 = 프로필 1개)
 
 ## 현재 연결 현황 (2026-07-11)
 
-| 프로필 (텔레그램 봇) | cron 잡 | lane → source_type | 버킷 | 스케줄 |
-|---|---|---|---|---|
-| `ai-briefer` | `ai-briefing-ingest` | `ai-briefing` → `ai-briefing` | 🔵 trend | 매일 09:00 |
-| `trendy_aiservice_bot` | `service-scout-daily` | `service-scout` → `service-scout` | 🟢 service | 매일 09:00 |
-| `user_painpoint_ai_bot` | `painpoint-blog` | `painpoint-blog` → `blog` | 🟠 painpoint | 월수금 10:00 |
-| `user_painpoint_ai_bot` | `painpoint-youtube` | `painpoint-youtube` → `youtube` | 🟠 painpoint | 화목 10:00 |
+| 프로필 (텔레그램 봇) | cron 잡 | lane → source_type | 버킷 | 스케줄 | 수집 창 · 전송 건수 |
+|---|---|---|---|---|---|
+| `ai-briefer` | `ai-briefing-ingest` | `ai-briefing` → `ai-briefing` | 🔵 trend | 매일 09:00 | 최근 72h · 4~8건 |
+| `trendy_aiservice_bot` | `service-scout-daily` | `service-scout` → `service-scout` | 🟢 service | 매일 09:00 | 최근 24~72h · 3~6건 |
+| `user_painpoint_ai_bot` | `painpoint-blog` | `painpoint-blog` → `blog` | 🟠 painpoint | 월수금 10:00 | 최근 1주 · 3~6건 |
+| `user_painpoint_ai_bot` | `painpoint-youtube` | `painpoint-youtube` → `youtube` | 🟠 painpoint | 화목 10:00 | 최근 1~2주 · 2~5건 |
+
+수집 창·건수는 2026-07-11에 확대(인박스 선택권이 버킷당 4건 수준으로 너무 적었음). 당일 최신을 우선하되 창 내 미커버 소식을 함께 추리고, 겹침은 dedup_key가 차단하므로 재전송 걱정 없이 넓게 훑는 방식. "기준 미달을 억지로 채우지 말 것"은 전 잡 공통 유지 — 건수 하한은 목표치지 강제가 아니다.
 
 레거시: default 프로필의 Slack 경유 잡 4개(scout-daily·analyst-daily·weekly-planner·daily-ai-briefing-9am)는 전부 pause. Slack 웹훅(`/api/slack/hermes-brief`)은 하위호환으로만 존치.
 
