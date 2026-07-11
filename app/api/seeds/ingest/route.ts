@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import crypto from 'crypto';
 import { createSupabaseAdminClient } from '@/lib/supabase/admin';
 import { isSeedSource, sourceFromLane } from '@/lib/seed-sources';
+import { verifyIngestToken } from '@/lib/ingest-auth';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -23,17 +24,6 @@ interface IngestItem {
   dedup_key?: string;
 }
 
-function verifyToken(req: NextRequest): boolean {
-  const expected = (process.env.HERMES_INGEST_TOKEN ?? '').trim();
-  if (!expected) throw new Error('HERMES_INGEST_TOKEN missing');
-  const got = (req.headers.get('authorization') ?? '').replace(/^Bearer\s+/i, '').trim();
-  if (!got) return false;
-  // sha256으로 길이를 맞춰 timingSafeEqual (길이 불일치 예외·타이밍 누출 방지)
-  const a = crypto.createHash('sha256').update(got).digest();
-  const b = crypto.createHash('sha256').update(expected).digest();
-  return crypto.timingSafeEqual(a, b);
-}
-
 function dedupKey(item: IngestItem, rawText: string): string {
   const explicit = item.dedup_key?.trim();
   if (explicit) return `ingest:${explicit.slice(0, 200)}`;
@@ -42,7 +32,7 @@ function dedupKey(item: IngestItem, rawText: string): string {
 
 export async function POST(req: NextRequest) {
   try {
-    if (!verifyToken(req)) {
+    if (!verifyIngestToken(req)) {
       return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
     }
   } catch (e) {
