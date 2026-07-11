@@ -2,7 +2,7 @@
 
 import { useMemo, useState, useTransition, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { Save, Send, Archive, AlertCircle, CheckCircle2 } from 'lucide-react';
+import { Save, Send, Archive, AlertCircle, CheckCircle2, Eye, PenLine } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
@@ -13,6 +13,7 @@ import { JOB_LABELS, JOB_TAGS } from '@/types/content';
 import type { JobTag } from '@/types/content';
 import { createSupabaseBrowserClient } from '@/lib/supabase/client';
 import { slugify, cn } from '@/lib/utils';
+import { ToolPreview } from '@/components/admin/ToolPreview';
 
 const CATEGORIES = ['tool', 'prompt', 'guide', 'context-card'] as const;
 const CATEGORY_LABELS: Record<typeof CATEGORIES[number], string> = {
@@ -81,9 +82,49 @@ export function ToolForm({ initial, onSaved }: Props) {
   const [proPricing, setProPricing] = useState(initial?.pro_pricing ?? '');
   const [hasReview, setHasReview] = useState(initial?.has_review ?? false);
   const [subcategoryId, setSubcategoryId] = useState(initial?.subcategory_id ?? '');
-  const [subcats, setSubcats] = useState<{ id: string; slug: string; label: string }[]>([]);
+  const [subcats, setSubcats] = useState<{ id: string; slug: string; label: string; sort_order: number }[]>([]);
   const [bodyJson, setBodyJson] = useState(JSON.stringify(initial?.body ?? {}, null, 2));
   const [bodyError, setBodyError] = useState<string | null>(null);
+  // 라이브 미리보기 — 현재 폼 상태를 본가 상세/카드 모습으로 렌더(발행 전 검수)
+  const [previewOpen, setPreviewOpen] = useState(false);
+
+  // 원하는 분류가 없을 때 셀렉트에서 바로 새 분류 추가.
+  // 공유 마스터(categories, type='tool_subcategory')에 insert → 본가 /tools 탭에도 새 탭으로 반영됨.
+  const [newSubcatOpen, setNewSubcatOpen] = useState(false);
+  const [newSubcatLabel, setNewSubcatLabel] = useState('');
+  const [newSubcatBusy, setNewSubcatBusy] = useState(false);
+  const [newSubcatErr, setNewSubcatErr] = useState<string | null>(null);
+
+  const addSubcategory = async () => {
+    const label = newSubcatLabel.trim();
+    if (!label) return;
+    setNewSubcatBusy(true);
+    setNewSubcatErr(null);
+    // CategoryManager와 동일 insert 계약. 새 분류는 기존 탭들 뒤에(max sort_order + 1).
+    const nextSort = subcats.reduce((m, s) => Math.max(m, s.sort_order ?? 0), 0) + 1;
+    const { data, error } = await supabase
+      .from('categories')
+      .insert({
+        type: 'tool_subcategory',
+        parent_track: 'tool',
+        slug: slugify(label),
+        label,
+        sort_order: nextSort,
+      })
+      .select('id, slug, label, sort_order')
+      .single();
+    setNewSubcatBusy(false);
+    if (error || !data) {
+      setNewSubcatErr(
+        /duplicate|unique/i.test(error?.message ?? '') ? '이미 있는 분류(slug 중복)예요.' : error?.message ?? '추가 실패',
+      );
+      return;
+    }
+    setSubcats((prev) => [...prev, data]);
+    setSubcategoryId(data.id);
+    setNewSubcatOpen(false);
+    setNewSubcatLabel('');
+  };
 
   useEffect(() => {
     if (!slug && name) setSlug(slugify(name));
@@ -93,7 +134,7 @@ export function ToolForm({ initial, onSaved }: Props) {
   useEffect(() => {
     supabase
       .from('categories')
-      .select('id, slug, label')
+      .select('id, slug, label, sort_order')
       .eq('type', 'tool_subcategory')
       .eq('parent_track', 'tool')
       .eq('is_active', true)
@@ -206,6 +247,10 @@ export function ToolForm({ initial, onSaved }: Props) {
           {initial?.id ? '자료 편집' : '새 자료'}
         </h1>
         <div className="flex flex-wrap gap-2">
+          <Button variant="outline" onClick={() => setPreviewOpen((v) => !v)}>
+            {previewOpen ? <PenLine className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+            {previewOpen ? '편집으로' : '미리보기'}
+          </Button>
           {initial?.id && initial.status !== 'archived' && (
             <Button variant="outline" onClick={() => save('archived')} disabled={pending}>
               <Archive className="h-4 w-4" /> 보관
@@ -220,7 +265,34 @@ export function ToolForm({ initial, onSaved }: Props) {
         </div>
       </header>
 
-      <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
+      {previewOpen && (
+        <div className="mb-6">
+          {bodyError ? (
+            <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-600">
+              본문 JSON 오류로 미리보기를 렌더할 수 없어요: {bodyError}
+            </p>
+          ) : (
+            <ToolPreview
+              category={category}
+              name={name}
+              description={description}
+              url={url}
+              body={(() => {
+                try {
+                  return JSON.parse(bodyJson || '{}') as Record<string, unknown>;
+                } catch {
+                  return {};
+                }
+              })()}
+              pricingLabel={pricingLabel}
+              isPaid={isPaid}
+              jobTags={jobTags}
+            />
+          )}
+        </div>
+      )}
+
+      <div className={cn('grid gap-6 lg:grid-cols-[1fr_320px]', previewOpen && 'hidden')}>
         <div className="space-y-6">
           <section className="card p-5 space-y-3">
             <h2 className="font-semibold">메타</h2>
@@ -265,7 +337,16 @@ export function ToolForm({ initial, onSaved }: Props) {
             {category === 'tool' && (
               <div>
                 <Label htmlFor="subcategory">도구 분류 (공개 /tools 탭) *</Label>
-                <Select value={subcategoryId} onValueChange={setSubcategoryId}>
+                <Select
+                  value={subcategoryId}
+                  onValueChange={(v) => {
+                    if (v === '__new__') {
+                      setNewSubcatOpen(true);
+                      return; // 선택값은 유지한 채 입력 UI만 연다
+                    }
+                    setSubcategoryId(v);
+                  }}
+                >
                   <SelectTrigger id="subcategory">
                     <SelectValue placeholder="기능 분류 선택" />
                   </SelectTrigger>
@@ -273,8 +354,42 @@ export function ToolForm({ initial, onSaved }: Props) {
                     {subcats.map((s) => (
                       <SelectItem key={s.id} value={s.id}>{s.label}</SelectItem>
                     ))}
+                    <SelectItem value="__new__">+ 직접 입력 (새 분류 추가)</SelectItem>
                   </SelectContent>
                 </Select>
+                {newSubcatOpen && (
+                  <div className="mt-2 space-y-1.5">
+                    <div className="flex items-center gap-2">
+                      <Input
+                        value={newSubcatLabel}
+                        onChange={(e) => setNewSubcatLabel(e.target.value)}
+                        placeholder="새 분류 이름 (예: 영상 편집)"
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            addSubcategory();
+                          }
+                        }}
+                      />
+                      <Button size="sm" variant="accent" disabled={newSubcatBusy || !newSubcatLabel.trim()} onClick={addSubcategory}>
+                        {newSubcatBusy ? '추가 중…' : '추가'}
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => {
+                          setNewSubcatOpen(false);
+                          setNewSubcatLabel('');
+                          setNewSubcatErr(null);
+                        }}
+                      >
+                        취소
+                      </Button>
+                    </div>
+                    {newSubcatErr && <p className="text-xs text-red-600">{newSubcatErr}</p>}
+                    <p className="text-xs text-amber-700">새 분류는 공유 마스터에 추가돼 본가 /tools 탭에도 생깁니다.</p>
+                  </div>
+                )}
                 <p className="mt-1 text-xs text-ink/50">
                   공개 /tools 목록의 카테고리 탭. 미선택 시 목록에 안 보임.
                 </p>

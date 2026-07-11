@@ -2,7 +2,7 @@
 
 import { useState, useTransition, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { Sparkles, Save, Send, AlertCircle, CheckCircle2 } from 'lucide-react';
+import { Sparkles, Save, Send, AlertCircle, CheckCircle2, Eye, PenLine } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
@@ -16,6 +16,7 @@ import { lintContent } from '@/lib/content-lint';
 import { slugify, cn } from '@/lib/utils';
 import { CaseBodyEditor } from '@/components/admin/section-editors/CaseBodyEditor';
 import { TrendBodyEditor } from '@/components/admin/section-editors/TrendBodyEditor';
+import { ContentPreview } from '@/components/admin/ContentPreview';
 
 interface Props {
   initial?: Partial<ContentRow> & { id?: string };
@@ -68,6 +69,8 @@ export function TrackForm({ initial, onSaved }: Props) {
   const [bodyError, setBodyError] = useState<string | null>(null);
   const [aiBusy, setAiBusy] = useState(false);
   const [manualConfirms, setManualConfirms] = useState({ tone: false, related: false, mobile: false });
+  // 라이브 미리보기 — 현재 폼 상태(body 포함)를 본가 상세 마크업으로 렌더(발행 전 검수)
+  const [previewOpen, setPreviewOpen] = useState(false);
 
   // 자동 슬러그
   useEffect(() => {
@@ -192,6 +195,10 @@ export function TrackForm({ initial, onSaved }: Props) {
           {initial?.id ? '콘텐츠 편집' : '새 콘텐츠'}
         </h1>
         <div className="flex flex-wrap gap-2">
+          <Button variant="outline" onClick={() => setPreviewOpen((v) => !v)}>
+            {previewOpen ? <PenLine className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+            {previewOpen ? '편집으로' : '미리보기'}
+          </Button>
           <Button variant="outline" onClick={() => save('draft')} disabled={pending}>
             <Save className="h-4 w-4" /> 초안 저장
           </Button>
@@ -201,6 +208,22 @@ export function TrackForm({ initial, onSaved }: Props) {
         </div>
       </header>
 
+      {previewOpen && (
+        <div className="mb-6">
+          <ContentPreview
+            track={track}
+            title={title}
+            summary={summary}
+            jobTags={jobTags}
+            readMin={readMin}
+            applyMin={applyMin}
+            authorQuote={authorQuote}
+            body={body}
+          />
+        </div>
+      )}
+
+      <div className={previewOpen ? 'hidden' : undefined}>
       <Tabs value={track} onValueChange={(v) => switchTrack(v as 'case' | 'trend')}>
         <TabsList>
           <TabsTrigger value="case">실전 케이스 (4단)</TabsTrigger>
@@ -384,6 +407,7 @@ export function TrackForm({ initial, onSaved }: Props) {
             </section>
           )}
         </aside>
+      </div>
       </div>
     </div>
   );
