@@ -75,11 +75,13 @@ export function Studio({ seeds, pending }: { seeds: CurSeed[]; pending: number }
         {phase.kind === 'content' ? (
           <TrackForm
             initial={phase.row as never}
+            startInPreview
             onSaved={(status, id) => onSaved(status, id, 'content', title)}
           />
         ) : (
           <ToolForm
             initial={phase.row as never}
+            startInPreview
             onSaved={(status, id) => onSaved(status, id, 'tool', title)}
           />
         )}

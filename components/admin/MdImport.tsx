@@ -196,11 +196,13 @@ export function MdImport() {
         {phase.kind === 'content' ? (
           <TrackForm
             initial={phase.row as never}
+            startInPreview
             onSaved={(status, id) => onSaved(status, id, 'content', editTitle)}
           />
         ) : (
           <ToolForm
             initial={phase.row as never}
+            startInPreview
             onSaved={(status, id) => onSaved(status, id, 'tool', editTitle)}
           />
         )}

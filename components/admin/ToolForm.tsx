@@ -61,9 +61,11 @@ interface Props {
   initial?: ToolRow;
   /** 스튜디오 임베드용. 있으면 저장 후 /admin/tools로 이동하지 않고 콜백만 호출. */
   onSaved?: (status: 'draft' | 'published' | 'archived', id?: string) => void;
+  /** true면 미리보기(실제 페이지 모습 + 더블클릭 인라인 편집)로 시작 — 스튜디오 생성 직후 검수 흐름 */
+  startInPreview?: boolean;
 }
 
-export function ToolForm({ initial, onSaved }: Props) {
+export function ToolForm({ initial, onSaved, startInPreview }: Props) {
   const router = useRouter();
   const supabase = createSupabaseBrowserClient();
   const [pending, startTransition] = useTransition();
@@ -85,8 +87,9 @@ export function ToolForm({ initial, onSaved }: Props) {
   const [subcats, setSubcats] = useState<{ id: string; slug: string; label: string; sort_order: number }[]>([]);
   const [bodyJson, setBodyJson] = useState(JSON.stringify(initial?.body ?? {}, null, 2));
   const [bodyError, setBodyError] = useState<string | null>(null);
-  // 라이브 미리보기 — 현재 폼 상태를 본가 상세/카드 모습으로 렌더(발행 전 검수)
-  const [previewOpen, setPreviewOpen] = useState(false);
+  // 라이브 미리보기 — 현재 폼 상태를 본가 상세/카드 모습으로 렌더.
+  // 더블클릭 인라인 편집이 폼 상태로 커밋되므로 미리보기 자체가 편집 표면이다.
+  const [previewOpen, setPreviewOpen] = useState(startInPreview ?? false);
 
   // 원하는 분류가 없을 때 셀렉트에서 바로 새 분류 추가.
   // 공유 마스터(categories, type='tool_subcategory')에 insert → 본가 /tools 탭에도 새 탭으로 반영됨.
@@ -290,6 +293,11 @@ export function ToolForm({ initial, onSaved }: Props) {
               thumbnailUrl={thumbnailUrl}
               thumbnailEmoji={thumbnailEmoji}
               jobTags={jobTags}
+              onPatch={(p) => {
+                if (p.name !== undefined) setName(p.name);
+                if (p.description !== undefined) setDescription(p.description);
+              }}
+              onBody={(next) => syncBody(JSON.stringify(next, null, 2))}
             />
           )}
         </div>

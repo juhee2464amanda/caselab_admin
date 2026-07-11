@@ -22,6 +22,8 @@ interface Props {
   initial?: Partial<ContentRow> & { id?: string };
   /** 스튜디오 임베드용. 있으면 저장 후 /admin으로 이동하지 않고 콜백만 호출. */
   onSaved?: (status: 'draft' | 'published', id?: string) => void;
+  /** true면 미리보기(실제 페이지 모습 + 더블클릭 인라인 편집)로 시작 — 스튜디오 생성 직후 검수 흐름 */
+  startInPreview?: boolean;
 }
 
 // D70 정본 shape — 라이브 cases/[slug]·trends/[slug] 렌더 필드와 정합.
@@ -47,7 +49,7 @@ const EMPTY_TREND: ContentBody = {
   sources: [],
 };
 
-export function TrackForm({ initial, onSaved }: Props) {
+export function TrackForm({ initial, onSaved, startInPreview }: Props) {
   const router = useRouter();
   const supabase = createSupabaseBrowserClient();
   const [pending, startTransition] = useTransition();
@@ -69,8 +71,9 @@ export function TrackForm({ initial, onSaved }: Props) {
   const [bodyError, setBodyError] = useState<string | null>(null);
   const [aiBusy, setAiBusy] = useState(false);
   const [manualConfirms, setManualConfirms] = useState({ tone: false, related: false, mobile: false });
-  // 라이브 미리보기 — 현재 폼 상태(body 포함)를 본가 상세 마크업으로 렌더(발행 전 검수)
-  const [previewOpen, setPreviewOpen] = useState(false);
+  // 라이브 미리보기 — 현재 폼 상태(body 포함)를 본가 상세 마크업으로 렌더.
+  // 더블클릭 인라인 편집이 폼 상태로 커밋되므로 미리보기 자체가 편집 표면이다.
+  const [previewOpen, setPreviewOpen] = useState(startInPreview ?? false);
 
   // 자동 슬러그
   useEffect(() => {
@@ -219,6 +222,12 @@ export function TrackForm({ initial, onSaved }: Props) {
             applyMin={applyMin}
             authorQuote={authorQuote}
             body={body}
+            onPatch={(p) => {
+              if (p.title !== undefined) setTitle(p.title);
+              if (p.summary !== undefined) setSummary(p.summary);
+              if (p.authorQuote !== undefined) setAuthorQuote(p.authorQuote);
+            }}
+            onBody={updateBody}
           />
         </div>
       )}
