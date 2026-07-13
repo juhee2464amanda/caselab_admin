@@ -9,6 +9,7 @@ import { formatDate, cn } from '@/lib/utils';
 import { BUCKETS, SCORE_CUT, WINDOW_HOURS, BUCKET_CAP, bucketProfile, type SeedBucket } from '@/lib/seed-curation';
 import { SEED_TRACKS, type SeedTrack } from '@/lib/seed-tracks';
 import { SOURCES, sourceProfile } from '@/lib/seed-sources';
+import { CollectRequestButton } from '@/components/admin/CollectRequestButton';
 
 export type CurSeed = {
   id: string;
@@ -273,6 +274,7 @@ export function SeedCuration({
           최근 72시간 · 채점된 씨앗 {seeds.length}건.
         </p>
         <div className="flex items-center gap-2">
+          <CollectRequestButton />
           <Button size="sm" variant="outline" onClick={() => setComposerOpen((v) => !v)}>
             <Plus className="h-3.5 w-3.5" /> 수동 씨앗 추가
           </Button>
