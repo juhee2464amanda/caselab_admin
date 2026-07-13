@@ -79,10 +79,14 @@ export function CollectRequestButton() {
   let label = '지금 수집 요청';
   let Icon = DownloadCloud;
   if (posting) label = '요청 중…';
-  else if (status === 'pending') label = '로컬 작업장 대기 중…';
-  else if (status === 'claimed') label = '수집 중…';
+  else if (status === 'pending') label = '수집 대기 중 · 곧 시작';
+  else if (status === 'claimed') label = '백그라운드 수집 중';
   else if (status === 'done') { label = req?.result_count != null ? `수집 완료 · ${req.result_count}건` : '수집 완료'; Icon = CheckCircle2; }
   else if (status === 'error') { label = '수집 실패 · 다시 요청'; Icon = AlertCircle; }
+
+  // 논블로킹: 수집은 로컬 봇이 백그라운드로 도는 장시간 작업(수 분~십수 분)이라,
+  // 스피너를 지켜볼 필요 없음. 화면을 떠나도 되고 완료 시 목록이 자동 새로고침된다.
+  const active = isActive(status);
 
   return (
     <div className="flex items-center gap-2">
@@ -90,6 +94,9 @@ export function CollectRequestButton() {
         {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Icon className="h-3.5 w-3.5" />}
         {label}
       </Button>
+      {active && (
+        <span className="text-[11px] text-ink/45">이 화면을 떠나도 돼요 · 완료되면 자동 표시</span>
+      )}
       {error && <span className="text-[11px] text-red-600">{error}</span>}
     </div>
   );

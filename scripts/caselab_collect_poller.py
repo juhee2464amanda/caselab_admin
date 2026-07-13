@@ -14,6 +14,7 @@ AI브리핑·서비스·블로그·유튜브). 각 잡의 프롬프트에 이미
 """
 from __future__ import annotations
 
+import concurrent.futures
 import glob
 import json
 import os
@@ -33,6 +34,8 @@ def hermes_bin() -> str:
         or shutil.which("hermes")
         or str(Path.home() / ".local" / "bin" / "hermes")
     )
+
+
 ENV_FILE = HERMES / ".env"
 LOCK_FILE = HERMES / "cron" / ".caselab_collect_poller.lock"
 BASE = os.environ.get("CASELAB_ADMIN_URL", "https://caselab-admin.vercel.app")
@@ -128,13 +131,30 @@ def main() -> int:
             api(f"/api/collect-requests/{rid}/complete", data={"ok": False, "error": "적재 대상 봇 잡 없음"})
             return 1
 
+        # 프로필 단위 병렬 실행 — 서로 다른 프로필은 동시에, 같은 프로필 내 잡은 순차.
+        # (같은 프로필 봇을 동시에 돌리면 profile/state.db SQLite 락 충돌 → 순차 필수)
+        # 총 소요는 순차 합(~40분)이 아니라 가장 느린 프로필 1개(≈15분)로 수렴.
+        by_profile: dict[str, list[tuple[str, str]]] = {}
+        for profile, name, prompt in jobs:
+            by_profile.setdefault(profile, []).append((name, prompt))
+
+        def run_profile(profile: str, lane_jobs: list[tuple[str, str]]) -> tuple[int, list[str]]:
+            ok, errs = 0, []
+            for name, prompt in lane_jobs:
+                if run_bot(profile, prompt):
+                    ok += 1
+                else:
+                    errs.append(f"{profile}/{name}")
+            return ok, errs
+
         ok_count = 0
         errors: list[str] = []
-        for profile, name, prompt in jobs:
-            if run_bot(profile, prompt):
-                ok_count += 1
-            else:
-                errors.append(f"{profile}/{name}")
+        with concurrent.futures.ThreadPoolExecutor(max_workers=len(by_profile)) as ex:
+            futs = [ex.submit(run_profile, p, js) for p, js in by_profile.items()]
+            for f in concurrent.futures.as_completed(futs):
+                ok, errs = f.result()
+                ok_count += ok
+                errors.extend(errs)
 
         if ok_count > 0:
             # 씨앗 수는 봇이 자체 적재라 정확히 모름 → result_count 생략(스튜디오가 새로고침으로 반영).
