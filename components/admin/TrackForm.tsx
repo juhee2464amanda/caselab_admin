@@ -8,7 +8,6 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { JOB_LABELS, JOB_TAGS, PERSONAS, PERSONA_LABELS } from '@/types/content';
 import type { ContentBody, ContentRow, JobTag, Persona } from '@/types/content';
 import { createSupabaseBrowserClient } from '@/lib/supabase/client';
@@ -73,7 +72,9 @@ export function TrackForm({ initial, onSaved, startInPreview }: Props) {
   const [manualConfirms, setManualConfirms] = useState({ tone: false, related: false, mobile: false });
   // 라이브 미리보기 — 현재 폼 상태(body 포함)를 본가 상세 마크업으로 렌더.
   // 더블클릭 인라인 편집이 폼 상태로 커밋되므로 미리보기 자체가 편집 표면이다.
-  const [previewOpen, setPreviewOpen] = useState(startInPreview ?? false);
+  // 기존 콘텐츠 편집(=id 있음)은 실제 초안을 메인으로 열고, 새 콘텐츠는 구조 편집으로 시작.
+  // (설정 레일은 두 모드 공통으로 항상 노출되므로 어느 쪽에서든 메타·발행을 바로 편집)
+  const [previewOpen, setPreviewOpen] = useState(startInPreview ?? !!initial?.id);
 
   // 자동 슬러그
   useEffect(() => {
@@ -200,7 +201,7 @@ export function TrackForm({ initial, onSaved, startInPreview }: Props) {
         <div className="flex flex-wrap gap-2">
           <Button variant="outline" onClick={() => setPreviewOpen((v) => !v)}>
             {previewOpen ? <PenLine className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-            {previewOpen ? '편집으로' : '미리보기'}
+            {previewOpen ? '구조 편집' : '초안 편집'}
           </Button>
           <Button variant="outline" onClick={() => save('draft')} disabled={pending}>
             <Save className="h-4 w-4" /> 초안 저장
@@ -211,78 +212,125 @@ export function TrackForm({ initial, onSaved, startInPreview }: Props) {
         </div>
       </header>
 
-      {previewOpen && (
-        <div className="mb-6">
-          <ContentPreview
-            track={track}
-            title={title}
-            summary={summary}
-            jobTags={jobTags}
-            readMin={readMin}
-            applyMin={applyMin}
-            authorQuote={authorQuote}
-            body={body}
-            onPatch={(p) => {
-              if (p.title !== undefined) setTitle(p.title);
-              if (p.summary !== undefined) setSummary(p.summary);
-              if (p.authorQuote !== undefined) setAuthorQuote(p.authorQuote);
-            }}
-            onBody={updateBody}
-          />
+      {/* 메인(초안 인라인 편집 ↔ 구조 편집) + 설정 레일(양쪽 모드 공통) */}
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_360px]">
+        <div className="min-w-0 space-y-6">
+          {previewOpen ? (
+            // 초안 = 본가 상세와 동일 마크업. 텍스트 더블클릭 → 인라인 수정 → 폼 상태 커밋.
+            <ContentPreview
+              track={track}
+              title={title}
+              summary={summary}
+              jobTags={jobTags}
+              readMin={readMin}
+              applyMin={applyMin}
+              authorQuote={authorQuote}
+              body={body}
+              onPatch={(p) => {
+                if (p.title !== undefined) setTitle(p.title);
+                if (p.summary !== undefined) setSummary(p.summary);
+                if (p.authorQuote !== undefined) setAuthorQuote(p.authorQuote);
+              }}
+              onBody={updateBody}
+            />
+          ) : (
+            // 구조 편집 = 블록 추가/삭제 등 인라인으로 안 되는 편집.
+            <section className="card p-5">
+              <header className="flex items-center justify-between mb-3">
+                <h2 className="font-semibold">본문 구조</h2>
+                {process.env.NEXT_PUBLIC_AI_DRAFT_ENABLED === 'true' && (
+                  <Button variant="outline" size="sm" onClick={runAIDraft} disabled={aiBusy}>
+                    <Sparkles className="h-4 w-4" /> {aiBusy ? '생성 중…' : 'AI 초안'}
+                  </Button>
+                )}
+              </header>
+
+              {/* GUI 본문 에디터 (D70 정본) */}
+              {body.kind === 'case' ? (
+                <CaseBodyEditor value={body} onChange={updateBody} />
+              ) : (
+                <TrendBodyEditor value={body} onChange={updateBody} />
+              )}
+
+              {/* 고급 — JSON 직접 편집 (AI 초안 붙여넣기·고급 블록·디버깅용) */}
+              <details className="mt-5 rounded-lg border border-border">
+                <summary className="cursor-pointer select-none px-3 py-2 text-xs font-semibold text-ink/60">
+                  JSON 직접 편집 (고급)
+                </summary>
+                <div className="border-t border-border p-3">
+                  <p className="mb-2 text-[11px] text-ink/50 break-keep">
+                    claude.ai 초안 붙여넣기·GUI 미지원 블록(role-card 등)·디버깅용. 저장하면 위 GUI에 반영됩니다.
+                  </p>
+                  <Textarea
+                    value={bodyJson}
+                    onChange={(e) => syncBody(e.target.value)}
+                    className="font-mono text-xs min-h-[360px]"
+                  />
+                  {bodyError && (
+                    <p className="mt-2 text-xs text-red-600 flex items-center gap-1">
+                      <AlertCircle className="h-3 w-3" /> {bodyError}
+                    </p>
+                  )}
+                </div>
+              </details>
+            </section>
+          )}
         </div>
-      )}
 
-      <div className={previewOpen ? 'hidden' : undefined}>
-      <Tabs value={track} onValueChange={(v) => switchTrack(v as 'case' | 'trend')}>
-        <TabsList>
-          <TabsTrigger value="case">실전 케이스 (4단)</TabsTrigger>
-          <TabsTrigger value="trend">AI 트렌드 (3단)</TabsTrigger>
-        </TabsList>
-      </Tabs>
-
-      <div className="mt-6 grid gap-6 lg:grid-cols-[1fr_360px]">
-        <div className="space-y-6">
+        {/* 설정 레일 — 초안·구조 어느 모드에서든 메타·발행을 바로 편집 */}
+        <aside className="space-y-4">
           <section className="card p-5 space-y-3">
-            <h2 className="font-semibold">메타</h2>
-            <div className="grid sm:grid-cols-2 gap-3">
-              <div>
-                <Label htmlFor="title">제목</Label>
-                <Input id="title" value={title} onChange={(e) => setTitle(e.target.value)} />
-              </div>
-              <div>
-                <Label htmlFor="slug">슬러그</Label>
-                <Input id="slug" value={slug} onChange={(e) => setSlug(e.target.value)} />
-              </div>
+            <h2 className="font-semibold text-sm">설정</h2>
+            <div>
+              <Label htmlFor="track" className="text-xs">트랙</Label>
+              <Select value={track} onValueChange={(v) => switchTrack(v as 'case' | 'trend')}>
+                <SelectTrigger id="track" className="mt-1">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="case">실전 케이스 (4단)</SelectItem>
+                  <SelectItem value="trend">AI 트렌드 (3단)</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
             <div>
-              <Label htmlFor="summary">요약</Label>
-              <Textarea id="summary" value={summary} onChange={(e) => setSummary(e.target.value)} />
+              <Label htmlFor="title" className="text-xs">제목</Label>
+              <Input id="title" className="mt-1" value={title} onChange={(e) => setTitle(e.target.value)} />
             </div>
             <div>
-              <Label htmlFor="quote">운영자 1인칭 인용 (Author Quote)</Label>
+              <Label htmlFor="slug" className="text-xs">슬러그</Label>
+              <Input id="slug" className="mt-1" value={slug} onChange={(e) => setSlug(e.target.value)} />
+            </div>
+            <div>
+              <Label htmlFor="summary" className="text-xs">요약</Label>
+              <Textarea id="summary" className="mt-1" value={summary} onChange={(e) => setSummary(e.target.value)} />
+            </div>
+            <div>
+              <Label htmlFor="quote" className="text-xs">운영자 1인칭 인용 (Author Quote)</Label>
               <Textarea
                 id="quote"
+                className="mt-1"
                 value={authorQuote}
                 onChange={(e) => setAuthorQuote(e.target.value)}
                 placeholder="저도 처음엔..."
               />
             </div>
-            <div className="grid sm:grid-cols-3 gap-3">
+            <div className="grid grid-cols-2 gap-3">
               <div>
-                <Label htmlFor="read">읽기 시간 (분)</Label>
-                <Input id="read" type="number" min={1} value={readMin} onChange={(e) => setReadMin(+e.target.value)} />
+                <Label htmlFor="read" className="text-xs">읽기 시간 (분)</Label>
+                <Input id="read" className="mt-1" type="number" min={1} value={readMin} onChange={(e) => setReadMin(+e.target.value)} />
               </div>
               <div>
-                <Label htmlFor="apply">적용 시간 (분)</Label>
-                <Input id="apply" type="number" min={1} value={applyMin} onChange={(e) => setApplyMin(+e.target.value)} />
-              </div>
-              <div>
-                <Label htmlFor="thumb">썸네일 URL</Label>
-                <Input id="thumb" value={thumbnailUrl} onChange={(e) => setThumbnailUrl(e.target.value)} />
+                <Label htmlFor="apply" className="text-xs">적용 시간 (분)</Label>
+                <Input id="apply" className="mt-1" type="number" min={1} value={applyMin} onChange={(e) => setApplyMin(+e.target.value)} />
               </div>
             </div>
             <div>
-              <Label>직무 태그</Label>
+              <Label htmlFor="thumb" className="text-xs">썸네일 URL</Label>
+              <Input id="thumb" className="mt-1" value={thumbnailUrl} onChange={(e) => setThumbnailUrl(e.target.value)} />
+            </div>
+            <div>
+              <Label className="text-xs">직무 태그</Label>
               <div className="mt-1.5 flex flex-wrap gap-1.5">
                 {JOB_TAGS.map((j) => (
                   <button
@@ -297,7 +345,7 @@ export function TrackForm({ initial, onSaved, startInPreview }: Props) {
               </div>
             </div>
             <div>
-              <Label>페르소나 커버리지</Label>
+              <Label className="text-xs">페르소나 커버리지</Label>
               <div className="mt-1.5 flex flex-wrap gap-1.5">
                 {PERSONAS.map((p) => (
                   <button
@@ -313,48 +361,6 @@ export function TrackForm({ initial, onSaved, startInPreview }: Props) {
             </div>
           </section>
 
-          <section className="card p-5">
-            <header className="flex items-center justify-between mb-3">
-              <h2 className="font-semibold">본문</h2>
-              {process.env.NEXT_PUBLIC_AI_DRAFT_ENABLED === 'true' && (
-                <Button variant="outline" size="sm" onClick={runAIDraft} disabled={aiBusy}>
-                  <Sparkles className="h-4 w-4" /> {aiBusy ? '생성 중…' : 'AI 초안'}
-                </Button>
-              )}
-            </header>
-
-            {/* GUI 본문 에디터 (D70 정본) */}
-            {body.kind === 'case' ? (
-              <CaseBodyEditor value={body} onChange={updateBody} />
-            ) : (
-              <TrendBodyEditor value={body} onChange={updateBody} />
-            )}
-
-            {/* 고급 — JSON 직접 편집 (AI 초안 붙여넣기·고급 블록·디버깅용) */}
-            <details className="mt-5 rounded-lg border border-border">
-              <summary className="cursor-pointer select-none px-3 py-2 text-xs font-semibold text-ink/60">
-                JSON 직접 편집 (고급)
-              </summary>
-              <div className="border-t border-border p-3">
-                <p className="mb-2 text-[11px] text-ink/50 break-keep">
-                  claude.ai 초안 붙여넣기·GUI 미지원 블록(role-card 등)·디버깅용. 저장하면 위 GUI에 반영됩니다.
-                </p>
-                <Textarea
-                  value={bodyJson}
-                  onChange={(e) => syncBody(e.target.value)}
-                  className="font-mono text-xs min-h-[360px]"
-                />
-                {bodyError && (
-                  <p className="mt-2 text-xs text-red-600 flex items-center gap-1">
-                    <AlertCircle className="h-3 w-3" /> {bodyError}
-                  </p>
-                )}
-              </div>
-            </details>
-          </section>
-        </div>
-
-        <aside className="space-y-4">
           <section className="card p-5">
             <h3 className="font-semibold text-sm mb-3">발행 게이트 (자동)</h3>
             <ul className="space-y-1.5">
@@ -400,23 +406,7 @@ export function TrackForm({ initial, onSaved, startInPreview }: Props) {
               “저도 처음엔…” / “이게 진짜 별로였던 게…” / “결과가 ‘그럴듯’해서 더 위험했어요.” 같은 1인칭 자기 인용으로 시작해보세요.
             </p>
           </section>
-
-          {process.env.NEXT_PUBLIC_AI_DRAFT_ENABLED !== 'true' && (
-            <section className="card p-5">
-              <h3 className="font-semibold text-sm mb-2">초안 작성 워크플로우</h3>
-              <ol className="text-xs text-ink/60 leading-relaxed space-y-1 list-decimal pl-4">
-                <li>본문은 위 GUI 섹션 에디터로 직접 작성 (D70 7섹션)</li>
-                <li>또는 claude.ai에서 톤 가이드+스키마로 받은 JSON을 “JSON 직접 편집(고급)”에 붙여넣기 → GUI에서 미세조정</li>
-                <li>직무 태그·페르소나·시간 라벨 채우기</li>
-                <li>발행 게이트 자동 통과 확인 → 발행</li>
-              </ol>
-              <p className="mt-2 text-[10px] text-ink/40">
-                AI 초안 자동화는 출시 후 도입 예정.
-              </p>
-            </section>
-          )}
         </aside>
-      </div>
       </div>
     </div>
   );

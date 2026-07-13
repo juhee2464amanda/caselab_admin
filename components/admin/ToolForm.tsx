@@ -270,86 +270,111 @@ export function ToolForm({ initial, onSaved, startInPreview }: Props) {
         </div>
       </header>
 
-      {previewOpen && (
-        <div className="mb-6">
-          {bodyError ? (
-            <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-600">
-              본문 JSON 오류로 미리보기를 렌더할 수 없어요: {bodyError}
-            </p>
+      {/* 메인(초안 인라인 편집 ↔ 본문 구조/JSON) + 설정 레일(양쪽 모드 공통) */}
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_340px]">
+        <div className="min-w-0 space-y-6">
+          {previewOpen ? (
+            bodyError ? (
+              <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-600">
+                본문 JSON 오류로 초안을 렌더할 수 없어요: {bodyError} — 오른쪽 &lsquo;구조 편집&rsquo;에서 고쳐 주세요.
+              </p>
+            ) : (
+              // 초안 = 본가 노출 모습. 텍스트 더블클릭 → 인라인 수정 → 폼 상태 커밋.
+              <ToolPreview
+                category={category}
+                name={name}
+                description={description}
+                url={url}
+                body={(() => {
+                  try {
+                    return JSON.parse(bodyJson || '{}') as Record<string, unknown>;
+                  } catch {
+                    return {};
+                  }
+                })()}
+                pricingLabel={pricingLabel}
+                isPaid={isPaid}
+                proPricing={proPricing}
+                thumbnailUrl={thumbnailUrl}
+                thumbnailEmoji={thumbnailEmoji}
+                jobTags={jobTags}
+                onPatch={(p) => {
+                  if (p.name !== undefined) setName(p.name);
+                  if (p.description !== undefined) setDescription(p.description);
+                }}
+                onBody={(next) => syncBody(JSON.stringify(next, null, 2))}
+              />
+            )
           ) : (
-            <ToolPreview
-              category={category}
-              name={name}
-              description={description}
-              url={url}
-              body={(() => {
-                try {
-                  return JSON.parse(bodyJson || '{}') as Record<string, unknown>;
-                } catch {
-                  return {};
-                }
-              })()}
-              pricingLabel={pricingLabel}
-              isPaid={isPaid}
-              proPricing={proPricing}
-              thumbnailUrl={thumbnailUrl}
-              thumbnailEmoji={thumbnailEmoji}
-              jobTags={jobTags}
-              onPatch={(p) => {
-                if (p.name !== undefined) setName(p.name);
-                if (p.description !== undefined) setDescription(p.description);
-              }}
-              onBody={(next) => syncBody(JSON.stringify(next, null, 2))}
-            />
+            // 구조 편집 = 본문 JSON 직접 편집 (인라인으로 안 되는 블록 구조·디버깅용)
+            <section className="card p-5">
+              <header className="flex items-center justify-between mb-3">
+                <h2 className="font-semibold">본문 (JSON, 선택)</h2>
+              </header>
+              <Textarea
+                value={bodyJson}
+                onChange={(e) => syncBody(e.target.value)}
+                className="font-mono text-xs min-h-[420px]"
+              />
+              {bodyError && (
+                <p className="mt-2 text-xs text-red-600 flex items-center gap-1">
+                  <AlertCircle className="h-3 w-3" /> {bodyError}
+                </p>
+              )}
+              {toolBodyError && (
+                <p className="mt-2 text-xs text-red-600 flex items-center gap-1">
+                  <AlertCircle className="h-3 w-3" /> 상세페이지 스키마 위반 — {toolBodyError}
+                </p>
+              )}
+              <p className="mt-2 text-xs text-ink/50">
+                ※ 카테고리별 구조화된 블록(프롬프트 본문, 가이드 단계 등) — MVP는 자유 jsonb로 두고 추후 GUI 분기.
+                텍스트는 &lsquo;초안 편집&rsquo;에서 더블클릭으로 바로 고칠 수 있어요.
+              </p>
+            </section>
           )}
         </div>
-      )}
 
-      <div className={cn('grid gap-6 lg:grid-cols-[1fr_320px]', previewOpen && 'hidden')}>
-        <div className="space-y-6">
+        {/* 설정 레일 — 초안·구조 어느 모드에서든 메타·카드·발행을 바로 편집 */}
+        <aside className="space-y-4">
           <section className="card p-5 space-y-3">
-            <h2 className="font-semibold">메타</h2>
-            <div className="grid sm:grid-cols-2 gap-3">
-              <div>
-                <Label htmlFor="name">이름 *</Label>
-                <Input id="name" value={name} onChange={(e) => setName(e.target.value)} />
-              </div>
-              <div>
-                <Label htmlFor="slug">슬러그 *</Label>
-                <Input id="slug" value={slug} onChange={(e) => setSlug(e.target.value)} />
-              </div>
+            <h2 className="font-semibold text-sm">메타</h2>
+            <div>
+              <Label htmlFor="name" className="text-xs">이름 *</Label>
+              <Input id="name" className="mt-1" value={name} onChange={(e) => setName(e.target.value)} />
             </div>
-            <div className="grid sm:grid-cols-2 gap-3">
-              <div>
-                <Label htmlFor="category">카테고리 *</Label>
-                <Select value={category} onValueChange={(v) => setCategory(v as typeof CATEGORIES[number])}>
-                  <SelectTrigger id="category">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {CATEGORIES.map((c) => (
-                      <SelectItem key={c} value={c}>{CATEGORY_LABELS[c]}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <Label htmlFor="pricing">가격</Label>
-                <Select value={pricingTier} onValueChange={(v) => setPricingTier(v as typeof PRICING_TIERS[number])}>
-                  <SelectTrigger id="pricing">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {PRICING_TIERS.map((p) => (
-                      <SelectItem key={p} value={p}>{PRICING_LABELS[p]}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
+            <div>
+              <Label htmlFor="slug" className="text-xs">슬러그 *</Label>
+              <Input id="slug" className="mt-1" value={slug} onChange={(e) => setSlug(e.target.value)} />
+            </div>
+            <div>
+              <Label htmlFor="category" className="text-xs">카테고리 *</Label>
+              <Select value={category} onValueChange={(v) => setCategory(v as typeof CATEGORIES[number])}>
+                <SelectTrigger id="category" className="mt-1">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {CATEGORIES.map((c) => (
+                    <SelectItem key={c} value={c}>{CATEGORY_LABELS[c]}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label htmlFor="pricing" className="text-xs">가격</Label>
+              <Select value={pricingTier} onValueChange={(v) => setPricingTier(v as typeof PRICING_TIERS[number])}>
+                <SelectTrigger id="pricing" className="mt-1">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {PRICING_TIERS.map((p) => (
+                    <SelectItem key={p} value={p}>{PRICING_LABELS[p]}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             {category === 'tool' && (
               <div>
-                <Label htmlFor="subcategory">도구 분류 (공개 /tools 탭) *</Label>
+                <Label htmlFor="subcategory" className="text-xs">도구 분류 (공개 /tools 탭) *</Label>
                 <Select
                   value={subcategoryId}
                   onValueChange={(v) => {
@@ -360,7 +385,7 @@ export function ToolForm({ initial, onSaved, startInPreview }: Props) {
                     setSubcategoryId(v);
                   }}
                 >
-                  <SelectTrigger id="subcategory">
+                  <SelectTrigger id="subcategory" className="mt-1">
                     <SelectValue placeholder="기능 분류 선택" />
                   </SelectTrigger>
                   <SelectContent>
@@ -409,26 +434,25 @@ export function ToolForm({ initial, onSaved, startInPreview }: Props) {
               </div>
             )}
             <div>
-              <Label htmlFor="description">설명 (공개 디테일 페이지 본문)</Label>
+              <Label htmlFor="description" className="text-xs">설명 (공개 디테일 페이지 본문)</Label>
               <Textarea
                 id="description"
+                className="mt-1"
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
                 placeholder="이 자료가 어떤 상황에 유용한지, 어떻게 쓰는지 한두 문단."
               />
             </div>
-            <div className="grid sm:grid-cols-2 gap-3">
-              <div>
-                <Label htmlFor="url">외부 링크</Label>
-                <Input id="url" value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://" />
-              </div>
-              <div>
-                <Label htmlFor="thumb">썸네일 URL</Label>
-                <Input id="thumb" value={thumbnailUrl} onChange={(e) => setThumbnailUrl(e.target.value)} />
-              </div>
+            <div>
+              <Label htmlFor="url" className="text-xs">외부 링크</Label>
+              <Input id="url" className="mt-1" value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://" />
             </div>
             <div>
-              <Label>직무 태그</Label>
+              <Label htmlFor="thumb" className="text-xs">썸네일 URL</Label>
+              <Input id="thumb" className="mt-1" value={thumbnailUrl} onChange={(e) => setThumbnailUrl(e.target.value)} />
+            </div>
+            <div>
+              <Label className="text-xs">직무 태그</Label>
               <div className="mt-1.5 flex flex-wrap gap-1.5">
                 {JOB_TAGS.map((j) => (
                   <button
@@ -446,33 +470,34 @@ export function ToolForm({ initial, onSaved, startInPreview }: Props) {
 
           <section className="card p-5 space-y-3">
             <div>
-              <h2 className="font-semibold">카드 표시</h2>
+              <h2 className="font-semibold text-sm">카드 표시</h2>
               <p className="text-xs text-ink/50 mt-0.5">공개 /tools 목록 카드에 노출되는 항목 (mockup tools.html 정합)</p>
             </div>
-            <div className="grid sm:grid-cols-2 gap-3">
-              <div>
-                <Label htmlFor="thumbEmoji">썸네일 이모지</Label>
-                <Input
-                  id="thumbEmoji"
-                  value={thumbnailEmoji}
-                  onChange={(e) => setThumbnailEmoji(e.target.value)}
-                  placeholder="🔍 (썸네일 URL 없을 때 카드에 표시)"
-                />
-              </div>
-              <div>
-                <Label htmlFor="pricingLabel">가격 라벨</Label>
-                <Input
-                  id="pricingLabel"
-                  value={pricingLabel}
-                  onChange={(e) => setPricingLabel(e.target.value)}
-                  placeholder="예: 무료 플랜 / 유료"
-                />
-              </div>
+            <div>
+              <Label htmlFor="thumbEmoji" className="text-xs">썸네일 이모지</Label>
+              <Input
+                id="thumbEmoji"
+                className="mt-1"
+                value={thumbnailEmoji}
+                onChange={(e) => setThumbnailEmoji(e.target.value)}
+                placeholder="🔍 (썸네일 URL 없을 때 카드에 표시)"
+              />
             </div>
             <div>
-              <Label htmlFor="proPricing">Pro 가격 라벨 (선택)</Label>
+              <Label htmlFor="pricingLabel" className="text-xs">가격 라벨</Label>
+              <Input
+                id="pricingLabel"
+                className="mt-1"
+                value={pricingLabel}
+                onChange={(e) => setPricingLabel(e.target.value)}
+                placeholder="예: 무료 플랜 / 유료"
+              />
+            </div>
+            <div>
+              <Label htmlFor="proPricing" className="text-xs">Pro 가격 라벨 (선택)</Label>
               <Input
                 id="proPricing"
+                className="mt-1"
                 value={proPricing}
                 onChange={(e) => setProPricing(e.target.value)}
                 placeholder='예: Pro $20/월 (무료 + Pro 둘 다 표시할 때)'
@@ -486,7 +511,7 @@ export function ToolForm({ initial, onSaved, startInPreview }: Props) {
                   checked={isPaid}
                   onChange={(e) => setIsPaid(e.target.checked)}
                 />
-                유료 도구 <span className="text-xs text-ink/50">(체크 시 회색 태그, 해제 시 녹색 무료 태그)</span>
+                유료 도구 <span className="text-xs text-ink/50">(체크 시 회색 태그)</span>
               </label>
               <label className="flex items-center gap-2 text-sm cursor-pointer">
                 <input
@@ -495,37 +520,11 @@ export function ToolForm({ initial, onSaved, startInPreview }: Props) {
                   checked={hasReview}
                   onChange={(e) => setHasReview(e.target.checked)}
                 />
-                사용기 있음 <span className="text-xs text-ink/50">(체크 시 "사용기 1편" 배지 표시)</span>
+                사용기 있음 <span className="text-xs text-ink/50">(&ldquo;사용기 1편&rdquo; 배지)</span>
               </label>
             </div>
           </section>
 
-          <section className="card p-5">
-            <header className="flex items-center justify-between mb-3">
-              <h2 className="font-semibold">본문 (JSON, 선택)</h2>
-            </header>
-            <Textarea
-              value={bodyJson}
-              onChange={(e) => syncBody(e.target.value)}
-              className="font-mono text-xs min-h-[280px]"
-            />
-            {bodyError && (
-              <p className="mt-2 text-xs text-red-600 flex items-center gap-1">
-                <AlertCircle className="h-3 w-3" /> {bodyError}
-              </p>
-            )}
-            {toolBodyError && (
-              <p className="mt-2 text-xs text-red-600 flex items-center gap-1">
-                <AlertCircle className="h-3 w-3" /> 상세페이지 스키마 위반 — {toolBodyError}
-              </p>
-            )}
-            <p className="mt-2 text-xs text-ink/50">
-              ※ 카테고리별 구조화된 블록(프롬프트 본문, 가이드 단계 등) — MVP는 자유 jsonb로 두고 추후 GUI 분기.
-            </p>
-          </section>
-        </div>
-
-        <aside className="space-y-4">
           <section className="card p-5">
             <h3 className="font-semibold text-sm mb-3">필수 항목</h3>
             <ul className="space-y-1.5">
