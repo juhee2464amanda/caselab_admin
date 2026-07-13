@@ -89,7 +89,9 @@ export function ToolForm({ initial, onSaved, startInPreview }: Props) {
   const [bodyError, setBodyError] = useState<string | null>(null);
   // 라이브 미리보기 — 현재 폼 상태를 본가 상세/카드 모습으로 렌더.
   // 더블클릭 인라인 편집이 폼 상태로 커밋되므로 미리보기 자체가 편집 표면이다.
-  const [previewOpen, setPreviewOpen] = useState(startInPreview ?? false);
+  // 기존 자료 편집(=id 있음)은 "실제 초안 + 바로 수정"을 메인 화면으로 열고,
+  // 새 자료는 메타부터 채워야 하므로 폼으로 시작한다. (startInPreview가 있으면 그 값 우선)
+  const [previewOpen, setPreviewOpen] = useState(startInPreview ?? !!initial?.id);
 
   // 원하는 분류가 없을 때 셀렉트에서 바로 새 분류 추가.
   // 공유 마스터(categories, type='tool_subcategory')에 insert → 본가 /tools 탭에도 새 탭으로 반영됨.
@@ -252,7 +254,7 @@ export function ToolForm({ initial, onSaved, startInPreview }: Props) {
         <div className="flex flex-wrap gap-2">
           <Button variant="outline" onClick={() => setPreviewOpen((v) => !v)}>
             {previewOpen ? <PenLine className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-            {previewOpen ? '편집으로' : '미리보기'}
+            {previewOpen ? '상세 필드' : '초안으로'}
           </Button>
           {initial?.id && initial.status !== 'archived' && (
             <Button variant="outline" onClick={() => save('archived')} disabled={pending}>
