@@ -7,7 +7,7 @@ import { JOB_LABELS } from '@/types/content';
 import { Editable } from '@/components/admin/Editable';
 
 // 콘텐츠 미리보기 — 본가 cases/[slug]·trends/[slug] 상세 마크업 이식(2026-07-11 스냅샷).
-// onPatch/onBody를 넘기면 "편집 표면"이 된다: 텍스트 더블클릭 → 인라인 수정 → 폼 상태로 커밋.
+// onPatch/onBody를 넘기면 "편집 표면"이 된다: 텍스트 클릭 → 인라인 수정 → 폼 상태로 커밋.
 // 원본: caselab/app/(public)/{cases,trends}/[slug]/page.tsx + components/content/*
 // 본가 렌더가 바뀌면 이 파일도 따라가야 한다(댓글·추천·트래커는 제외).
 
@@ -76,7 +76,7 @@ function PromptBlockView({ label, prompt, onCommit }: { label?: string; prompt: 
 }
 
 // 본가 lib/content-render.tsx의 초안 관련 블록만 이식(text/heading/prompt/result-compare/role-card/checklist).
-// onBlock을 넘기면 각 블록 텍스트가 더블클릭 인라인 편집 대상이 된다.
+// onBlock을 넘기면 각 블록 텍스트가 클릭 인라인 편집 대상이 된다.
 function renderBlock(block: Block, key: string | number, onBlock?: (nb: Block) => void) {
   switch (block.type) {
     case 'text':
@@ -213,7 +213,7 @@ function PreviewHeader({ track, title, summary, jobTags, readMin, applyMin, onPa
         as="p"
         multiline
         value={summary ?? ''}
-        placeholder={onPatch ? '요약 (더블클릭해서 입력)' : ''}
+        placeholder={onPatch ? '요약 (클릭해서 입력)' : ''}
         onCommit={onPatch && ((v) => onPatch({ summary: v }))}
         className="text-[17px] text-ink/60 leading-relaxed max-w-[600px] mb-5 break-keep block"
       />
@@ -546,7 +546,7 @@ export function ContentPreview(props: ContentPreviewProps) {
     <div className="rounded-xl border border-border bg-bg">
       <div className="border-b border-border px-4 py-2 text-xs text-ink/50">
         라이브 미리보기 — 본가 {props.track === 'case' ? '/cases' : '/trends'} 상세와 동일 마크업
-        {onBody && <span className="ml-2 font-semibold text-accent">텍스트를 더블클릭하면 바로 수정됩니다</span>}
+        {onBody && <span className="ml-2 font-semibold text-accent">텍스트를 클릭하면 바로 수정됩니다</span>}
       </div>
       <article className="mx-auto max-w-[760px] px-6 pb-14">
         <PreviewHeader {...props} />
@@ -556,7 +556,7 @@ export function ContentPreview(props: ContentPreviewProps) {
             <Editable
               value={authorQuote ?? ''}
               multiline
-              placeholder={onPatch ? '운영자 한 줄 (더블클릭해서 입력)' : ''}
+              placeholder={onPatch ? '운영자 한 줄 (클릭해서 입력)' : ''}
               onCommit={onPatch && ((v) => onPatch({ authorQuote: v }))}
             />
             ”<span className="mt-1 block not-italic text-xs text-ink/40">— 케이스랩 운영자</span>
