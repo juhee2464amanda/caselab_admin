@@ -6,11 +6,37 @@ import { Bold, Highlighter, RemoveFormatting } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { inlineMdToHtml, htmlToInlineMd } from '@/lib/inline-md';
 
-// 더블클릭 인라인 편집 — 라이브 미리보기(ContentPreview/ToolPreview)를 편집 표면으로 쓰기 위한 것.
-// 더블클릭 → contentEditable 진입, blur/Enter(한 줄) 커밋, Escape 취소.
+// 클릭 인라인 편집 — 라이브 미리보기(ContentPreview/ToolPreview)를 편집 표면으로 쓰기 위한 것.
+// 클릭/탭 → contentEditable 진입(클릭 지점에 커서), blur/Enter(한 줄) 커밋, Escape 취소.
+// (더블클릭이 아니라 단일 클릭 — 트랙패드·터치에서 반응이 없다는 피드백 반영, 2026-07-13)
 // rich 모드: **굵게**·==형광펜== 마커(lib/inline-md.ts)를 강조 렌더하고,
 // 편집 중에는 선택 후 플로팅 툴바(B/형광펜/서식지우기) 또는 Cmd+B로 서식 적용 → 커밋 시 마커로 저장.
 // 편집 중에는 React가 텍스트 노드를 다시 그리지 않도록 커밋 시에만 부모 상태를 갱신한다.
+
+// 클릭한 화면 좌표(x,y)에 해당하는 캐럿 위치를 구한다. 지원 안 되면 텍스트 끝으로 폴백.
+function caretRangeFromPoint(x: number, y: number, el: HTMLElement): Range {
+  const doc = document as Document & {
+    caretRangeFromPoint?: (x: number, y: number) => Range | null;
+    caretPositionFromPoint?: (x: number, y: number) => { offsetNode: Node; offset: number } | null;
+  };
+  let range: Range | null = null;
+  if (doc.caretRangeFromPoint) {
+    range = doc.caretRangeFromPoint(x, y);
+  } else if (doc.caretPositionFromPoint) {
+    const pos = doc.caretPositionFromPoint(x, y);
+    if (pos) {
+      range = document.createRange();
+      range.setStart(pos.offsetNode, pos.offset);
+      range.collapse(true);
+    }
+  }
+  if (!range || !el.contains(range.startContainer)) {
+    range = document.createRange();
+    range.selectNodeContents(el);
+    range.collapse(false); // 끝으로
+  }
+  return range;
+}
 
 interface EditableProps extends Omit<HTMLAttributes<HTMLElement>, 'onChange' | 'children'> {
   value: string;
@@ -86,20 +112,21 @@ export function Editable({ value, onCommit, as = 'span', multiline, rich, placeh
           contentEditable: editing,
           suppressContentEditableWarning: true,
           spellCheck: false,
-          title: editing ? undefined : '더블클릭하면 바로 수정',
-          onDoubleClick: (e: React.MouseEvent) => {
+          title: editing ? undefined : '클릭하면 바로 수정',
+          onClick: (e: React.MouseEvent) => {
+            if (editing) return;
             e.preventDefault();
             e.stopPropagation();
-            if (editing) return;
+            // 클릭 지점(커서 위치)을 기억 → 편집 진입 후 그 자리에 캐럿을 놓는다.
+            const x = e.clientX;
+            const y = e.clientY;
             setEditing(true);
             requestAnimationFrame(() => {
               const el = ref.current;
               if (!el) return;
               el.focus();
               const sel = window.getSelection();
-              const range = document.createRange();
-              range.selectNodeContents(el);
-              range.collapse(false);
+              const range = caretRangeFromPoint(x, y, el);
               sel?.removeAllRanges();
               sel?.addRange(range);
               if (rich) {
@@ -123,6 +150,8 @@ export function Editable({ value, onCommit, as = 'span', multiline, rich, placeh
           className: cn(
             className,
             'transition-colors',
+            // multiline은 개행(\n)을 문단으로 보여준다 — 호출부가 whitespace-*를 이미 지정했으면 건드리지 않음.
+            multiline && !/whitespace-/.test(className ?? '') && 'whitespace-pre-line',
             editing
               ? 'cursor-text rounded-sm bg-white outline outline-2 outline-accent/70 -outline-offset-1'
               : 'cursor-text rounded-sm hover:bg-accent-50/60 hover:outline hover:outline-1 hover:outline-accent/30',

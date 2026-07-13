@@ -7,7 +7,7 @@ import { Editable } from '@/components/admin/Editable';
 
 // 자료(도구/프롬프트/가이드) 미리보기 — 발행 전 "실제 올라가는 모습" 검수·편집 표면.
 // 도구: 본가 components/tools/ToolDetail.tsx 마크업 이식(2026-07-11 스냅샷, Snipit 목업 정합).
-// onPatch/onBody를 넘기면 텍스트 더블클릭 → 인라인 수정 → 폼 상태로 커밋.
+// onPatch/onBody를 넘기면 텍스트 클릭 → 인라인 수정 → 폼 상태로 커밋.
 // 본가 렌더가 바뀌면 이 파일도 따라가야 한다(댓글·추천·좋아요 제외).
 
 export interface ToolPreviewProps {
@@ -114,7 +114,7 @@ function ToolDetailPreview({
             as="p"
             multiline
             value={description ?? ''}
-            placeholder={onPatch ? '한 줄 소개 (더블클릭해서 입력)' : ''}
+            placeholder={onPatch ? '한 줄 소개 (클릭해서 입력)' : ''}
             onCommit={onPatch && ((v) => onPatch({ description: v }))}
             className="text-base text-ink/60 leading-relaxed max-w-[520px] break-keep block"
           />
@@ -332,18 +332,18 @@ function PromptCardPreview({
         as="p"
         multiline
         value={description ?? ''}
-        placeholder={onPatch ? '설명 (더블클릭해서 입력)' : ''}
+        placeholder={onPatch ? '설명 (클릭해서 입력)' : ''}
         onCommit={onPatch && ((v) => onPatch({ description: v }))}
         className="text-sm text-ink/60 leading-relaxed break-keep block"
       />
       {(prompt || set) && <CopyBox text={prompt} onCommit={set && ((v) => set({ prompt: v }))} />}
       <p className="text-[13px] text-ink/60 leading-relaxed">
         <strong className="text-ink/80">사용법</strong> ·{' '}
-        <Editable value={howToUse} multiline placeholder={set ? '더블클릭해서 입력' : ''} onCommit={set && ((v) => set({ howToUse: v }))} />
+        <Editable value={howToUse} multiline placeholder={set ? '클릭해서 입력' : ''} onCommit={set && ((v) => set({ howToUse: v }))} />
       </p>
       <p className="text-[13px] text-ink/60 leading-relaxed">
         <strong className="text-ink/80">예시</strong> ·{' '}
-        <Editable value={example} multiline placeholder={set ? '더블클릭해서 입력' : ''} onCommit={set && ((v) => set({ example: v }))} />
+        <Editable value={example} multiline placeholder={set ? '클릭해서 입력' : ''} onCommit={set && ((v) => set({ example: v }))} />
       </p>
       <p className="text-[11px] text-ink/40">바로 복사 가능</p>
     </div>
@@ -383,7 +383,7 @@ function GuideCardPreview({
             as="div"
             multiline
             value={description ?? ''}
-            placeholder={onPatch ? '설명 (더블클릭해서 입력)' : ''}
+            placeholder={onPatch ? '설명 (클릭해서 입력)' : ''}
             onCommit={onPatch && ((v) => onPatch({ description: v }))}
             className="text-xs text-ink/50 leading-relaxed break-keep block"
           />
@@ -406,7 +406,7 @@ export function ToolPreview(props: ToolPreviewProps) {
     <div className="rounded-xl border border-border bg-bg">
       <div className="border-b border-border px-4 py-2 text-xs text-ink/50">
         라이브 미리보기 — 본가 {category === 'tool' ? '/tools 상세와 동일 마크업' : category === 'prompt' ? '/prompts 카드 근사' : '/guides 카드 근사'}
-        {onBody && <span className="ml-2 font-semibold text-accent">텍스트를 더블클릭하면 바로 수정됩니다</span>}
+        {onBody && <span className="ml-2 font-semibold text-accent">텍스트를 클릭하면 바로 수정됩니다</span>}
       </div>
       <div className="mx-auto max-w-[760px] px-6 py-10">
         {category === 'tool' ? (
