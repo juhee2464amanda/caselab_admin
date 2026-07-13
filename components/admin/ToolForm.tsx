@@ -412,7 +412,7 @@ export function ToolForm({ initial, onSaved, startInPreview }: Props) {
                 id="description"
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
-                placeholder="이 자료가 어떤 상황에 유용한지, 어떻게 쓰는지 한두 문단."
+                placeholder={"이 자료가 무엇을 하는지, 언제 쓰는지 핵심만 문장별 줄바꿈.\n설치·실행 조건이 있으면 [전제조건] / [주의] 블록에 - 로 나열."}
               />
             </div>
             <div className="grid sm:grid-cols-2 gap-3">
