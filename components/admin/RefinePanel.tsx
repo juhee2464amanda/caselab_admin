@@ -18,6 +18,8 @@ export interface RefineRequest {
   scope: 'selection' | 'field' | 'section';
   /** 후보 종류 */
   kind: 'text' | 'section';
+  /** section kind에서 기존 수정(refine)인지 빈 섹션 새로 생성(generate)인지. 기본 refine. */
+  mode?: 'refine' | 'generate';
   /** rich 필드면 후보를 인라인 마크다운으로 렌더(text kind) */
   rich: boolean;
   /** 편집 위치 힌트(grounding) */
@@ -102,7 +104,8 @@ export function sectionToLines(v: unknown): string {
 
 // request 단위로 상태를 새로 시작하려고 key로 마운트를 교체한다.
 function RefineForm({ request, onApply }: { request: RefineRequest; onApply: (chosen: unknown) => void }) {
-  const { target, scope, kind, rich, context, section } = request;
+  const { target, scope, kind, rich, context, section, mode } = request;
+  const generate = mode === 'generate';
   const [instruction, setInstruction] = useState('');
   const [reference, setReference] = useState('');
   const [refName, setRefName] = useState('');
@@ -149,38 +152,42 @@ function RefineForm({ request, onApply }: { request: RefineRequest; onApply: (ch
     }
   };
 
-  const scopeLabel = scope === 'selection' ? '선택 구간' : scope === 'section' ? '이 섹션 전체' : '이 문단·필드';
+  const scopeLabel = generate ? '새 섹션 생성' : scope === 'selection' ? '선택 구간' : scope === 'section' ? '이 섹션 전체' : '이 문단·필드';
 
   return (
     <div className="space-y-2.5">
       <div className="flex items-center gap-1.5 text-[11px] font-medium text-ink/50">
-        <span className={cn('rounded px-1.5 py-0.5', scope === 'selection' ? 'bg-amber-100 text-amber-700' : scope === 'section' ? 'bg-violet-100 text-violet-700' : 'bg-accent-50 text-accent')}>
+        <span className={cn('rounded px-1.5 py-0.5', generate ? 'bg-green-100 text-green-700' : scope === 'selection' ? 'bg-amber-100 text-amber-700' : scope === 'section' ? 'bg-violet-100 text-violet-700' : 'bg-accent-50 text-accent')}>
           {scopeLabel}
         </span>
-        수정 대상
+        {generate ? section?.sectionLabel : '수정 대상'}
       </div>
-      <div className="max-h-32 overflow-y-auto rounded-md bg-muted px-2.5 py-2 text-[12.5px] leading-relaxed text-ink/70 whitespace-pre-wrap break-keep">
-        {target.length > 800 ? target.slice(0, 800) + '…' : target}
-      </div>
+      {!generate && (
+        <div className="max-h-32 overflow-y-auto rounded-md bg-muted px-2.5 py-2 text-[12.5px] leading-relaxed text-ink/70 whitespace-pre-wrap break-keep">
+          {target.length > 800 ? target.slice(0, 800) + '…' : target}
+        </div>
+      )}
 
       <div>
-        <div className="mb-1.5 text-[11px] font-semibold text-ink/50">수정 각도</div>
-        <div className="mb-1.5 flex flex-wrap gap-1">
-          {REFINE_PRESETS.map((p) => (
-            <button
-              key={p}
-              type="button"
-              disabled={busy}
-              onClick={() => {
-                setInstruction(p);
-                run(p);
-              }}
-              className="rounded-full border border-border px-2 py-0.5 text-[11px] text-ink/70 hover:border-accent hover:text-accent disabled:opacity-40"
-            >
-              {p}
-            </button>
-          ))}
-        </div>
+        <div className="mb-1.5 text-[11px] font-semibold text-ink/50">{generate ? '넣을 핵심 내용 · 방향 · 주의사항' : '수정 각도'}</div>
+        {!generate && (
+          <div className="mb-1.5 flex flex-wrap gap-1">
+            {REFINE_PRESETS.map((p) => (
+              <button
+                key={p}
+                type="button"
+                disabled={busy}
+                onClick={() => {
+                  setInstruction(p);
+                  run(p);
+                }}
+                className="rounded-full border border-border px-2 py-0.5 text-[11px] text-ink/70 hover:border-accent hover:text-accent disabled:opacity-40"
+              >
+                {p}
+              </button>
+            ))}
+          </div>
+        )}
         <textarea
           value={instruction}
           onChange={(e) => setInstruction(e.target.value)}
@@ -190,8 +197,8 @@ function RefineForm({ request, onApply }: { request: RefineRequest; onApply: (ch
               run(instruction);
             }
           }}
-          placeholder="어떻게 고칠까요? (예: 더 구체적으로, 사례 하나 추가)"
-          rows={3}
+          placeholder={generate ? '이 섹션에 넣을 핵심 내용·방향·주의사항을 적어주세요 (예: OO을 강조, XX는 빼고, 카드 3개로)' : '어떻게 고칠까요? (예: 더 구체적으로, 사례 하나 추가)'}
+          rows={generate ? 4 : 3}
           className="w-full resize-none rounded-md border border-border px-2.5 py-1.5 text-[13px] outline-none focus:border-accent"
         />
 
@@ -235,7 +242,7 @@ function RefineForm({ request, onApply }: { request: RefineRequest; onApply: (ch
             className="inline-flex items-center gap-1 rounded-md bg-accent px-3 py-1 text-[12px] font-semibold text-white hover:bg-accent/90 disabled:opacity-40"
           >
             {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
-            {candidates ? '다시 제안' : '제안 받기'}
+            {candidates ? (generate ? '다시 생성' : '다시 제안') : generate ? '초안 생성' : '제안 받기'}
           </button>
         </div>
       </div>

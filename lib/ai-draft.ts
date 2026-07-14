@@ -6,6 +6,7 @@ import { lintToolBody } from '@/lib/tool-body';
 import { sourceProfile } from '@/lib/seed-sources';
 import type { SeedTrack } from '@/lib/seed-tracks';
 import { trackEdge } from '@/lib/track-edges';
+import { sectionSpec, isEmptySection } from '@/lib/content-sections';
 
 // 본문(블록 배열) 작성 규칙 — D70 스키마의 BlockSchema는 "type" 판별자가 필수다.
 // 초안 단계에선 가장 안전한 두 블록만 쓰게 강제(운영자가 폼에서 다른 블록 추가).
@@ -780,13 +781,32 @@ export interface RefineSectionInput {
  */
 export async function refineSection(input: RefineSectionInput): Promise<{ candidates: RefineCandidate<unknown>[] }> {
   const instruction = input.instruction?.trim();
-  const current = input.body?.[input.sectionKey];
-  if (!instruction || current === undefined) return { candidates: [] };
+  const current = input.body?.[input.sectionKey]; // 생성 시 키가 아예 없을 수 있음(undefined)
+  if (!instruction) return { candidates: [] };
   const count = Math.min(4, Math.max(1, input.count ?? 3));
-  const isArr = Array.isArray(current);
-  const curJson = JSON.stringify(current, null, 2);
 
-  const system = `당신은 케이스랩(Caselab)의 콘텐츠 에디터입니다. 문서의 한 섹션 전체를 "수정 각도"에 맞게 다시 구성한 후보를 제안합니다.
+  // 빈 섹션(또는 키 없음)이면 "생성" 모드 — 섹션 정의(content-sections)의 예시를 형태 힌트로 삼아 새로 작성.
+  const empty = isEmptySection(current);
+  const example = empty && input.track ? sectionSpec(input.track, input.sectionKey)?.example : undefined;
+  const shapeRef = empty && example !== undefined ? example : current;
+  if (shapeRef === undefined || shapeRef === null) return { candidates: [] }; // 형태 힌트 없음(생성 불가)
+  const isArr = Array.isArray(shapeRef);
+  const shapeJson = JSON.stringify(shapeRef, null, 2);
+
+  const system = empty
+    ? `당신은 케이스랩(Caselab)의 콘텐츠 에디터입니다. 문서에 새로 추가할 한 섹션의 내용을, 운영자가 준 "핵심 내용·방향·주의사항"에 맞춰 새로 작성한 후보를 제안합니다.
+
+[규칙]
+- 아래 "형태 예시"와 같은 JSON 형태(${isArr ? '배열' : '객체'} + 같은 키 이름·타입)로 작성하세요. 항목 개수는 내용에 맞게 정하면 됩니다.
+- 키 이름/타입은 예시와 동일하게(새 키 발명 금지). 값은 예시 문구를 쓰지 말고 실제 내용으로 채우세요.
+- 운영자가 준 핵심 내용·참고자료에 있는 사실만 쓰고, 수치·이름·URL을 새로 지어내지 마세요.
+- 한국어, 담백한 1인칭 운영자 톤. 이모지 금지.
+- 서로 뚜렷이 다른 방향의 후보 ${count}개(구성 재탕 금지).
+- 각 후보에 방향을 요약한 짧은 label(8자 내외, 예: "핵심 압축형", "사례 중심형"). 후보끼리 다르게.
+
+응답은 아래 JSON만 반환(설명 없이). candidates의 각 원소는 { label, value } 이고 value는 이 섹션의 값(예시와 같은 형태):
+{ "candidates": [ { "label": "핵심 압축형", "value": <섹션 값> }, ... ] }`
+    : `당신은 케이스랩(Caselab)의 콘텐츠 에디터입니다. 문서의 한 섹션 전체를 "수정 각도"에 맞게 다시 구성한 후보를 제안합니다.
 
 [규칙]
 - 아래 "현재 섹션 JSON"과 같은 JSON 형태(${isArr ? '배열' : '객체'} + 같은 키 이름·타입)를 유지하세요. 단, 항목을 추가·병합·분할·순서변경해도 됩니다(자유 재구성).
@@ -799,8 +819,10 @@ export async function refineSection(input: RefineSectionInput): Promise<{ candid
 응답은 아래 JSON만 반환(설명 없이). candidates의 각 원소는 { label, value } 이고 value는 이 섹션의 새 값(현재와 같은 형태):
 { "candidates": [ { "label": "카드 확장형", "value": <섹션 값> }, ... ] }`;
 
-  const ref = input.reference?.trim() ? `\n\n[추가 참고자료 — 이 정보를 반영해 각도를 잡으세요]\n${input.reference.trim().slice(0, 8000)}` : '';
-  const userPrompt = `[섹션] ${input.sectionLabel}\n[수정 각도] ${instruction}${ref}\n\n[현재 섹션 JSON]\n${curJson.slice(0, 12000)}\n\n위 섹션을 수정 각도대로 다시 구성한 후보 ${count}개를 JSON으로 반환하세요(각 후보에 label 포함).`;
+  const ref = input.reference?.trim() ? `\n\n[추가 참고자료 — 이 정보를 반영하세요]\n${input.reference.trim().slice(0, 8000)}` : '';
+  const userPrompt = empty
+    ? `[새 섹션] ${input.sectionLabel}\n[넣을 핵심 내용·방향·주의사항] ${instruction}${ref}\n\n[형태 예시]\n${shapeJson.slice(0, 12000)}\n\n위 요청 내용을 예시 형태로 담은 후보 ${count}개를 JSON으로 반환하세요(각 후보에 label 포함).`
+    : `[섹션] ${input.sectionLabel}\n[수정 각도] ${instruction}${ref}\n\n[현재 섹션 JSON]\n${shapeJson.slice(0, 12000)}\n\n위 섹션을 수정 각도대로 다시 구성한 후보 ${count}개를 JSON으로 반환하세요(각 후보에 label 포함).`;
 
   const raw = await callModel(system, userPrompt, { allowedTools: [], model: 'sonnet', timeoutMs: 90_000 });
   const parsed = (parseModelJson(raw) ?? {}) as Record<string, unknown>;
