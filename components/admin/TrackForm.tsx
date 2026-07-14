@@ -16,6 +16,7 @@ import { slugify, cn } from '@/lib/utils';
 import { CaseBodyEditor } from '@/components/admin/section-editors/CaseBodyEditor';
 import { TrendBodyEditor } from '@/components/admin/section-editors/TrendBodyEditor';
 import { ContentPreview } from '@/components/admin/ContentPreview';
+import { ThumbnailField } from '@/components/admin/ThumbnailField';
 import { RefineProvider, RefinePanel } from '@/components/admin/RefinePanel';
 
 interface Props {
@@ -275,10 +276,7 @@ export function TrackForm({ initial, onSaved, startInPreview }: Props) {
                   <Input id="apply" className="mt-1" type="number" min={1} value={applyMin} onChange={(e) => setApplyMin(+e.target.value)} />
                 </div>
               </div>
-              <div>
-                <Label htmlFor="thumb" className="text-xs">썸네일 URL</Label>
-                <Input id="thumb" className="mt-1" value={thumbnailUrl} onChange={(e) => setThumbnailUrl(e.target.value)} />
-              </div>
+              <ThumbnailField value={thumbnailUrl} onChange={setThumbnailUrl} />
               <div>
                 <Label className="text-xs">직무 태그</Label>
                 <div className="mt-1.5 flex flex-wrap gap-1.5">
