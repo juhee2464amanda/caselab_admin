@@ -22,10 +22,12 @@ type Phase =
   | { step: 'compose' }
   | { step: 'loading'; id: string; kind: Kind }
   | { step: 'edit'; id: string; kind: Kind; row: Record<string, unknown> }
-  | { step: 'published'; id: string; kind: Kind; title: string };
+  | { step: 'published'; id: string; kind: Kind; title: string; liveUrl?: string };
 
 // 생성은 로컬 작업장(Claude CLI)에서만. Vercel에선 안내만.
 const LOCAL_AI = process.env.NEXT_PUBLIC_LOCAL_AI === 'true';
+// 본가(라이브 사이트) URL — 발행 후 "본가에서 보기" 링크용. prod=본가 도메인, 로컬=localhost.
+const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://caselab.vercel.app';
 
 export function MdImport() {
   const router = useRouter();
@@ -50,6 +52,8 @@ export function MdImport() {
   const [planText, setPlanText] = useState(''); // 줄 단위 "섹션 — 배치 계획"
   const [missing, setMissing] = useState<string[]>([]);
   const [proposed, setProposed] = useState(false);
+  // 재생성 — 값이 있으면 이 초안 id를 덮어쓴다(엣지 조정 후 다시 생성). 없으면 새 초안.
+  const [replaceId, setReplaceId] = useState<string | null>(null);
 
   // 트랙이 바뀌면 형식도 바뀌므로 제안 초기화
   const selectTrack = (t: SeedTrack) => {
@@ -138,10 +142,12 @@ export function MdImport() {
             .map((s) => s.trim())
             .filter(Boolean),
           missing,
+          replaceId: replaceId || undefined,
         }),
       });
       const json = (await res.json()) as { id?: string; kind?: Kind; error?: string };
       if (!res.ok || !json.id || !json.kind) throw new Error(json.error ?? '생성 실패');
+      setReplaceId(null);
       await openEditor(json.id, json.kind);
     } catch (e) {
       setError((e as Error).message);
@@ -168,9 +174,16 @@ export function MdImport() {
     router.refresh();
   };
 
-  const onSaved = (status: string, savedId?: string, kind?: Kind, savedTitle?: string) => {
+  const onSaved = async (status: string, savedId?: string, kind?: Kind, savedTitle?: string) => {
     if (status === 'published' && savedId) {
-      setPhase({ step: 'published', id: savedId, kind: kind ?? 'content', title: savedTitle ?? '' });
+      // 발행 후 본가(라이브)에서 바로 확인할 수 있게 해당 콘텐츠 URL을 계산.
+      let liveUrl: string | undefined;
+      if ((kind ?? 'content') === 'content') {
+        const { data } = await supabase.from('contents').select('slug, track').eq('id', savedId).maybeSingle();
+        const row = data as { slug?: string; track?: string } | null;
+        if (row?.slug) liveUrl = `${SITE_URL}/${row.track === 'case' ? 'cases' : 'trends'}/${row.slug}`;
+      }
+      setPhase({ step: 'published', id: savedId, kind: kind ?? 'content', title: savedTitle ?? '', liveUrl });
     }
   };
 
@@ -187,9 +200,22 @@ export function MdImport() {
     return (
       <div className="space-y-3">
         <div className="flex items-center justify-between gap-2 px-4 pt-4 sm:px-8">
-          <Button size="sm" variant="ghost" onClick={backToCompose}>
-            <ArrowLeft className="h-3.5 w-3.5" /> MD 반입으로
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button size="sm" variant="ghost" onClick={backToCompose}>
+              <ArrowLeft className="h-3.5 w-3.5" /> MD 반입으로
+            </Button>
+            {/* 엣지 조정 후 재생성 — 각도·섹션 배치를 고쳐 이 초안을 덮어쓴다(새 초안 안 쌓임). */}
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => {
+                setReplaceId(phase.id);
+                setPhase({ step: 'compose' });
+              }}
+            >
+              <Wand2 className="h-3.5 w-3.5" /> 엣지 조정·재생성
+            </Button>
+          </div>
           <span className="text-xs text-ink/40">생성된 초안을 다듬고 발행하세요 · 발행하면 홈 배치로 이어집니다</span>
         </div>
         {error && <p className="px-4 sm:px-8 text-xs text-red-600">{error}</p>}
@@ -224,6 +250,18 @@ export function MdImport() {
               ? ' 아래에서 홈 대표 영역에 바로 배치하세요.'
               : ' 자료실에 노출됩니다(자료류는 홈 대표 슬롯이 없어요).'}
           </p>
+
+          {/* 본가(라이브)에서 방금 발행한 콘텐츠 바로 확인 */}
+          {phase.kind === 'content' && phase.liveUrl && (
+            <a
+              href={phase.liveUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1 text-sm font-medium text-accent hover:underline"
+            >
+              <ExternalLink className="h-3.5 w-3.5" /> 본가에서 보기
+            </a>
+          )}
 
           {phase.kind === 'content' ? (
             <FeaturedPlacer contentId={phase.id} title={phase.title} />
@@ -459,10 +497,25 @@ export function MdImport() {
           </div>
         </section>
 
+        {/* 재생성 모드 — 편집 화면의 "엣지 조정·재생성"으로 진입. 엣지를 고쳐 기존 초안을 덮어쓴다. */}
+        {replaceId && (
+          <div className="flex items-center justify-between gap-2 rounded-lg border border-accent/30 bg-accent/5 px-3 py-2 text-xs text-accent">
+            <span>재생성 모드 — 엣지(각도·배치)를 조정하고 “다시 생성”하면 기존 초안을 덮어써요.</span>
+            <button type="button" onClick={() => setReplaceId(null)} className="shrink-0 underline">
+              새 초안으로
+            </button>
+          </div>
+        )}
         <div className="flex items-center gap-3">
           <Button variant="accent" disabled={!ready || busy || !LOCAL_AI} onClick={generate}>
             {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
-            {busy ? '초안 생성 중… (몇 분 걸릴 수 있어요)' : '초안 생성'}
+            {busy
+              ? replaceId
+                ? '다시 생성 중… (몇 분 걸릴 수 있어요)'
+                : '초안 생성 중… (몇 분 걸릴 수 있어요)'
+              : replaceId
+                ? '다시 생성 (덮어쓰기)'
+                : '초안 생성'}
           </Button>
           {!ready && <span className="text-xs text-ink/40">MD 문서·제목·타입을 채우면 생성할 수 있어요</span>}
         </div>

@@ -46,10 +46,13 @@ export async function POST(req: NextRequest) {
     edgePlan?: string[];
     /** 엣지 제안 — 형식이 요구하지만 문서에 없는 것(지어내기 방지 경고로 주입) */
     missing?: string[];
+    /** 재생성 — 이 초안(content/tool) id를 덮어쓴다(새 초안 생성 대신). 엣지 조정 후 다시 생성용. */
+    replaceId?: string;
   };
   const title = parsed.title?.trim();
   const markdown = parsed.markdown?.trim();
   const track = parsed.track;
+  const replaceId = parsed.replaceId?.trim();
   if (!title || !markdown) {
     return NextResponse.json({ error: 'title·markdown 필수' }, { status: 400 });
   }
@@ -102,6 +105,19 @@ export async function POST(req: NextRequest) {
     if (track === 'tool' || track === 'prompt') {
       const libInput = { title, summary: markdown, direction, outline: edgePlan, sourceType: 'manual' };
       const draft = track === 'tool' ? await generateToolDraft(libInput) : await generatePromptDraft(libInput);
+      // 재생성 — 기존 tool 초안을 덮어쓰기(슬러그·발행상태 유지). 실패 시 아래 insert로 폴백.
+      if (replaceId) {
+        const { data: upd } = await admin
+          .from('tools')
+          .update({ name: draft.name || title, category: draft.category, description: draft.description, body: draft.body, url: draft.url ?? null, pricing_tier: draft.pricing_tier })
+          .eq('id', replaceId)
+          .select('id')
+          .maybeSingle();
+        if (upd) {
+          await admin.from('content_seeds').delete().eq('id', seed.id);
+          return NextResponse.json({ redirect: `/admin/tools/${upd.id}`, id: upd.id, kind: 'tool' });
+        }
+      }
       const { data: tool, error } = await admin
         .from('tools')
         .insert({
@@ -125,6 +141,19 @@ export async function POST(req: NextRequest) {
 
     if (track === 'guide') {
       const draft = await generateGuideDraft({ title, summary: markdown, direction, outline: edgePlan, sourceType: 'manual' });
+      // 재생성 — 기존 guide 초안 덮어쓰기. 실패 시 아래 insert로 폴백.
+      if (replaceId) {
+        const { data: upd } = await admin
+          .from('tools')
+          .update({ name: draft.name || title, category: 'guide', description: draft.description || null, url: draft.url || null, job_tags: draft.jobTag ? [draft.jobTag] : [] })
+          .eq('id', replaceId)
+          .select('id')
+          .maybeSingle();
+        if (upd) {
+          await admin.from('content_seeds').delete().eq('id', seed.id);
+          return NextResponse.json({ redirect: `/admin/tools/${upd.id}`, id: upd.id, kind: 'tool' });
+        }
+      }
       const { data: tool, error } = await admin
         .from('tools')
         .insert({
@@ -149,6 +178,20 @@ export async function POST(req: NextRequest) {
     const body = await generateDraft({ track, title, summary: markdown, direction, outline: edgePlan, sourceType: 'manual' });
     // 발행 메타 자동 채움 — 읽기/적용 시간·직무 태그·요약을 미리 채워 발행 게이트를 통과시킨다(운영자 수동 입력 마찰 제거).
     const meta = await suggestContentMeta({ title, markdown, body });
+    // 재생성 — 기존 콘텐츠 초안 덮어쓰기(슬러그·발행상태 유지, 같은 트랙일 때만). 실패 시 아래 insert로 폴백.
+    if (replaceId) {
+      const { data: upd } = await admin
+        .from('contents')
+        .update({ title, summary: meta.summary || null, body, read_min: meta.readMin, apply_min: meta.applyMin, job_tags: meta.jobTags })
+        .eq('id', replaceId)
+        .eq('track', track)
+        .select('id')
+        .maybeSingle();
+      if (upd) {
+        await admin.from('content_seeds').delete().eq('id', seed.id);
+        return NextResponse.json({ redirect: `/admin/contents/${upd.id}`, id: upd.id, kind: 'content' });
+      }
+    }
     const { data: content, error } = await admin
       .from('contents')
       .insert({
