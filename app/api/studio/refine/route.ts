@@ -28,6 +28,7 @@ export async function POST(req: NextRequest) {
     instruction?: string;
     context?: string;
     rich?: boolean;
+    reference?: string;
     count?: number;
   };
   const text = body.text?.trim();
@@ -40,6 +41,7 @@ export async function POST(req: NextRequest) {
       instruction,
       context: body.context,
       rich: body.rich,
+      reference: body.reference,
       count: body.count,
     });
     return NextResponse.json(result);

@@ -182,9 +182,10 @@ export function Editable({ value, onCommit, as = 'span', multiline, rich, refine
     refine.open({
       target,
       scope,
+      kind: 'text',
       rich: !!rich,
       context: refineContext,
-      apply: (chosen) => applyChosen(chosen, scope, range),
+      apply: (chosen) => applyChosen(String(chosen), scope, range),
       onClose: () => closeChosen(scope, range),
     });
   };

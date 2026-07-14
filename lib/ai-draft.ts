@@ -692,6 +692,8 @@ export interface RefineInput {
   context?: string;
   /** rich 필드면 인라인 마크다운 마커를 유지·활용해도 된다. */
   rich?: boolean;
+  /** 운영자가 첨부한 추가 참고자료(.md 등) — 각도를 바꾸는 info. 선택. */
+  reference?: string;
   /** 반환할 후보 수(기본 3, 1~4). */
   count?: number;
 }
@@ -724,7 +726,8 @@ export async function refineText(input: RefineInput): Promise<{ candidates: stri
 { "candidates": ["후보1", "후보2", ...] }`;
 
   const ctx = input.context?.trim() ? `[편집 위치] ${input.context.trim()}\n` : '';
-  const userPrompt = `${ctx}[수정 각도] ${instruction}\n\n[대상 텍스트]\n${text.slice(0, 8000)}\n\n위 대상 텍스트를 수정 각도대로 다시 쓴 후보 ${count}개를 JSON으로 반환하세요.`;
+  const ref = input.reference?.trim() ? `\n\n[추가 참고자료 — 이 정보를 반영해 각도를 잡으세요]\n${input.reference.trim().slice(0, 8000)}` : '';
+  const userPrompt = `${ctx}[수정 각도] ${instruction}${ref}\n\n[대상 텍스트]\n${text.slice(0, 8000)}\n\n위 대상 텍스트를 수정 각도대로 다시 쓴 후보 ${count}개를 JSON으로 반환하세요.`;
 
   const raw = await callModel(system, userPrompt, { allowedTools: [], model: 'sonnet', timeoutMs: 60_000 });
   const parsed = (parseModelJson(raw) ?? {}) as Record<string, unknown>;
@@ -735,4 +738,69 @@ export async function refineText(input: RefineInput): Promise<{ candidates: stri
         .slice(0, count)
     : [];
   return { candidates };
+}
+
+// ─────────────── 섹션 통째 수정 제안(자유 재구성) ───────────────
+
+export interface RefineSectionInput {
+  /** content(케이스/트렌드)면 지정 → 후보를 전체 ContentBodySchema로 검증(무효 후보 제거). tool이면 생략(형태 가드만). */
+  track?: 'case' | 'trend';
+  /** 현재 전체 body — 섹션 후보를 끼워 스키마 검증. */
+  body: Record<string, unknown>;
+  /** body의 섹션 키(예: "forWho", "painPoints", "what"). */
+  sectionKey: string;
+  /** 사람이 읽는 섹션 이름(예: "누구한테 중요해요"). */
+  sectionLabel: string;
+  instruction: string;
+  /** 추가 참고자료(.md 등). 선택. */
+  reference?: string;
+  count?: number;
+}
+
+/**
+ * 섹션(카드/항목 배열 또는 객체) 전체를 '수정 각도'대로 자유 재구성한 후보를 반환.
+ * 항목 추가·병합·분할·순서변경 허용. content면 {...body, [key]:후보}를 스키마 검증해 유효 후보만 남긴다(렌더 안전).
+ */
+export async function refineSection(input: RefineSectionInput): Promise<{ candidates: unknown[] }> {
+  const instruction = input.instruction?.trim();
+  const current = input.body?.[input.sectionKey];
+  if (!instruction || current === undefined) return { candidates: [] };
+  const count = Math.min(4, Math.max(1, input.count ?? 3));
+  const isArr = Array.isArray(current);
+  const curJson = JSON.stringify(current, null, 2);
+
+  const system = `당신은 케이스랩(Caselab)의 콘텐츠 에디터입니다. 문서의 한 섹션 전체를 "수정 각도"에 맞게 다시 구성한 후보를 제안합니다.
+
+[규칙]
+- 아래 "현재 섹션 JSON"과 같은 JSON 형태(${isArr ? '배열' : '객체'} + 같은 키 이름·타입)를 유지하세요. 단, 항목을 추가·병합·분할·순서변경해도 됩니다(자유 재구성).
+- 각 항목의 키 이름/타입은 현재와 동일하게(새 키 발명 금지). 텍스트 값만 새로 씁니다.
+- 사실·수치·이름·URL을 새로 지어내지 마세요(현재 내용/참고자료에 있는 것만).
+- 한국어, 담백한 1인칭 운영자 톤. 이모지 금지.
+- 서로 뚜렷이 다른 방향의 후보 ${count}개(같은 구성 재탕 금지).
+
+응답은 아래 JSON만 반환(설명 없이). candidates의 각 원소는 이 섹션의 새 값(현재와 같은 형태):
+{ "candidates": [ <섹션 값1>, <섹션 값2> ] }`;
+
+  const ref = input.reference?.trim() ? `\n\n[추가 참고자료 — 이 정보를 반영해 각도를 잡으세요]\n${input.reference.trim().slice(0, 8000)}` : '';
+  const userPrompt = `[섹션] ${input.sectionLabel}\n[수정 각도] ${instruction}${ref}\n\n[현재 섹션 JSON]\n${curJson.slice(0, 12000)}\n\n위 섹션을 수정 각도대로 다시 구성한 후보 ${count}개를 JSON으로 반환하세요.`;
+
+  const raw = await callModel(system, userPrompt, { allowedTools: [], model: 'sonnet', timeoutMs: 90_000 });
+  const parsed = (parseModelJson(raw) ?? {}) as Record<string, unknown>;
+  const list = Array.isArray(parsed.candidates) ? parsed.candidates : [];
+
+  const out: unknown[] = [];
+  for (const cand of list) {
+    if (isArr !== Array.isArray(cand)) continue; // 형태 가드
+    if (cand === null || typeof cand !== 'object') continue;
+    if (input.track) {
+      // content: 후보를 끼운 전체 body가 스키마를 통과할 때만 채택(정규화된 값 사용) → 렌더 안전.
+      const res = ContentBodySchema.safeParse({ ...input.body, [input.sectionKey]: cand });
+      if (!res.success) continue;
+      out.push((res.data as Record<string, unknown>)[input.sectionKey]);
+    } else {
+      out.push(cand);
+    }
+    if (out.length >= count) break;
+  }
+  return { candidates: out };
 }

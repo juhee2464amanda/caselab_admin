@@ -1,10 +1,11 @@
 'use client';
 
-import { useState } from 'react';
-import { ArrowUpRight, Copy, Check, User, Bot, Plus, Trash2 } from 'lucide-react';
+import { useState, useRef } from 'react';
+import { ArrowUpRight, Copy, Check, User, Bot, Plus, Trash2, Sparkles } from 'lucide-react';
 import type { Block, ContentBody, JobTag, PainPoint, StepCard, TakingPoint } from '@/types/content';
 import { JOB_LABELS } from '@/types/content';
 import { Editable } from '@/components/admin/Editable';
+import { useRefine, sectionToLines } from '@/components/admin/RefinePanel';
 import { ImageBlockField, newBlock, type AddType } from '@/components/admin/BlockListEditor';
 import { cn } from '@/lib/utils';
 
@@ -33,11 +34,23 @@ export interface ContentPreviewProps {
 
 const upd = <T,>(arr: T[], i: number, v: T): T[] => arr.map((x, idx) => (idx === i ? v : x));
 
-function SectionHeader({ num, title }: { num: string; title: string }) {
+function SectionHeader({ num, title, onRefine }: { num: string; title: string; onRefine?: () => void }) {
   return (
     <>
       <div className="text-xs font-bold text-ink/40 tracking-[0.08em] mb-0.5">{num}</div>
-      <h2 className="text-[22px] md:text-2xl font-extrabold tracking-[-0.025em] mb-5 break-keep">{title}</h2>
+      <div className="mb-5 flex items-center gap-2">
+        <h2 className="text-[22px] md:text-2xl font-extrabold tracking-[-0.025em] break-keep">{title}</h2>
+        {onRefine && (
+          <button
+            type="button"
+            onClick={onRefine}
+            title="이 섹션 전체를 AI로 수정(자유 재구성)"
+            className="shrink-0 inline-flex items-center gap-1 rounded-full border border-accent/30 px-2 py-0.5 text-[11px] font-semibold text-accent hover:bg-accent-50"
+          >
+            <Sparkles className="h-3 w-3" /> 섹션 수정
+          </button>
+        )}
+      </div>
     </>
   );
 }
@@ -316,13 +329,14 @@ function PreviewHeader({ track, title, summary, jobTags, readMin, applyMin, onPa
   );
 }
 
-function CasePreviewBody({ body, onBody }: { body: CaseBodyT; onBody?: (next: ContentBody) => void }) {
+function CasePreviewBody({ body, onBody, onSectionRefine }: { body: CaseBodyT; onBody?: (next: ContentBody) => void; onSectionRefine?: (key: string, label: string) => void }) {
   const set = onBody && ((patch: Partial<CaseBodyT>) => onBody({ ...body, ...patch }));
+  const sh = (key: string, label: string) => (onSectionRefine ? () => onSectionRefine(key, label) : undefined);
   return (
     <div className="prose-caselab">
       {body.forWho && body.forWho.length > 0 && (
         <section className="pt-2">
-          <SectionHeader num="01" title="이런 분들을 위한 글이에요" />
+          <SectionHeader num="01" title="이런 분들을 위한 글이에요" onRefine={sh('forWho', '이런 분들을 위한 글이에요')} />
           <div className="bg-muted rounded-xl p-6">
             <div className="flex flex-col gap-2">
               {body.forWho.map((t, i) => (
@@ -338,14 +352,14 @@ function CasePreviewBody({ body, onBody }: { body: CaseBodyT; onBody?: (next: Co
 
       {body.caseIntro && body.caseIntro.length > 0 && (
         <section className="pt-11 mt-11 border-t border-border">
-          <SectionHeader num="02" title="어떤 케이스를 다루나요" />
+          <SectionHeader num="02" title="어떤 케이스를 다루나요" onRefine={sh('caseIntro', '어떤 케이스를 다루나요')} />
           {renderBlocks(body.caseIntro, 'intro', set && ((next) => set({ caseIntro: next })))}
         </section>
       )}
 
       {body.painPoints && body.painPoints.length > 0 && (
         <section className="pt-11 mt-11 border-t border-border">
-          <SectionHeader num="03" title="보통 이런 일에서 막히는 이유" />
+          <SectionHeader num="03" title="보통 이런 일에서 막히는 이유" onRefine={sh('painPoints', '보통 이런 일에서 막히는 이유')} />
           <SectionLead text="실무에서 반복적으로 나오는 3가지 문제와, 그 근본 원인을 정리했습니다." />
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mt-2">
             {body.painPoints.map((p, i) => {
@@ -372,7 +386,7 @@ function CasePreviewBody({ body, onBody }: { body: CaseBodyT; onBody?: (next: Co
 
       {body.frameworkReference && (
         <section className="pt-11 mt-11 border-t border-border">
-          <SectionHeader num="04" title="적용한 Framework" />
+          <SectionHeader num="04" title="적용한 Framework" onRefine={sh('frameworkReference', '적용한 Framework')} />
           <div className="border border-border rounded-xl p-6 bg-white">
             <div className="text-[11px] font-bold tracking-[0.06em] text-ink/40 uppercase mb-3">Framework</div>
             <Editable
@@ -394,7 +408,7 @@ function CasePreviewBody({ body, onBody }: { body: CaseBodyT; onBody?: (next: Co
 
       {body.stepCards && body.stepCards.length > 0 && (
         <section className="pt-11 mt-11 border-t border-border">
-          <SectionHeader num="05" title="단계별 AI 활용" />
+          <SectionHeader num="05" title="단계별 AI 활용" onRefine={sh('stepCards', '단계별 AI 활용')} />
           <SectionLead text='단계마다 사람이 먼저 손으로 만든 입력이 있어야 AI 출력이 쓸 만합니다. 각 단계는 "사람이 할 일 / AI에 시킬 일 / 프롬프트 / 결과 비교" 4개로 구성됩니다.' />
           <div className="flex flex-col gap-3.5 mt-3.5">
             {body.stepCards.map((step, i) => (
@@ -436,7 +450,7 @@ function CasePreviewBody({ body, onBody }: { body: CaseBodyT; onBody?: (next: Co
 
       {body.takingPoints && body.takingPoints.length > 0 && (
         <section className="pt-11 mt-11 border-t border-border">
-          <SectionHeader num="07" title="핵심 Taking point" />
+          <SectionHeader num="07" title="핵심 Taking point" onRefine={sh('takingPoints', '핵심 Taking point')} />
           <SectionLead text="이 글에서 가져갈 3가지. 본인 일에 바로 옮길 수 있는 액션도 함께." />
           <div className="flex flex-col gap-2.5 mt-2">
             {body.takingPoints.map((tp, i) => {
@@ -524,29 +538,30 @@ function StepCardView({ step, onStep }: { step: StepCard; onStep?: (next: StepCa
   );
 }
 
-function TrendPreviewBody({ body, onBody }: { body: TrendBodyT; onBody?: (next: ContentBody) => void }) {
+function TrendPreviewBody({ body, onBody, onSectionRefine }: { body: TrendBodyT; onBody?: (next: ContentBody) => void; onSectionRefine?: (key: string, label: string) => void }) {
   const set = onBody && ((patch: Partial<TrendBodyT>) => onBody({ ...body, ...patch }));
+  const sh = (key: string, label: string) => (onSectionRefine ? () => onSectionRefine(key, label) : undefined);
   let n = 0;
   const num = () => String(++n).padStart(2, '0');
   return (
     <div className="prose-caselab">
       {body.what && body.what.length > 0 && (
         <section className="pt-2">
-          <SectionHeader num={num()} title="무슨 소식이에요" />
+          <SectionHeader num={num()} title="무슨 소식이에요" onRefine={sh('what', '무슨 소식이에요')} />
           {renderBlocks(body.what, 'what', set && ((next) => set({ what: next })))}
         </section>
       )}
 
       {body.why && body.why.length > 0 && (
         <section className="pt-11 mt-11 border-t border-border">
-          <SectionHeader num={num()} title="왜 지금 화두예요" />
+          <SectionHeader num={num()} title="왜 지금 화두예요" onRefine={sh('why', '왜 지금 화두예요')} />
           {renderBlocks(body.why, 'why', set && ((next) => set({ why: next })))}
         </section>
       )}
 
       {body.forWho && body.forWho.length > 0 && (
         <section className="pt-11 mt-11 border-t border-border">
-          <SectionHeader num={num()} title="누구한테 중요해요" />
+          <SectionHeader num={num()} title="누구한테 중요해요" onRefine={sh('forWho', '누구한테 중요해요')} />
           <div className="grid gap-3 sm:grid-cols-2 mt-1">
             {body.forWho.map((w, i) => (
               <div key={i} className="rounded-xl border border-border bg-white p-4">
@@ -571,7 +586,7 @@ function TrendPreviewBody({ body, onBody }: { body: TrendBodyT; onBody?: (next: 
 
       {body.keyPoints && body.keyPoints.length > 0 && (
         <section className="pt-11 mt-11 border-t border-border">
-          <SectionHeader num={num()} title="핵심만 빠르게" />
+          <SectionHeader num={num()} title="핵심만 빠르게" onRefine={sh('keyPoints', '핵심만 빠르게')} />
           <ul className="flex flex-col gap-2.5 mt-1">
             {body.keyPoints.map((k, i) => (
               <li key={i} className="flex gap-3 items-start">
@@ -593,14 +608,14 @@ function TrendPreviewBody({ body, onBody }: { body: TrendBodyT; onBody?: (next: 
 
       {body.deepDive && body.deepDive.length > 0 && (
         <section className="pt-11 mt-11 border-t border-border">
-          <SectionHeader num={num()} title="좀 더 들어가면" />
+          <SectionHeader num={num()} title="좀 더 들어가면" onRefine={sh('deepDive', '좀 더 들어가면')} />
           {renderBlocks(body.deepDive, 'deep', set && ((next) => set({ deepDive: next })))}
         </section>
       )}
 
       {body.soWhat && body.soWhat.length > 0 && (
         <section className="pt-11 mt-11 border-t border-border">
-          <SectionHeader num={num()} title="그래서, 내 일엔?" />
+          <SectionHeader num={num()} title="그래서, 내 일엔?" onRefine={sh('soWhat', '그래서, 내 일엔?')} />
           <div className="rounded-xl border border-accent/20 bg-accent-50/40 p-5">
             {renderBlocks(body.soWhat, 'so', set && ((next) => set({ soWhat: next })))}
           </div>
@@ -631,7 +646,32 @@ function TrendPreviewBody({ body, onBody }: { body: TrendBodyT; onBody?: (next: 
 }
 
 export function ContentPreview(props: ContentPreviewProps) {
-  const { authorQuote, body, onPatch, onBody } = props;
+  const { authorQuote, body, onPatch, onBody, track } = props;
+  const refine = useRefine();
+  // 최신 body를 apply 시점에 읽어(요청 열고 다른 필드 편집해도 그 편집 보존) 섹션만 교체.
+  const bodyRef = useRef(body);
+  bodyRef.current = body;
+  const onSectionRefine =
+    onBody && refine
+      ? (sectionKey: string, sectionLabel: string) => {
+          const cur = (body as unknown as Record<string, unknown>)[sectionKey];
+          refine.open({
+            target: sectionToLines(cur),
+            scope: 'section',
+            kind: 'section',
+            rich: false,
+            context: `${track === 'case' ? '실전 케이스' : 'AI 트렌드'} · ${sectionLabel}`,
+            section: {
+              track: body.kind === 'case' || body.kind === 'trend' ? body.kind : undefined,
+              body: body as unknown as Record<string, unknown>,
+              sectionKey,
+              sectionLabel,
+            },
+            apply: (chosen) => onBody({ ...(bodyRef.current as object), [sectionKey]: chosen } as ContentBody),
+            onClose: () => {},
+          });
+        }
+      : undefined;
   return (
     <div className="rounded-xl border border-border bg-bg">
       <div className="border-b border-border px-4 py-2 text-xs text-ink/50">
@@ -654,9 +694,9 @@ export function ContentPreview(props: ContentPreviewProps) {
         )}
         <div className="mt-4">
           {body.kind === 'case' ? (
-            <CasePreviewBody body={body} onBody={onBody} />
+            <CasePreviewBody body={body} onBody={onBody} onSectionRefine={onSectionRefine} />
           ) : body.kind === 'trend' ? (
-            <TrendPreviewBody body={body} onBody={onBody} />
+            <TrendPreviewBody body={body} onBody={onBody} onSectionRefine={onSectionRefine} />
           ) : null}
         </div>
       </article>
