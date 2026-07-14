@@ -108,7 +108,7 @@ function RefineForm({ request, onApply }: { request: RefineRequest; onApply: (ch
   const [refName, setRefName] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [candidates, setCandidates] = useState<unknown[] | null>(null);
+  const [candidates, setCandidates] = useState<{ label?: string; value: unknown }[] | null>(null);
   const fileRef = useRef<HTMLInputElement | null>(null);
 
   const attach = async (file?: File) => {
@@ -134,9 +134,11 @@ function RefineForm({ request, onApply }: { request: RefineRequest; onApply: (ch
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
-      const data = (await res.json()) as { candidates?: unknown[]; error?: string };
+      const data = (await res.json()) as { candidates?: { label?: string; value: unknown }[]; error?: string };
       if (!res.ok) throw new Error(data.error || '제안 생성 실패');
-      const list = (data.candidates ?? []).filter((c) => c !== null && c !== undefined && !(typeof c === 'string' && !c.trim()));
+      const list = (data.candidates ?? []).filter(
+        (c) => c && c.value !== null && c.value !== undefined && !(typeof c.value === 'string' && !c.value.trim()),
+      );
       if (list.length === 0) throw new Error('후보를 만들지 못했어요. 각도를 다르게 적어보세요.');
       setCandidates(list);
     } catch (e) {
@@ -245,20 +247,24 @@ function RefineForm({ request, onApply }: { request: RefineRequest; onApply: (ch
           <div className="text-[11px] font-semibold text-ink/50">후보 {candidates.length}개 · 하나를 골라 적용</div>
           {candidates.map((c, i) => (
             <div key={i} className="rounded-md border border-border p-2 hover:border-accent">
+              <div className="mb-1 flex items-center gap-1.5">
+                <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-accent/10 text-[10px] font-bold text-accent">{i + 1}</span>
+                {c.label && <span className="text-[11px] font-semibold text-accent">{c.label}</span>}
+              </div>
               {kind === 'section' ? (
-                <div className="text-[13px] leading-relaxed text-ink/85 whitespace-pre-wrap break-keep">{sectionToLines(c)}</div>
+                <div className="text-[13px] leading-relaxed text-ink/85 whitespace-pre-wrap break-keep">{sectionToLines(c.value)}</div>
               ) : rich ? (
                 <div
                   className="text-[13px] leading-relaxed text-ink/85 whitespace-pre-wrap break-keep"
-                  dangerouslySetInnerHTML={{ __html: inlineMdToHtml(String(c)) }}
+                  dangerouslySetInnerHTML={{ __html: inlineMdToHtml(String(c.value)) }}
                 />
               ) : (
-                <div className="text-[13px] leading-relaxed text-ink/85 whitespace-pre-wrap break-keep">{String(c)}</div>
+                <div className="text-[13px] leading-relaxed text-ink/85 whitespace-pre-wrap break-keep">{String(c.value)}</div>
               )}
               <div className="mt-1.5 flex justify-end">
                 <button
                   type="button"
-                  onClick={() => onApply(c)}
+                  onClick={() => onApply(c.value)}
                   className="rounded-md bg-ink px-2.5 py-0.5 text-[11px] font-semibold text-white opacity-80 hover:opacity-100"
                 >
                   이 안으로

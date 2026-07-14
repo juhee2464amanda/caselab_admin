@@ -702,7 +702,14 @@ export interface RefineInput {
  * 편집 표면(ContentPreview/ToolPreview)에서 지정한 텍스트를 '수정 각도'대로 다시 쓴 후보 2~4개를 반환.
  * 재작성 작업이라 웹서치 불필요 + 가벼운 모델(sonnet). 실패 시 빈 배열(운영자가 직접 수정).
  */
-export async function refineText(input: RefineInput): Promise<{ candidates: string[] }> {
+/** 후보 하나 — 어떤 방향인지 짧은 라벨 + 실제 값(text kind는 문자열). */
+export interface RefineCandidate<T = string> {
+  /** 이 후보의 방향을 8자 내외로(예: "간결 강조형", "사례 추가형"). 선택 시 차이를 한눈에. */
+  label: string;
+  value: T;
+}
+
+export async function refineText(input: RefineInput): Promise<{ candidates: RefineCandidate<string>[] }> {
   const text = input.text?.trim();
   const instruction = input.instruction?.trim();
   if (!text || !instruction) return { candidates: [] };
@@ -720,23 +727,33 @@ export async function refineText(input: RefineInput): Promise<{ candidates: stri
 - 한국어, 케이스랩의 담백한 1인칭 운영자 톤. 본문에 이모지를 넣지 마세요.
 - 수정 각도가 길이를 명시하지 않으면 원문과 비슷한 분량을 유지하세요.
 - 서로 뚜렷이 다른 방향의 후보 ${count}개를 만드세요(같은 문장 재탕 금지).
+- 각 후보에 그 방향을 요약한 짧은 label을 붙이세요(8자 내외, 예: "간결 강조형", "사례 추가형", "질문 도입형"). 후보끼리 서로 다르게.
 - ${markerRule}
 
 응답은 아래 JSON 객체 하나만 반환하세요(설명 없이):
-{ "candidates": ["후보1", "후보2", ...] }`;
+{ "candidates": [ { "label": "간결 강조형", "value": "다시 쓴 텍스트" }, ... ] }`;
 
   const ctx = input.context?.trim() ? `[편집 위치] ${input.context.trim()}\n` : '';
   const ref = input.reference?.trim() ? `\n\n[추가 참고자료 — 이 정보를 반영해 각도를 잡으세요]\n${input.reference.trim().slice(0, 8000)}` : '';
-  const userPrompt = `${ctx}[수정 각도] ${instruction}${ref}\n\n[대상 텍스트]\n${text.slice(0, 8000)}\n\n위 대상 텍스트를 수정 각도대로 다시 쓴 후보 ${count}개를 JSON으로 반환하세요.`;
+  const userPrompt = `${ctx}[수정 각도] ${instruction}${ref}\n\n[대상 텍스트]\n${text.slice(0, 8000)}\n\n위 대상 텍스트를 수정 각도대로 다시 쓴 후보 ${count}개를 JSON으로 반환하세요(각 후보에 label 포함).`;
 
   const raw = await callModel(system, userPrompt, { allowedTools: [], model: 'sonnet', timeoutMs: 60_000 });
   const parsed = (parseModelJson(raw) ?? {}) as Record<string, unknown>;
-  const candidates = Array.isArray(parsed.candidates)
-    ? parsed.candidates
-        .filter((x): x is string => typeof x === 'string' && x.trim().length > 0)
-        .map((s) => s.trim())
-        .slice(0, count)
-    : [];
+  const candidates: RefineCandidate<string>[] = [];
+  if (Array.isArray(parsed.candidates)) {
+    for (const c of parsed.candidates) {
+      let label = '';
+      let value = '';
+      if (typeof c === 'string') value = c.trim(); // 하위호환(모델이 라벨 생략 시)
+      else if (c && typeof c === 'object') {
+        const o = c as Record<string, unknown>;
+        label = typeof o.label === 'string' ? o.label.trim() : '';
+        value = typeof o.value === 'string' ? o.value.trim() : '';
+      }
+      if (value) candidates.push({ label, value });
+      if (candidates.length >= count) break;
+    }
+  }
   return { candidates };
 }
 
@@ -761,7 +778,7 @@ export interface RefineSectionInput {
  * 섹션(카드/항목 배열 또는 객체) 전체를 '수정 각도'대로 자유 재구성한 후보를 반환.
  * 항목 추가·병합·분할·순서변경 허용. content면 {...body, [key]:후보}를 스키마 검증해 유효 후보만 남긴다(렌더 안전).
  */
-export async function refineSection(input: RefineSectionInput): Promise<{ candidates: unknown[] }> {
+export async function refineSection(input: RefineSectionInput): Promise<{ candidates: RefineCandidate<unknown>[] }> {
   const instruction = input.instruction?.trim();
   const current = input.body?.[input.sectionKey];
   if (!instruction || current === undefined) return { candidates: [] };
@@ -777,28 +794,41 @@ export async function refineSection(input: RefineSectionInput): Promise<{ candid
 - 사실·수치·이름·URL을 새로 지어내지 마세요(현재 내용/참고자료에 있는 것만).
 - 한국어, 담백한 1인칭 운영자 톤. 이모지 금지.
 - 서로 뚜렷이 다른 방향의 후보 ${count}개(같은 구성 재탕 금지).
+- 각 후보에 그 재구성 방향을 요약한 짧은 label을 붙이세요(8자 내외, 예: "카드 확장형", "핵심 압축형", "직무별 정리형"). 후보끼리 서로 다르게.
 
-응답은 아래 JSON만 반환(설명 없이). candidates의 각 원소는 이 섹션의 새 값(현재와 같은 형태):
-{ "candidates": [ <섹션 값1>, <섹션 값2> ] }`;
+응답은 아래 JSON만 반환(설명 없이). candidates의 각 원소는 { label, value } 이고 value는 이 섹션의 새 값(현재와 같은 형태):
+{ "candidates": [ { "label": "카드 확장형", "value": <섹션 값> }, ... ] }`;
 
   const ref = input.reference?.trim() ? `\n\n[추가 참고자료 — 이 정보를 반영해 각도를 잡으세요]\n${input.reference.trim().slice(0, 8000)}` : '';
-  const userPrompt = `[섹션] ${input.sectionLabel}\n[수정 각도] ${instruction}${ref}\n\n[현재 섹션 JSON]\n${curJson.slice(0, 12000)}\n\n위 섹션을 수정 각도대로 다시 구성한 후보 ${count}개를 JSON으로 반환하세요.`;
+  const userPrompt = `[섹션] ${input.sectionLabel}\n[수정 각도] ${instruction}${ref}\n\n[현재 섹션 JSON]\n${curJson.slice(0, 12000)}\n\n위 섹션을 수정 각도대로 다시 구성한 후보 ${count}개를 JSON으로 반환하세요(각 후보에 label 포함).`;
 
   const raw = await callModel(system, userPrompt, { allowedTools: [], model: 'sonnet', timeoutMs: 90_000 });
   const parsed = (parseModelJson(raw) ?? {}) as Record<string, unknown>;
   const list = Array.isArray(parsed.candidates) ? parsed.candidates : [];
 
-  const out: unknown[] = [];
-  for (const cand of list) {
-    if (isArr !== Array.isArray(cand)) continue; // 형태 가드
-    if (cand === null || typeof cand !== 'object') continue;
-    if (input.track) {
-      // content: 후보를 끼운 전체 body가 스키마를 통과할 때만 채택(정규화된 값 사용) → 렌더 안전.
-      const res = ContentBodySchema.safeParse({ ...input.body, [input.sectionKey]: cand });
+  // 전체 body 검증은 "원본 body가 이미 스키마를 통과할 때"만 후보 판별자로 쓴다.
+  // 원본이 이미 스키마 밖이면(예: 아직 스키마에 없는 신블록 포함) 전체 검증이 후보와 무관하게 늘 실패하므로,
+  // 그럴 땐 형태 가드(배열↔배열)만으로 통과시킨다(운영자가 검토 후 적용).
+  const strict = !!input.track && ContentBodySchema.safeParse(input.body).success;
+
+  const out: RefineCandidate<unknown>[] = [];
+  for (const c of list) {
+    // 모델이 {label, value}로 감쌌으면 풀고, 아니면 원소 자체를 섹션 값으로 본다.
+    let label = '';
+    let value: unknown = c;
+    if (c && typeof c === 'object' && !Array.isArray(c) && 'value' in (c as Record<string, unknown>)) {
+      const o = c as Record<string, unknown>;
+      label = typeof o.label === 'string' ? o.label.trim() : '';
+      value = o.value;
+    }
+    if (isArr !== Array.isArray(value)) continue; // 형태 가드
+    if (value === null || typeof value !== 'object') continue;
+    if (strict) {
+      const res = ContentBodySchema.safeParse({ ...input.body, [input.sectionKey]: value });
       if (!res.success) continue;
-      out.push((res.data as Record<string, unknown>)[input.sectionKey]);
+      out.push({ label, value: (res.data as Record<string, unknown>)[input.sectionKey] });
     } else {
-      out.push(cand);
+      out.push({ label, value });
     }
     if (out.length >= count) break;
   }
