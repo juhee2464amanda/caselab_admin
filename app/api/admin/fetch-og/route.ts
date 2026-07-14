@@ -60,10 +60,26 @@ export async function POST(req: NextRequest) {
       undefined;
     const description = pick(html, [
       /<meta[^>]+property=["']og:description["'][^>]+content=["']([^"']+)["']/i,
+      /<meta[^>]+name=["']twitter:description["'][^>]+content=["']([^"']+)["']/i,
       /<meta[^>]+name=["']description["'][^>]+content=["']([^"']+)["']/i,
       /<meta[^>]+content=["']([^"']+)["'][^>]+name=["']description["']/i,
     ]);
-    const image = abs(pick(html, [/<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/i, /<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:image["']/i]), url);
+    // 대표 이미지: og:image → twitter:image → 본문 첫 <img> → apple-touch-icon 순 폴백(노션식).
+    let image = abs(
+      pick(html, [
+        /<meta[^>]+property=["']og:image(?::url)?["'][^>]+content=["']([^"']+)["']/i,
+        /<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:image["']/i,
+        /<meta[^>]+name=["']twitter:image["'][^>]+content=["']([^"']+)["']/i,
+      ]),
+      url,
+    );
+    if (!image) {
+      const firstImg = html.match(/<img[^>]+src=["']([^"']+\.(?:png|jpe?g|webp|gif)(?:\?[^"']*)?)["']/i);
+      image = abs(firstImg?.[1], url);
+    }
+    if (!image) {
+      image = abs(pick(html, [/<link[^>]+rel=["']apple-touch-icon["'][^>]+href=["']([^"']+)["']/i]), url);
+    }
     const siteName = pick(html, [/<meta[^>]+property=["']og:site_name["'][^>]+content=["']([^"']+)["']/i]);
     const favicon =
       abs(pick(html, [/<link[^>]+rel=["'](?:icon|shortcut icon)["'][^>]+href=["']([^"']+)["']/i, /<link[^>]+href=["']([^"']+)["'][^>]+rel=["'](?:icon|shortcut icon)["']/i]), url) ??
