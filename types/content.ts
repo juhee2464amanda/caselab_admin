@@ -87,11 +87,13 @@ export const ChecklistBlockSchema = z.object({
 });
 
 // 이미지 블록 — 운영자가 본문에 직접 삽입(업로드/URL). 본가 types/content.ts와 동일.
+// size: 렌더 폭(small≈320·medium≈480·full=본문폭). 기본 full.
 export const ImageBlockSchema = z.object({
   type: z.literal('image'),
   url: z.string().min(1),
   alt: z.string().optional(),
   caption: z.string().optional(),
+  size: z.enum(['small', 'medium', 'full']).optional(),
 });
 
 // FailureSection는 내부에 BlockSchema를 가짐 → lazy 사용

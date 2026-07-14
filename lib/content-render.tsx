@@ -60,7 +60,12 @@ export function renderBlock(block: Block, key: string | number): React.ReactElem
       );
     case 'image':
       return (
-        <figure key={key} className="my-6">
+        <figure
+          key={key}
+          className={
+            block.size === 'small' ? 'my-6 mx-auto max-w-[320px]' : block.size === 'medium' ? 'my-6 mx-auto max-w-[480px]' : 'my-6'
+          }
+        >
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src={block.url} alt={block.alt ?? ''} className="w-full h-auto rounded-lg" loading="lazy" />
           {block.caption && (

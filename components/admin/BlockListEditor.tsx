@@ -212,12 +212,31 @@ export function ImageBlockField({
       }}
     >
       {block.url ? (
-        <div className="flex items-start gap-3">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={block.url} alt="" className="max-h-40 rounded-md border border-border" />
-          <button type="button" onClick={() => onChange({ ...block, url: '' })} className="text-xs text-accent hover:underline shrink-0">
-            교체
-          </button>
+        <div className="space-y-2">
+          <div className="flex items-start gap-3">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={block.url} alt="" className="max-h-40 rounded-md border border-border" />
+            <button type="button" onClick={() => onChange({ ...block, url: '' })} className="text-xs text-accent hover:underline shrink-0">
+              교체
+            </button>
+          </div>
+          {/* 크기 */}
+          <div className="flex items-center gap-1 text-xs">
+            <span className="mr-1 text-ink/40">크기</span>
+            {([['small', '작게'], ['medium', '중간'], ['full', '전체폭']] as const).map(([v, label]) => (
+              <button
+                key={v}
+                type="button"
+                onClick={() => onChange({ ...block, size: v })}
+                className={cn(
+                  'rounded border px-2 py-0.5',
+                  (block.size ?? 'full') === v ? 'border-accent bg-accent/10 text-accent' : 'border-border text-ink/60 hover:bg-muted',
+                )}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
         </div>
       ) : (
         <div

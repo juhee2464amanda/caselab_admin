@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { ArrowUpRight, Copy, Check, User, Bot, Plus, Trash2 } from 'lucide-react';
+import { ArrowUpRight, Copy, Check, User, Bot, Plus, Trash2, ChevronUp, ChevronDown } from 'lucide-react';
 import type { Block, ContentBody, JobTag, PainPoint, StepCard, TakingPoint } from '@/types/content';
 import { JOB_LABELS } from '@/types/content';
 import { Editable } from '@/components/admin/Editable';
@@ -191,7 +191,10 @@ function renderBlock(block: Block, key: string | number, onBlock?: (nb: Block) =
         );
       }
       return (
-        <figure key={key} className="my-6">
+        <figure
+          key={key}
+          className={block.size === 'small' ? 'my-6 mx-auto max-w-[320px]' : block.size === 'medium' ? 'my-6 mx-auto max-w-[480px]' : 'my-6'}
+        >
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src={block.url} alt={block.alt ?? ''} className="w-full h-auto rounded-lg" loading="lazy" />
           {block.caption && <figcaption className="mt-2 text-center text-[13px] text-ink/55">{block.caption}</figcaption>}
@@ -262,19 +265,30 @@ function renderBlocks(blocks: Block[] | undefined, prefix: string, onBlocks?: (n
   if (!onBlocks) return list.map((b, i) => renderBlock(b, `${prefix}-${i}`));
   const insertAt = (idx: number, b: Block) => onBlocks([...list.slice(0, idx), b, ...list.slice(idx)]);
   const removeAt = (idx: number) => onBlocks(list.filter((_, k) => k !== idx));
+  const moveAt = (idx: number, dir: -1 | 1) => {
+    const j = idx + dir;
+    if (j < 0 || j >= list.length) return;
+    const next = [...list];
+    [next[idx], next[j]] = [next[j], next[idx]];
+    onBlocks(next);
+  };
   const nodes: JSX.Element[] = [];
   list.forEach((b, i) => {
     nodes.push(<InsertBar key={`${prefix}-ins-${i}`} onInsert={(nb) => insertAt(i, nb)} />);
     nodes.push(
       <div key={`${prefix}-row-${i}`} className="group/blk relative">
-        <button
-          type="button"
-          onClick={() => removeAt(i)}
-          title="이 블록 삭제"
-          className="absolute -right-1 -top-1 z-10 hidden h-5 w-5 items-center justify-center rounded-full border border-border bg-white text-red-500 shadow-sm hover:bg-red-50 group-hover/blk:flex"
-        >
-          <Trash2 className="h-3 w-3" />
-        </button>
+        {/* hover 컨트롤 — 위/아래 이동 + 삭제 */}
+        <div className="absolute -right-1 -top-2 z-10 hidden items-center gap-0.5 rounded-full border border-border bg-white px-1 py-0.5 shadow-sm group-hover/blk:flex">
+          <button type="button" onClick={() => moveAt(i, -1)} disabled={i === 0} title="위로" className="p-0.5 text-ink/50 hover:text-ink disabled:opacity-25">
+            <ChevronUp className="h-3.5 w-3.5" />
+          </button>
+          <button type="button" onClick={() => moveAt(i, 1)} disabled={i === list.length - 1} title="아래로" className="p-0.5 text-ink/50 hover:text-ink disabled:opacity-25">
+            <ChevronDown className="h-3.5 w-3.5" />
+          </button>
+          <button type="button" onClick={() => removeAt(i)} title="삭제" className="p-0.5 text-red-500 hover:text-red-700">
+            <Trash2 className="h-3.5 w-3.5" />
+          </button>
+        </div>
         {renderBlock(b, `${prefix}-${i}`, (nb) => onBlocks(upd(list, i, nb)))}
       </div>,
     );
