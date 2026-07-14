@@ -20,13 +20,22 @@ export function UtmBuilderForm() {
     setF((p) => ({ ...p, [k]: v }));
   }
 
+  // source·medium·campaign은 채널 구분 축 — 대소문자 섞이면 분석이 쪼개지므로 소문자 정규화.
+  // content는 게시물 식별자로 쓰일 수 있어 원문(trim만) 유지.
+  const norm = {
+    source: f.source.trim().toLowerCase(),
+    medium: f.medium.trim().toLowerCase(),
+    campaign: f.campaign.trim().toLowerCase(),
+    content: f.content.trim(),
+  };
+
   function buildUrl(): string | null {
     try {
       const u = new URL(f.target_url.trim());
-      u.searchParams.set('utm_source', f.source.trim());
-      u.searchParams.set('utm_medium', f.medium.trim());
-      u.searchParams.set('utm_campaign', f.campaign.trim());
-      if (f.content.trim()) u.searchParams.set('utm_content', f.content.trim());
+      u.searchParams.set('utm_source', norm.source);
+      u.searchParams.set('utm_medium', norm.medium);
+      u.searchParams.set('utm_campaign', norm.campaign);
+      if (norm.content) u.searchParams.set('utm_content', norm.content);
       return u.toString();
     } catch {
       return null;
@@ -49,10 +58,10 @@ export function UtmBuilderForm() {
     const { data: { user } } = await supabase.auth.getUser();
     const { error: insErr } = await supabase.from('utm_links').insert({
       label: f.label.trim(),
-      source: f.source.trim(),
-      medium: f.medium.trim(),
-      campaign: f.campaign.trim(),
-      content: f.content.trim() || null,
+      source: norm.source,
+      medium: norm.medium,
+      campaign: norm.campaign,
+      content: norm.content || null,
       target_url: f.target_url.trim(),
       full_url: full,
       created_by: user?.id ?? null,
