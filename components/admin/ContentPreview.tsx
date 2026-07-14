@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { ArrowUpRight, Copy, Check, User, Bot, Plus, Trash2, ChevronUp, ChevronDown } from 'lucide-react';
+import { ArrowUpRight, Copy, Check, User, Bot, Plus, Trash2, ChevronUp, ChevronDown, AlignLeft, AlignCenter, AlignRight } from 'lucide-react';
 import type { Block, ContentBody, JobTag, PainPoint, StepCard, TakingPoint } from '@/types/content';
 import { JOB_LABELS } from '@/types/content';
 import { Editable } from '@/components/admin/Editable';
@@ -79,6 +79,69 @@ function PromptBlockView({ label, prompt, onCommit }: { label?: string; prompt: 
 
 // 본가 lib/content-render.tsx의 초안 관련 블록만 이식(text/heading/prompt/result-compare/role-card/checklist).
 // onBlock을 넘기면 각 블록 텍스트가 클릭 인라인 편집 대상이 된다.
+// 이미지 figure 크기·정렬 클래스(읽기/편집 공통). small·medium만 max-w+정렬, full은 본문폭.
+function imgFigCls(size?: string, align?: string) {
+  return [
+    'my-6',
+    size === 'small' ? 'max-w-[320px]' : size === 'medium' ? 'max-w-[480px]' : '',
+    size === 'small' || size === 'medium' ? (align === 'left' ? 'mr-auto' : align === 'right' ? 'ml-auto' : 'mx-auto') : '',
+  ]
+    .filter(Boolean)
+    .join(' ');
+}
+
+// 미리보기 인라인 이미지 — 실제 크기·정렬로 렌더 + hover 툴바(크기/정렬/교체) + 캡션 인라인.
+// 업로드 전(url 없음)이면 드롭존(ImageBlockField).
+function PreviewImage({ block, onChange }: { block: Extract<Block, { type: 'image' }>; onChange: (b: Block) => void }) {
+  if (!block.url) {
+    return (
+      <div className="my-4">
+        <ImageBlockField block={block} onChange={onChange} />
+      </div>
+    );
+  }
+  const size = block.size ?? 'full';
+  const align = block.align ?? 'center';
+  return (
+    <figure className={cn('group/img relative', imgFigCls(block.size, block.align))}>
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img src={block.url} alt={block.alt ?? ''} className="w-full h-auto rounded-lg" />
+      <div className="absolute left-1/2 top-2 z-10 hidden -translate-x-1/2 items-center gap-1 rounded-lg border border-border bg-white/95 px-1.5 py-1 shadow-md group-hover/img:flex">
+        {([['small', 'S'], ['medium', 'M'], ['full', '전체']] as const).map(([v, l]) => (
+          <button
+            key={v}
+            type="button"
+            onClick={() => onChange({ ...block, size: v })}
+            className={cn('rounded px-1.5 py-0.5 text-[11px]', size === v ? 'bg-accent text-white' : 'text-ink/60 hover:bg-muted')}
+          >
+            {l}
+          </button>
+        ))}
+        <span className="mx-0.5 h-3.5 w-px bg-border" />
+        {([['left', AlignLeft], ['center', AlignCenter], ['right', AlignRight]] as const).map(([v, Icon]) => (
+          <button
+            key={v}
+            type="button"
+            disabled={size === 'full'}
+            title={size === 'full' ? '전체폭에선 정렬이 없어요' : '정렬'}
+            onClick={() => onChange({ ...block, align: v })}
+            className={cn('rounded p-1 disabled:opacity-25', align === v && size !== 'full' ? 'bg-accent text-white' : 'text-ink/60 hover:bg-muted')}
+          >
+            <Icon className="h-3 w-3" />
+          </button>
+        ))}
+        <span className="mx-0.5 h-3.5 w-px bg-border" />
+        <button type="button" onClick={() => onChange({ ...block, url: '' })} className="rounded px-1.5 py-0.5 text-[11px] text-accent hover:bg-muted">
+          교체
+        </button>
+      </div>
+      <figcaption className="mt-2 text-center text-[13px] text-ink/55">
+        <Editable value={block.caption ?? ''} onCommit={(v) => onChange({ ...block, caption: v })} placeholder="＋ 캡션" className="inline-block min-w-[40px]" />
+      </figcaption>
+    </figure>
+  );
+}
+
 function renderBlock(block: Block, key: string | number, onBlock?: (nb: Block) => void) {
   switch (block.type) {
     case 'text':
@@ -182,19 +245,10 @@ function renderBlock(block: Block, key: string | number, onBlock?: (nb: Block) =
         </div>
       );
     case 'image':
-      // 편집 모드: 업로드/드래그/붙여넣기 UI. 읽기: figure+img.
-      if (onBlock) {
-        return (
-          <div key={key} className="my-4">
-            <ImageBlockField block={block} onChange={onBlock} />
-          </div>
-        );
-      }
+      // 편집: 실제 크기·정렬로 렌더 + hover 툴바(크기/정렬/교체). 업로드 전이면 드롭존.
+      if (onBlock) return <PreviewImage key={key} block={block} onChange={onBlock} />;
       return (
-        <figure
-          key={key}
-          className={block.size === 'small' ? 'my-6 mx-auto max-w-[320px]' : block.size === 'medium' ? 'my-6 mx-auto max-w-[480px]' : 'my-6'}
-        >
+        <figure key={key} className={imgFigCls(block.size, block.align)}>
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src={block.url} alt={block.alt ?? ''} className="w-full h-auto rounded-lg" loading="lazy" />
           {block.caption && <figcaption className="mt-2 text-center text-[13px] text-ink/55">{block.caption}</figcaption>}

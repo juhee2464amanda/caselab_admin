@@ -94,6 +94,7 @@ export const ImageBlockSchema = z.object({
   alt: z.string().optional(),
   caption: z.string().optional(),
   size: z.enum(['small', 'medium', 'full']).optional(),
+  align: z.enum(['left', 'center', 'right']).optional(), // small·medium일 때만 의미(full은 무시)
 });
 
 // FailureSection는 내부에 BlockSchema를 가짐 → lazy 사용

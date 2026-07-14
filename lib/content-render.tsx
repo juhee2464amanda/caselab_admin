@@ -62,9 +62,19 @@ export function renderBlock(block: Block, key: string | number): React.ReactElem
       return (
         <figure
           key={key}
-          className={
-            block.size === 'small' ? 'my-6 mx-auto max-w-[320px]' : block.size === 'medium' ? 'my-6 mx-auto max-w-[480px]' : 'my-6'
-          }
+          className={[
+            'my-6',
+            block.size === 'small' ? 'max-w-[320px]' : block.size === 'medium' ? 'max-w-[480px]' : '',
+            block.size === 'small' || block.size === 'medium'
+              ? block.align === 'left'
+                ? 'mr-auto'
+                : block.align === 'right'
+                  ? 'ml-auto'
+                  : 'mx-auto'
+              : '',
+          ]
+            .filter(Boolean)
+            .join(' ')}
         >
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src={block.url} alt={block.alt ?? ''} className="w-full h-auto rounded-lg" loading="lazy" />
