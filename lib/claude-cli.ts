@@ -108,10 +108,31 @@ export async function runClaudeSubscription(opts: ClaudeCliOptions): Promise<str
   });
 }
 
-/** 모델 응답 텍스트에서 JSON 객체만 추출 (```json 펜스 또는 첫 {...} 매칭). */
+/**
+ * 모델 응답에서 JSON 객체만 추출. 코드펜스(```json)·프롤로그 프로즈·본문 속 내부 ``` 펜스에
+ * 영향받지 않도록, 첫 '{'부터 문자열 상태를 추적하며 균형 잡힌 객체를 스캔한다.
+ * (기존 non-greedy 펜스 정규식은 본문에 코드펜스가 있으면 JSON을 잘라 파싱 실패를 냈다.)
+ */
 export function extractJson(raw: string): string {
-  const fenced = raw.match(/```json\s*([\s\S]+?)```/);
-  if (fenced) return fenced[1];
-  const obj = raw.match(/(\{[\s\S]+\})/);
-  return obj ? obj[1] : raw;
+  const start = raw.indexOf('{');
+  if (start === -1) return raw;
+  let depth = 0;
+  let inStr = false;
+  let esc = false;
+  for (let i = start; i < raw.length; i++) {
+    const c = raw[i];
+    if (inStr) {
+      if (esc) { esc = false; continue; }
+      if (c === '\\') { esc = true; continue; }
+      if (c === '"') inStr = false;
+      continue;
+    }
+    if (c === '"') { inStr = true; continue; }
+    if (c === '{') depth++;
+    else if (c === '}') {
+      depth--;
+      if (depth === 0) return raw.slice(start, i + 1);
+    }
+  }
+  return raw.slice(start); // 균형이 안 맞으면(잘림 등) 남은 부분 그대로 — 상위 sanitizer가 복구 시도
 }
