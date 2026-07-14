@@ -2,9 +2,10 @@
 
 import { createElement, useRef, useState, type HTMLAttributes } from 'react';
 import { createPortal } from 'react-dom';
-import { Bold, Highlighter, Link2, RemoveFormatting } from 'lucide-react';
+import { Bold, Highlighter, Link2, RemoveFormatting, Sparkles } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { inlineMdToHtml, htmlToInlineMd } from '@/lib/inline-md';
+import { useRefine } from '@/components/admin/RefinePanel';
 
 // 클릭 인라인 편집 — 라이브 미리보기(ContentPreview/ToolPreview)를 편집 표면으로 쓰기 위한 것.
 // 클릭/탭 → contentEditable 진입(클릭 지점에 커서), blur/Enter(한 줄) 커밋, Escape 취소.
@@ -12,6 +13,12 @@ import { inlineMdToHtml, htmlToInlineMd } from '@/lib/inline-md';
 // rich 모드: **굵게**·==형광펜== 마커(lib/inline-md.ts)를 강조 렌더하고,
 // 편집 중에는 선택 후 플로팅 툴바(B/형광펜/서식지우기) 또는 Cmd+B로 서식 적용 → 커밋 시 마커로 저장.
 // 편집 중에는 React가 텍스트 노드를 다시 그리지 않도록 커밋 시에만 부모 상태를 갱신한다.
+//
+// AI 수정 제안(NEXT_PUBLIC_LOCAL_AI=true + RefineProvider 안): hover 시 ✨(필드 전체), 편집 중 드래그
+// 선택 후 툴바 ✨(선택 구간). 대상+적용클로저를 useRefine().open으로 우측 RefinePanel에 올린다.
+
+// 로컬(Claude CLI) 환경에서만 AI 버튼 노출 — Vercel엔 미설정(MdImport의 LOCAL_AI 게이팅과 동일).
+const AI_REFINE = process.env.NEXT_PUBLIC_LOCAL_AI === 'true';
 
 // 클릭한 화면 좌표(x,y)에 해당하는 캐럿 위치를 구한다. 지원 안 되면 텍스트 끝으로 폴백.
 function caretRangeFromPoint(x: number, y: number, el: HTMLElement): Range {
@@ -48,13 +55,19 @@ interface EditableProps extends Omit<HTMLAttributes<HTMLElement>, 'onChange' | '
   multiline?: boolean;
   /** true면 **굵게**·==형광펜== 마커 렌더 + 편집 툴바 제공 */
   rich?: boolean;
+  /** AI 수정 제안에 넘길 편집 위치 힌트(grounding). 예: "실전 케이스 · 문단" */
+  refineContext?: string;
   placeholder?: string;
 }
 
-export function Editable({ value, onCommit, as = 'span', multiline, rich, placeholder, className, ...rest }: EditableProps) {
+export function Editable({ value, onCommit, as = 'span', multiline, rich, refineContext, placeholder, className, ...rest }: EditableProps) {
   const [editing, setEditing] = useState(false);
   const [toolbar, setToolbar] = useState<{ top: number; left: number } | null>(null);
   const ref = useRef<HTMLElement | null>(null);
+  const refiningRef = useRef(false); // 리파인 패널로 포커스가 옮겨간 동안 blur-커밋을 막는다(선택 구간 보존).
+  const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const refine = useRefine();
+  const canRefine = AI_REFINE && !!refine; // 프로바이더(우측 패널)가 있을 때만 ✨ 노출
 
   if (!onCommit) {
     if (rich && value) {
@@ -65,6 +78,7 @@ export function Editable({ value, onCommit, as = 'span', multiline, rich, placeh
 
   const commit = () => {
     if (!editing) return;
+    if (refiningRef.current) return; // 리파인 패널로 포커스가 이동 → 편집 상태 유지
     setEditing(false);
     setToolbar(null);
     const el = ref.current;
@@ -100,6 +114,85 @@ export function Editable({ value, onCommit, as = 'span', multiline, rich, placeh
     document.execCommand('insertHTML', false, build(text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')));
   };
 
+  // 필드 위쪽에 뜨는 컨트롤 바 앵커(hover·편집 공통).
+  const anchorFor = (): { top: number; left: number } | null => {
+    const el = ref.current;
+    if (!el) return null;
+    const rect = el.getBoundingClientRect();
+    return { top: rect.top + window.scrollY - 40, left: Math.max(8, rect.left + window.scrollX) };
+  };
+
+  // 고른 후보를 이 필드에 적용. 선택 구간 모드면 저장한 Range 자리만 교체, 아니면 필드 전체 교체.
+  const applyChosen = (chosen: string, scope: 'selection' | 'field', range: Range | null) => {
+    refiningRef.current = false;
+    if (scope === 'selection' && range) {
+      const el = ref.current;
+      if (el) {
+        el.focus();
+        const sel = window.getSelection();
+        sel?.removeAllRanges();
+        sel?.addRange(range);
+        if (rich) document.execCommand('insertHTML', false, inlineMdToHtml(chosen));
+        else document.execCommand('insertText', false, chosen);
+      }
+      commit();
+    } else {
+      setEditing(false);
+      setToolbar(null);
+      if (chosen !== value) onCommit(chosen);
+    }
+  };
+
+  // 적용 없이 닫힘 — 편집 상태 정리(선택 구간 모드는 포커스·선택 복원).
+  const closeChosen = (scope: 'selection' | 'field', range: Range | null) => {
+    refiningRef.current = false;
+    if (scope === 'selection') {
+      const el = ref.current;
+      el?.focus();
+      if (range) {
+        const sel = window.getSelection();
+        sel?.removeAllRanges();
+        sel?.addRange(range);
+      }
+    }
+  };
+
+  // ✨ — 편집 중 선택 구간이 있으면 그 구간만, 아니면 필드 전체 값을 대상으로 우측 패널에 요청 등록.
+  const openRefine = () => {
+    if (!refine) return;
+    const el = ref.current;
+    const sel = window.getSelection();
+    let target = '';
+    let scope: 'selection' | 'field' = 'field';
+    let range: Range | null = null;
+    if (editing && el && sel && !sel.isCollapsed && sel.rangeCount && el.contains(sel.anchorNode)) {
+      target = sel.toString().trim();
+      if (target) {
+        scope = 'selection';
+        range = sel.getRangeAt(0).cloneRange();
+      }
+    }
+    if (!target) {
+      scope = 'field';
+      target = (editing && el ? (rich ? htmlToInlineMd(el) : el.innerText ?? '') : value).trim();
+    }
+    if (!target) return;
+    refiningRef.current = scope === 'selection'; // 선택 구간 모드만 편집 유지(DOM 보존)
+    setToolbar(null);
+    refine.open({
+      target,
+      scope,
+      kind: 'text',
+      rich: !!rich,
+      context: refineContext,
+      apply: (chosen) => applyChosen(String(chosen), scope, range),
+      onClose: () => closeChosen(scope, range),
+    });
+  };
+
+  const showFormat = editing && rich; // 서식 버튼(B/형광펜/링크/서식지우기)
+  const showBar = !!toolbar && (showFormat || canRefine);
+
   const content: Record<string, unknown> = {};
   if (rich) content.dangerouslySetInnerHTML = { __html: value ? inlineMdToHtml(value) : editing ? '' : `<span class="opacity-40">${placeholder ?? ''}</span>` };
 
@@ -113,6 +206,15 @@ export function Editable({ value, onCommit, as = 'span', multiline, rich, placeh
           suppressContentEditableWarning: true,
           spellCheck: false,
           title: editing ? undefined : '클릭하면 바로 수정',
+          onMouseEnter: () => {
+            if (editing || !canRefine) return;
+            if (hoverTimer.current) clearTimeout(hoverTimer.current);
+            setToolbar(anchorFor());
+          },
+          onMouseLeave: () => {
+            if (editing || !canRefine) return;
+            hoverTimer.current = setTimeout(() => setToolbar(null), 160);
+          },
           onClick: (e: React.MouseEvent) => {
             if (editing) return;
             e.preventDefault();
@@ -129,10 +231,7 @@ export function Editable({ value, onCommit, as = 'span', multiline, rich, placeh
               const range = caretRangeFromPoint(x, y, el);
               sel?.removeAllRanges();
               sel?.addRange(range);
-              if (rich) {
-                const rect = el.getBoundingClientRect();
-                setToolbar({ top: rect.top + window.scrollY - 40, left: Math.max(8, rect.left + window.scrollX) });
-              }
+              if (rich || canRefine) setToolbar(anchorFor());
             });
           },
           onBlur: commit,
@@ -162,57 +261,74 @@ export function Editable({ value, onCommit, as = 'span', multiline, rich, placeh
         rich ? undefined : value || placeholder || '',
       )}
 
-      {editing && rich && toolbar &&
+      {showBar &&
         createPortal(
           <div
             className="absolute z-50 flex items-center gap-0.5 rounded-lg border border-border bg-white p-1 shadow-lg"
-            style={{ top: toolbar.top, left: toolbar.left }}
+            style={{ top: toolbar!.top, left: toolbar!.left }}
+            onMouseEnter={() => {
+              if (hoverTimer.current) clearTimeout(hoverTimer.current);
+            }}
+            onMouseLeave={() => {
+              if (!editing) setToolbar(null);
+            }}
             onMouseDown={(e) => e.preventDefault() /* 포커스·선택 유지 */}
           >
-            <button
-              type="button"
-              title="굵게 (⌘B)"
-              className="rounded p-1.5 hover:bg-muted"
-              onClick={() => exec(() => document.execCommand('bold'))}
-            >
-              <Bold className="h-3.5 w-3.5" />
-            </button>
-            <button
-              type="button"
-              title="형광펜"
-              className="rounded p-1.5 hover:bg-muted"
-              onClick={() => exec(() => wrapSelection((t) => `<mark class="rounded-sm bg-amber-200/80 px-0.5">${t}</mark>`))}
-            >
-              <Highlighter className="h-3.5 w-3.5 text-amber-600" />
-            </button>
-            <button
-              type="button"
-              title="링크"
-              className="rounded p-1.5 hover:bg-muted"
-              onClick={() => {
-                const url = window.prompt('링크 URL:');
-                if (url && url.trim()) {
-                  const safe = url.trim().replace(/["<>]/g, '');
-                  exec(() => wrapSelection((t) => `<a href="${safe}" target="_blank" rel="noopener noreferrer" class="text-accent underline underline-offset-2">${t}</a>`));
-                }
-              }}
-            >
-              <Link2 className="h-3.5 w-3.5 text-accent" />
-            </button>
-            <button
-              type="button"
-              title="서식 지우기"
-              className="rounded p-1.5 hover:bg-muted"
-              onClick={() =>
-                exec(() => {
-                  document.execCommand('removeFormat');
-                  wrapSelection((t) => t);
-                })
-              }
-            >
-              <RemoveFormatting className="h-3.5 w-3.5 text-ink/50" />
-            </button>
-            <span className="px-1.5 text-[10px] text-ink/40">텍스트 선택 후 적용</span>
+            {showFormat && (
+              <>
+                <button type="button" title="굵게 (⌘B)" className="rounded p-1.5 hover:bg-muted" onClick={() => exec(() => document.execCommand('bold'))}>
+                  <Bold className="h-3.5 w-3.5" />
+                </button>
+                <button
+                  type="button"
+                  title="형광펜"
+                  className="rounded p-1.5 hover:bg-muted"
+                  onClick={() => exec(() => wrapSelection((t) => `<mark class="rounded-sm bg-amber-200/80 px-0.5">${t}</mark>`))}
+                >
+                  <Highlighter className="h-3.5 w-3.5 text-amber-600" />
+                </button>
+                <button
+                  type="button"
+                  title="링크"
+                  className="rounded p-1.5 hover:bg-muted"
+                  onClick={() => {
+                    const url = window.prompt('링크 URL:');
+                    if (url && url.trim()) {
+                      const safe = url.trim().replace(/["<>]/g, '');
+                      exec(() => wrapSelection((t) => `<a href="${safe}" target="_blank" rel="noopener noreferrer" class="text-accent underline underline-offset-2">${t}</a>`));
+                    }
+                  }}
+                >
+                  <Link2 className="h-3.5 w-3.5 text-accent" />
+                </button>
+                <button
+                  type="button"
+                  title="서식 지우기"
+                  className="rounded p-1.5 hover:bg-muted"
+                  onClick={() =>
+                    exec(() => {
+                      document.execCommand('removeFormat');
+                      wrapSelection((t) => t);
+                    })
+                  }
+                >
+                  <RemoveFormatting className="h-3.5 w-3.5 text-ink/50" />
+                </button>
+              </>
+            )}
+            {canRefine && (
+              <>
+                {showFormat && <span className="mx-0.5 h-4 w-px bg-border" />}
+                <button
+                  type="button"
+                  title="AI로 수정 (선택 구간 또는 이 필드 전체)"
+                  className="flex items-center gap-1 rounded px-1.5 py-1 text-[11px] font-semibold text-accent hover:bg-accent-50"
+                  onClick={openRefine}
+                >
+                  <Sparkles className="h-3.5 w-3.5" /> AI 수정
+                </button>
+              </>
+            )}
           </div>,
           document.body,
         )}

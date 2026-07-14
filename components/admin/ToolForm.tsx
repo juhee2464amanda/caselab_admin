@@ -2,7 +2,7 @@
 
 import { useMemo, useState, useTransition, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { Save, Send, Archive, AlertCircle, CheckCircle2, Eye, PenLine } from 'lucide-react';
+import { Save, Send, Archive, AlertCircle, CheckCircle2, Eye, PenLine, SlidersHorizontal, ChevronDown } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
@@ -14,6 +14,7 @@ import type { JobTag } from '@/types/content';
 import { createSupabaseBrowserClient } from '@/lib/supabase/client';
 import { slugify, cn } from '@/lib/utils';
 import { ToolPreview } from '@/components/admin/ToolPreview';
+import { RefineProvider, RefinePanel } from '@/components/admin/RefinePanel';
 
 const CATEGORIES = ['tool', 'prompt', 'guide', 'context-card'] as const;
 const CATEGORY_LABELS: Record<typeof CATEGORIES[number], string> = {
@@ -92,6 +93,8 @@ export function ToolForm({ initial, onSaved, startInPreview }: Props) {
   // 기존 자료 편집(=id 있음)은 "실제 초안 + 바로 수정"을 메인 화면으로 열고,
   // 새 자료는 메타부터 채워야 하므로 폼으로 시작한다. (startInPreview가 있으면 그 값 우선)
   const [previewOpen, setPreviewOpen] = useState(startInPreview ?? !!initial?.id);
+  // 설정·발행은 상단 접이 바로 이동 — 우측은 AI 제안 패널 전용. 새 자료(메타 미입력)는 열고 시작.
+  const [settingsOpen, setSettingsOpen] = useState(!initial?.id);
 
   // 원하는 분류가 없을 때 셀렉트에서 바로 새 분류 추가.
   // 공유 마스터(categories, type='tool_subcategory')에 insert → 본가 /tools 탭에도 새 탭으로 반영됨.
@@ -246,6 +249,7 @@ export function ToolForm({ initial, onSaved, startInPreview }: Props) {
   }
 
   return (
+    <RefineProvider>
     <div className="p-4 sm:p-8">
       <header className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <h1 className="font-serif text-xl sm:text-2xl font-semibold">
@@ -270,7 +274,235 @@ export function ToolForm({ initial, onSaved, startInPreview }: Props) {
         </div>
       </header>
 
-      {/* 메인(초안 인라인 편집 ↔ 본문 구조/JSON) + 설정 레일(양쪽 모드 공통) */}
+      {/* 설정·발행 — 상단 접이 바 (우측은 AI 제안 패널 전용) */}
+      <div className="mb-6">
+        <button
+          type="button"
+          onClick={() => setSettingsOpen((v) => !v)}
+          className="flex w-full items-center gap-2 rounded-lg border border-border bg-muted/40 px-4 py-2.5 text-sm font-semibold text-ink/70 hover:bg-muted"
+        >
+          <SlidersHorizontal className="h-4 w-4" /> 설정 · 발행
+          <ChevronDown className={cn('ml-auto h-4 w-4 transition-transform', settingsOpen && 'rotate-180')} />
+        </button>
+        {settingsOpen && (
+          <div className="mt-3 grid gap-4 md:grid-cols-2 xl:grid-cols-3 items-start">
+            <section className="card p-5 space-y-3">
+              <h2 className="font-semibold text-sm">메타</h2>
+              <div>
+                <Label htmlFor="name" className="text-xs">이름 *</Label>
+                <Input id="name" className="mt-1" value={name} onChange={(e) => setName(e.target.value)} />
+              </div>
+              <div>
+                <Label htmlFor="slug" className="text-xs">슬러그 *</Label>
+                <Input id="slug" className="mt-1" value={slug} onChange={(e) => setSlug(e.target.value)} />
+              </div>
+              <div>
+                <Label htmlFor="category" className="text-xs">카테고리 *</Label>
+                <Select value={category} onValueChange={(v) => setCategory(v as typeof CATEGORIES[number])}>
+                  <SelectTrigger id="category" className="mt-1">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {CATEGORIES.map((c) => (
+                      <SelectItem key={c} value={c}>{CATEGORY_LABELS[c]}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label htmlFor="pricing" className="text-xs">가격</Label>
+                <Select value={pricingTier} onValueChange={(v) => setPricingTier(v as typeof PRICING_TIERS[number])}>
+                  <SelectTrigger id="pricing" className="mt-1">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {PRICING_TIERS.map((p) => (
+                      <SelectItem key={p} value={p}>{PRICING_LABELS[p]}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              {category === 'tool' && (
+                <div>
+                  <Label htmlFor="subcategory" className="text-xs">도구 분류 (공개 /tools 탭) *</Label>
+                  <Select
+                    value={subcategoryId}
+                    onValueChange={(v) => {
+                      if (v === '__new__') {
+                        setNewSubcatOpen(true);
+                        return; // 선택값은 유지한 채 입력 UI만 연다
+                      }
+                      setSubcategoryId(v);
+                    }}
+                  >
+                    <SelectTrigger id="subcategory" className="mt-1">
+                      <SelectValue placeholder="기능 분류 선택" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {subcats.map((s) => (
+                        <SelectItem key={s.id} value={s.id}>{s.label}</SelectItem>
+                      ))}
+                      <SelectItem value="__new__">+ 직접 입력 (새 분류 추가)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  {newSubcatOpen && (
+                    <div className="mt-2 space-y-1.5">
+                      <div className="flex items-center gap-2">
+                        <Input
+                          value={newSubcatLabel}
+                          onChange={(e) => setNewSubcatLabel(e.target.value)}
+                          placeholder="새 분류 이름 (예: 영상 편집)"
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault();
+                              addSubcategory();
+                            }
+                          }}
+                        />
+                        <Button size="sm" variant="accent" disabled={newSubcatBusy || !newSubcatLabel.trim()} onClick={addSubcategory}>
+                          {newSubcatBusy ? '추가 중…' : '추가'}
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => {
+                            setNewSubcatOpen(false);
+                            setNewSubcatLabel('');
+                            setNewSubcatErr(null);
+                          }}
+                        >
+                          취소
+                        </Button>
+                      </div>
+                      {newSubcatErr && <p className="text-xs text-red-600">{newSubcatErr}</p>}
+                      <p className="text-xs text-amber-700">새 분류는 공유 마스터에 추가돼 본가 /tools 탭에도 생깁니다.</p>
+                    </div>
+                  )}
+                  <p className="mt-1 text-xs text-ink/50">
+                    공개 /tools 목록의 카테고리 탭. 미선택 시 목록에 안 보임.
+                  </p>
+                </div>
+              )}
+              <div>
+                <Label htmlFor="description" className="text-xs">설명 (공개 디테일 페이지 본문)</Label>
+                <Textarea
+                  id="description"
+                  className="mt-1"
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  placeholder="이 자료가 어떤 상황에 유용한지, 어떻게 쓰는지 한두 문단."
+                />
+              </div>
+              <div>
+                <Label htmlFor="url" className="text-xs">외부 링크</Label>
+                <Input id="url" className="mt-1" value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://" />
+              </div>
+              <div>
+                <Label htmlFor="thumb" className="text-xs">썸네일 URL</Label>
+                <Input id="thumb" className="mt-1" value={thumbnailUrl} onChange={(e) => setThumbnailUrl(e.target.value)} />
+              </div>
+              <div>
+                <Label className="text-xs">직무 태그</Label>
+                <div className="mt-1.5 flex flex-wrap gap-1.5">
+                  {JOB_TAGS.map((j) => (
+                    <button
+                      type="button"
+                      key={j}
+                      onClick={() => setJobTags((arr) => arr.includes(j) ? arr.filter((x) => x !== j) : [...arr, j])}
+                      className={cn('chip cursor-pointer', jobTags.includes(j) && 'chip-active')}
+                    >
+                      {JOB_LABELS[j]}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </section>
+
+            <section className="card p-5 space-y-3">
+              <div>
+                <h2 className="font-semibold text-sm">카드 표시</h2>
+                <p className="text-xs text-ink/50 mt-0.5">공개 /tools 목록 카드에 노출되는 항목 (mockup tools.html 정합)</p>
+              </div>
+              <div>
+                <Label htmlFor="thumbEmoji" className="text-xs">썸네일 이모지</Label>
+                <Input
+                  id="thumbEmoji"
+                  className="mt-1"
+                  value={thumbnailEmoji}
+                  onChange={(e) => setThumbnailEmoji(e.target.value)}
+                  placeholder="🔍 (썸네일 URL 없을 때 카드에 표시)"
+                />
+              </div>
+              <div>
+                <Label htmlFor="pricingLabel" className="text-xs">가격 라벨</Label>
+                <Input
+                  id="pricingLabel"
+                  className="mt-1"
+                  value={pricingLabel}
+                  onChange={(e) => setPricingLabel(e.target.value)}
+                  placeholder="예: 무료 플랜 / 유료"
+                />
+              </div>
+              <div>
+                <Label htmlFor="proPricing" className="text-xs">Pro 가격 라벨 (선택)</Label>
+                <Input
+                  id="proPricing"
+                  className="mt-1"
+                  value={proPricing}
+                  onChange={(e) => setProPricing(e.target.value)}
+                  placeholder='예: Pro $20/월 (무료 + Pro 둘 다 표시할 때)'
+                />
+              </div>
+              <div className="flex flex-col gap-2 pt-1">
+                <label className="flex items-center gap-2 text-sm cursor-pointer">
+                  <input
+                    type="checkbox"
+                    className="h-4 w-4 accent-accent"
+                    checked={isPaid}
+                    onChange={(e) => setIsPaid(e.target.checked)}
+                  />
+                  유료 도구 <span className="text-xs text-ink/50">(체크 시 회색 태그)</span>
+                </label>
+                <label className="flex items-center gap-2 text-sm cursor-pointer">
+                  <input
+                    type="checkbox"
+                    className="h-4 w-4 accent-accent"
+                    checked={hasReview}
+                    onChange={(e) => setHasReview(e.target.checked)}
+                  />
+                  사용기 있음 <span className="text-xs text-ink/50">(&ldquo;사용기 1편&rdquo; 배지)</span>
+                </label>
+              </div>
+            </section>
+
+            <section className="card p-5">
+              <h3 className="font-semibold text-sm mb-3">필수 항목</h3>
+              <ul className="space-y-1.5">
+                {checks.map((c) => (
+                  <li key={c.id} className="flex items-start gap-2 text-xs">
+                    {c.passed ? (
+                      <CheckCircle2 className="h-3.5 w-3.5 text-green-600 mt-0.5 shrink-0" />
+                    ) : (
+                      <AlertCircle className="h-3.5 w-3.5 text-red-500 mt-0.5 shrink-0" />
+                    )}
+                    <span className={c.passed ? 'text-ink/60' : 'text-red-600 font-medium'}>
+                      {c.label}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+              {initial?.status && (
+                <div className="mt-4 border-t border-border pt-3">
+                  <h3 className="font-semibold text-sm mb-2">현재 상태</h3>
+                  <span className="badge">{initial.status}</span>
+                </div>
+              )}
+            </section>
+          </div>
+        )}
+      </div>
+
+      {/* 메인(초안 인라인 편집 ↔ 본문 구조/JSON) + AI 제안 패널 */}
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_340px]">
         <div className="min-w-0 space-y-6">
           {previewOpen ? (
@@ -334,223 +566,12 @@ export function ToolForm({ initial, onSaved, startInPreview }: Props) {
           )}
         </div>
 
-        {/* 설정 레일 — 초안·구조 어느 모드에서든 메타·카드·발행을 바로 편집 */}
-        <aside className="space-y-4">
-          <section className="card p-5 space-y-3">
-            <h2 className="font-semibold text-sm">메타</h2>
-            <div>
-              <Label htmlFor="name" className="text-xs">이름 *</Label>
-              <Input id="name" className="mt-1" value={name} onChange={(e) => setName(e.target.value)} />
-            </div>
-            <div>
-              <Label htmlFor="slug" className="text-xs">슬러그 *</Label>
-              <Input id="slug" className="mt-1" value={slug} onChange={(e) => setSlug(e.target.value)} />
-            </div>
-            <div>
-              <Label htmlFor="category" className="text-xs">카테고리 *</Label>
-              <Select value={category} onValueChange={(v) => setCategory(v as typeof CATEGORIES[number])}>
-                <SelectTrigger id="category" className="mt-1">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {CATEGORIES.map((c) => (
-                    <SelectItem key={c} value={c}>{CATEGORY_LABELS[c]}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <Label htmlFor="pricing" className="text-xs">가격</Label>
-              <Select value={pricingTier} onValueChange={(v) => setPricingTier(v as typeof PRICING_TIERS[number])}>
-                <SelectTrigger id="pricing" className="mt-1">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {PRICING_TIERS.map((p) => (
-                    <SelectItem key={p} value={p}>{PRICING_LABELS[p]}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            {category === 'tool' && (
-              <div>
-                <Label htmlFor="subcategory" className="text-xs">도구 분류 (공개 /tools 탭) *</Label>
-                <Select
-                  value={subcategoryId}
-                  onValueChange={(v) => {
-                    if (v === '__new__') {
-                      setNewSubcatOpen(true);
-                      return; // 선택값은 유지한 채 입력 UI만 연다
-                    }
-                    setSubcategoryId(v);
-                  }}
-                >
-                  <SelectTrigger id="subcategory" className="mt-1">
-                    <SelectValue placeholder="기능 분류 선택" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {subcats.map((s) => (
-                      <SelectItem key={s.id} value={s.id}>{s.label}</SelectItem>
-                    ))}
-                    <SelectItem value="__new__">+ 직접 입력 (새 분류 추가)</SelectItem>
-                  </SelectContent>
-                </Select>
-                {newSubcatOpen && (
-                  <div className="mt-2 space-y-1.5">
-                    <div className="flex items-center gap-2">
-                      <Input
-                        value={newSubcatLabel}
-                        onChange={(e) => setNewSubcatLabel(e.target.value)}
-                        placeholder="새 분류 이름 (예: 영상 편집)"
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') {
-                            e.preventDefault();
-                            addSubcategory();
-                          }
-                        }}
-                      />
-                      <Button size="sm" variant="accent" disabled={newSubcatBusy || !newSubcatLabel.trim()} onClick={addSubcategory}>
-                        {newSubcatBusy ? '추가 중…' : '추가'}
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => {
-                          setNewSubcatOpen(false);
-                          setNewSubcatLabel('');
-                          setNewSubcatErr(null);
-                        }}
-                      >
-                        취소
-                      </Button>
-                    </div>
-                    {newSubcatErr && <p className="text-xs text-red-600">{newSubcatErr}</p>}
-                    <p className="text-xs text-amber-700">새 분류는 공유 마스터에 추가돼 본가 /tools 탭에도 생깁니다.</p>
-                  </div>
-                )}
-                <p className="mt-1 text-xs text-ink/50">
-                  공개 /tools 목록의 카테고리 탭. 미선택 시 목록에 안 보임.
-                </p>
-              </div>
-            )}
-            <div>
-              <Label htmlFor="description" className="text-xs">설명 (공개 디테일 페이지 본문)</Label>
-              <Textarea
-                id="description"
-                className="mt-1"
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                placeholder="이 자료가 어떤 상황에 유용한지, 어떻게 쓰는지 한두 문단."
-              />
-            </div>
-            <div>
-              <Label htmlFor="url" className="text-xs">외부 링크</Label>
-              <Input id="url" className="mt-1" value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://" />
-            </div>
-            <div>
-              <Label htmlFor="thumb" className="text-xs">썸네일 URL</Label>
-              <Input id="thumb" className="mt-1" value={thumbnailUrl} onChange={(e) => setThumbnailUrl(e.target.value)} />
-            </div>
-            <div>
-              <Label className="text-xs">직무 태그</Label>
-              <div className="mt-1.5 flex flex-wrap gap-1.5">
-                {JOB_TAGS.map((j) => (
-                  <button
-                    type="button"
-                    key={j}
-                    onClick={() => setJobTags((arr) => arr.includes(j) ? arr.filter((x) => x !== j) : [...arr, j])}
-                    className={cn('chip cursor-pointer', jobTags.includes(j) && 'chip-active')}
-                  >
-                    {JOB_LABELS[j]}
-                  </button>
-                ))}
-              </div>
-            </div>
-          </section>
-
-          <section className="card p-5 space-y-3">
-            <div>
-              <h2 className="font-semibold text-sm">카드 표시</h2>
-              <p className="text-xs text-ink/50 mt-0.5">공개 /tools 목록 카드에 노출되는 항목 (mockup tools.html 정합)</p>
-            </div>
-            <div>
-              <Label htmlFor="thumbEmoji" className="text-xs">썸네일 이모지</Label>
-              <Input
-                id="thumbEmoji"
-                className="mt-1"
-                value={thumbnailEmoji}
-                onChange={(e) => setThumbnailEmoji(e.target.value)}
-                placeholder="🔍 (썸네일 URL 없을 때 카드에 표시)"
-              />
-            </div>
-            <div>
-              <Label htmlFor="pricingLabel" className="text-xs">가격 라벨</Label>
-              <Input
-                id="pricingLabel"
-                className="mt-1"
-                value={pricingLabel}
-                onChange={(e) => setPricingLabel(e.target.value)}
-                placeholder="예: 무료 플랜 / 유료"
-              />
-            </div>
-            <div>
-              <Label htmlFor="proPricing" className="text-xs">Pro 가격 라벨 (선택)</Label>
-              <Input
-                id="proPricing"
-                className="mt-1"
-                value={proPricing}
-                onChange={(e) => setProPricing(e.target.value)}
-                placeholder='예: Pro $20/월 (무료 + Pro 둘 다 표시할 때)'
-              />
-            </div>
-            <div className="flex flex-col gap-2 pt-1">
-              <label className="flex items-center gap-2 text-sm cursor-pointer">
-                <input
-                  type="checkbox"
-                  className="h-4 w-4 accent-accent"
-                  checked={isPaid}
-                  onChange={(e) => setIsPaid(e.target.checked)}
-                />
-                유료 도구 <span className="text-xs text-ink/50">(체크 시 회색 태그)</span>
-              </label>
-              <label className="flex items-center gap-2 text-sm cursor-pointer">
-                <input
-                  type="checkbox"
-                  className="h-4 w-4 accent-accent"
-                  checked={hasReview}
-                  onChange={(e) => setHasReview(e.target.checked)}
-                />
-                사용기 있음 <span className="text-xs text-ink/50">(&ldquo;사용기 1편&rdquo; 배지)</span>
-              </label>
-            </div>
-          </section>
-
-          <section className="card p-5">
-            <h3 className="font-semibold text-sm mb-3">필수 항목</h3>
-            <ul className="space-y-1.5">
-              {checks.map((c) => (
-                <li key={c.id} className="flex items-start gap-2 text-xs">
-                  {c.passed ? (
-                    <CheckCircle2 className="h-3.5 w-3.5 text-green-600 mt-0.5 shrink-0" />
-                  ) : (
-                    <AlertCircle className="h-3.5 w-3.5 text-red-500 mt-0.5 shrink-0" />
-                  )}
-                  <span className={c.passed ? 'text-ink/60' : 'text-red-600 font-medium'}>
-                    {c.label}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          </section>
-
-          {initial?.status && (
-            <section className="card p-5">
-              <h3 className="font-semibold text-sm mb-2">현재 상태</h3>
-              <span className="badge">{initial.status}</span>
-            </section>
-          )}
+        {/* AI 제안 패널 — 지정 부분(선택/필드)에 수정 각도 → 후보 택1 */}
+        <aside>
+          <RefinePanel />
         </aside>
       </div>
     </div>
+    </RefineProvider>
   );
 }
