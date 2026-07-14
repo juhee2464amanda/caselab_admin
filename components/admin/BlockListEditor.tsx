@@ -1,7 +1,7 @@
 'use client';
 
 import { useRef, useState } from 'react';
-import { ChevronUp, ChevronDown, Trash2, Plus, Loader2, Upload } from 'lucide-react';
+import { ChevronUp, ChevronDown, ChevronLeft, ChevronRight, Trash2, Plus, Loader2, Upload } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
@@ -17,7 +17,7 @@ import type { Block } from '@/types/content';
  * 컨트롤드: value(Block[]) + onChange. 저장 검증은 호출측(TrackForm)에서.
  */
 
-export type AddType = 'text' | 'heading' | 'prompt' | 'checklist' | 'image';
+export type AddType = 'text' | 'heading' | 'prompt' | 'checklist' | 'image' | 'gallery' | 'bookmark';
 
 const ADD_BUTTONS: { type: AddType; label: string }[] = [
   { type: 'text', label: '문단' },
@@ -25,6 +25,8 @@ const ADD_BUTTONS: { type: AddType; label: string }[] = [
   { type: 'prompt', label: '프롬프트' },
   { type: 'checklist', label: '체크리스트' },
   { type: 'image', label: '이미지' },
+  { type: 'gallery', label: '갤러리' },
+  { type: 'bookmark', label: '북마크' },
 ];
 
 // 미리보기 삽입 메뉴(ContentPreview)에서도 재사용.
@@ -35,10 +37,12 @@ export function newBlock(type: AddType): Block {
     case 'prompt': return { type: 'prompt', label: '', prompt: '' };
     case 'checklist': return { type: 'checklist', title: '', items: [''] };
     case 'image': return { type: 'image', url: '', alt: '', caption: '' };
+    case 'gallery': return { type: 'gallery', images: [] };
+    case 'bookmark': return { type: 'bookmark', url: '' };
   }
 }
 
-const EDITABLE = new Set(['text', 'heading', 'prompt', 'checklist', 'image']);
+const EDITABLE = new Set(['text', 'heading', 'prompt', 'checklist', 'image', 'gallery', 'bookmark']);
 
 export function BlockListEditor({
   value,
@@ -99,7 +103,7 @@ export function BlockListEditor({
 }
 
 const BLOCK_LABEL: Record<string, string> = {
-  text: '문단', heading: '소제목', prompt: '프롬프트', checklist: '체크리스트', image: '이미지',
+  text: '문단', heading: '소제목', prompt: '프롬프트', checklist: '체크리스트', image: '이미지', gallery: '갤러리', bookmark: '북마크',
 };
 
 function BlockFields({ block, onChange }: { block: Block; onChange: (b: Block) => void }) {
@@ -165,7 +169,25 @@ function BlockFields({ block, onChange }: { block: Block; onChange: (b: Block) =
     return <ImageBlockField block={block} onChange={onChange} />;
   }
 
+  if (block.type === 'gallery') {
+    return <GalleryField block={block} onChange={onChange} />;
+  }
+
+  if (block.type === 'bookmark') {
+    return <BookmarkField block={block} onChange={onChange} />;
+  }
+
   return null;
+}
+
+// ── 이미지 업로드 공통 헬퍼(단일 파일 → 공개 URL) ────────────────
+async function uploadImageFile(file: File): Promise<string> {
+  const fd = new FormData();
+  fd.append('file', file);
+  const res = await fetch('/api/admin/upload-image', { method: 'POST', body: fd });
+  const json = (await res.json()) as { url?: string; error?: string };
+  if (!res.ok || !json.url) throw new Error(json.error ?? '업로드 실패');
+  return json.url;
 }
 
 // 이미지 블록 편집 — 업로드(클릭)·끌어놓기·클립보드 붙여넣기(⌘V)·URL 직접 입력 모두 지원.
@@ -282,6 +304,179 @@ export function ImageBlockField({
       <Input value={block.caption ?? ''} placeholder="캡션 (선택)" onChange={(e) => onChange({ ...block, caption: e.target.value })} />
       <Input value={block.alt ?? ''} placeholder="대체 텍스트 alt (접근성, 선택)" onChange={(e) => onChange({ ...block, alt: e.target.value })} />
       {err && <p className="text-xs text-red-600">{err}</p>}
+    </div>
+  );
+}
+
+// 갤러리(카드뉴스) 편집 — 여러 이미지 한 번에 업로드·끌어놓기·붙여넣기, 순서 변경(←→), 개별 캡션·삭제.
+// ContentPreview 인라인 갤러리 편집에서도 재사용.
+export function GalleryField({
+  block,
+  onChange,
+}: {
+  block: Extract<Block, { type: 'gallery' }>;
+  onChange: (b: Block) => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [dragOver, setDragOver] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
+  const imgs = block.images;
+
+  const addFiles = async (files: File[]) => {
+    const pics = files.filter((f) => f.type.startsWith('image/'));
+    if (!pics.length) return;
+    setBusy(true);
+    setErr(null);
+    try {
+      const urls = await Promise.all(pics.map(uploadImageFile));
+      onChange({ ...block, images: [...imgs, ...urls.map((url) => ({ url }))] });
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  const update = (i: number, patch: Partial<{ url: string; caption: string }>) =>
+    onChange({ ...block, images: imgs.map((im, k) => (k === i ? { ...im, ...patch } : im)) });
+  const remove = (i: number) => onChange({ ...block, images: imgs.filter((_, k) => k !== i) });
+  const move = (i: number, dir: -1 | 1) => {
+    const j = i + dir;
+    if (j < 0 || j >= imgs.length) return;
+    const next = [...imgs];
+    [next[i], next[j]] = [next[j], next[i]];
+    onChange({ ...block, images: next });
+  };
+
+  return (
+    <div
+      className="space-y-2"
+      onPaste={(e) => {
+        const fs = Array.from(e.clipboardData.items).map((it) => it.getAsFile()).filter((f): f is File => !!f);
+        if (fs.some((f) => f.type.startsWith('image/'))) {
+          e.preventDefault();
+          addFiles(fs);
+        }
+      }}
+    >
+      {imgs.length > 0 && (
+        <div className="grid grid-cols-3 gap-2">
+          {imgs.map((im, i) => (
+            <div key={i} className="group/g relative overflow-hidden rounded-md border border-border">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={im.url} alt="" className="h-24 w-full object-cover" />
+              <div className="absolute right-1 top-1 hidden gap-0.5 rounded-full bg-white/90 px-1 py-0.5 shadow-sm group-hover/g:flex">
+                <button type="button" onClick={() => move(i, -1)} disabled={i === 0} className="p-0.5 text-ink/60 disabled:opacity-25" title="앞으로"><ChevronLeft className="h-3 w-3" /></button>
+                <button type="button" onClick={() => move(i, 1)} disabled={i === imgs.length - 1} className="p-0.5 text-ink/60 disabled:opacity-25" title="뒤로"><ChevronRight className="h-3 w-3" /></button>
+                <button type="button" onClick={() => remove(i)} className="p-0.5 text-red-500" title="삭제"><Trash2 className="h-3 w-3" /></button>
+              </div>
+              <Input value={im.caption ?? ''} placeholder="캡션" onChange={(e) => update(i, { caption: e.target.value })} className="rounded-none border-0 border-t border-border text-[11px]" />
+            </div>
+          ))}
+        </div>
+      )}
+      <div
+        onClick={() => fileRef.current?.click()}
+        onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+        onDragLeave={() => setDragOver(false)}
+        onDrop={(e) => { e.preventDefault(); setDragOver(false); addFiles(Array.from(e.dataTransfer.files)); }}
+        className={cn(
+          'flex cursor-pointer flex-col items-center justify-center gap-1 rounded-lg border border-dashed px-4 py-6 text-center text-xs transition-colors',
+          dragOver ? 'border-accent bg-accent/5' : 'border-border hover:border-ink/30',
+        )}
+      >
+        {busy ? (
+          <><Loader2 className="h-5 w-5 animate-spin text-ink/40" /> 업로드 중…</>
+        ) : (
+          <>
+            <Upload className="h-5 w-5 text-ink/40" />
+            <span className="text-ink/60">이미지 여러 개 선택·끌어놓기·붙여넣기(⌘V)</span>
+            <span className="text-ink/40">2장 이상이면 좌우로 넘기는 카드뉴스로 보여요</span>
+          </>
+        )}
+      </div>
+      <input
+        ref={fileRef}
+        type="file"
+        accept="image/png,image/jpeg,image/webp,image/gif"
+        multiple
+        className="hidden"
+        onChange={(e) => addFiles(Array.from(e.target.files ?? []))}
+      />
+      {err && <p className="text-xs text-red-600">{err}</p>}
+    </div>
+  );
+}
+
+// 북마크 편집 — 링크를 붙이면 OG 메타(제목·설명·썸네일)를 자동으로 가져와 카드로. 필드는 수정 가능.
+export function BookmarkField({
+  block,
+  onChange,
+}: {
+  block: Extract<Block, { type: 'bookmark' }>;
+  onChange: (b: Block) => void;
+}) {
+  const [loading, setLoading] = useState(false);
+  const [note, setNote] = useState<string | null>(null);
+
+  const fetchMeta = async (url: string) => {
+    const u = url.trim();
+    if (!/^https?:\/\//.test(u)) return;
+    setLoading(true);
+    setNote(null);
+    try {
+      const res = await fetch('/api/admin/fetch-og', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ url: u }),
+      });
+      const j = (await res.json()) as { title?: string; description?: string; image?: string; favicon?: string; siteName?: string; error?: string };
+      if (!res.ok) throw new Error(j.error ?? '메타를 못 가져왔어요');
+      onChange({ ...block, url: u, title: j.title, description: j.description, image: j.image, favicon: j.favicon, siteName: j.siteName });
+      if (!j.title) setNote('메타가 비어있어요 — 제목·설명을 직접 입력해도 돼요.');
+    } catch (e) {
+      onChange({ ...block, url: u });
+      setNote(`${(e as Error).message} — 제목·설명을 직접 입력해도 돼요.`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const hasCard = !!(block.title || block.description || block.image);
+
+  return (
+    <div className="space-y-2">
+      <div className="flex gap-2">
+        <Input
+          value={block.url}
+          placeholder="https://… 링크 붙여넣기 → 자동으로 카드 생성"
+          onChange={(e) => onChange({ ...block, url: e.target.value })}
+          onBlur={(e) => { if (e.target.value.trim() && !hasCard) fetchMeta(e.target.value); }}
+          onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); fetchMeta((e.target as HTMLInputElement).value); } }}
+        />
+        <button
+          type="button"
+          onClick={() => fetchMeta(block.url)}
+          disabled={loading || !block.url.trim()}
+          className="shrink-0 rounded-md border border-border px-2.5 text-xs hover:bg-muted disabled:opacity-40"
+        >
+          {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : '메타 가져오기'}
+        </button>
+      </div>
+      {hasCard && (
+        <div className="flex overflow-hidden rounded-md border border-border">
+          <div className="min-w-0 flex-1 space-y-1 p-2.5">
+            <Input value={block.title ?? ''} placeholder="제목" onChange={(e) => onChange({ ...block, title: e.target.value })} className="h-7 border-0 px-0 text-sm font-medium" />
+            <Input value={block.description ?? ''} placeholder="설명" onChange={(e) => onChange({ ...block, description: e.target.value })} className="h-6 border-0 px-0 text-xs" />
+            {block.siteName && <div className="text-[11px] text-ink/45">{block.siteName}</div>}
+          </div>
+          {block.image && (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={block.image} alt="" className="w-24 shrink-0 object-cover" />
+          )}
+        </div>
+      )}
+      {note && <p className="text-xs text-amber-600">{note}</p>}
     </div>
   );
 }

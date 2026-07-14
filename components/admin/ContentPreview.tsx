@@ -5,7 +5,8 @@ import { ArrowUpRight, Copy, Check, User, Bot, Plus, Trash2, ChevronUp, ChevronD
 import type { Block, ContentBody, JobTag, PainPoint, StepCard, TakingPoint } from '@/types/content';
 import { JOB_LABELS } from '@/types/content';
 import { Editable } from '@/components/admin/Editable';
-import { ImageBlockField, newBlock, type AddType } from '@/components/admin/BlockListEditor';
+import { ImageBlockField, GalleryField, BookmarkField, newBlock, type AddType } from '@/components/admin/BlockListEditor';
+import { ContentGallery } from '@/components/admin/ContentGallery';
 import { cn } from '@/lib/utils';
 
 // 콘텐츠 미리보기 — 본가 cases/[slug]·trends/[slug] 상세 마크업 이식(2026-07-11 스냅샷).
@@ -254,6 +255,44 @@ function renderBlock(block: Block, key: string | number, onBlock?: (nb: Block) =
           {block.caption && <figcaption className="mt-2 text-center text-[13px] text-ink/55">{block.caption}</figcaption>}
         </figure>
       );
+    case 'gallery':
+      // 편집: 카드뉴스 미리보기 + 관리(추가·순서·삭제). 읽기: 캐러셀.
+      if (onBlock) {
+        return (
+          <div key={key} className="my-4 space-y-2">
+            {block.images.length > 0 && <ContentGallery images={block.images} />}
+            <GalleryField block={block} onChange={onBlock} />
+          </div>
+        );
+      }
+      return <ContentGallery key={key} images={block.images} />;
+    case 'bookmark':
+      if (onBlock) {
+        return (
+          <div key={key} className="my-4">
+            <BookmarkField block={block} onChange={onBlock} />
+          </div>
+        );
+      }
+      return (
+        <a
+          key={key}
+          href={block.url}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="my-4 flex overflow-hidden rounded-lg border border-border no-underline transition-colors hover:bg-muted/40"
+        >
+          <div className="min-w-0 flex-1 p-3.5">
+            <div className="line-clamp-1 font-medium text-ink">{block.title || block.url}</div>
+            {block.description && <div className="mt-1 line-clamp-2 text-xs text-ink/60">{block.description}</div>}
+            {block.siteName && <div className="mt-2 text-[11px] text-ink/45">{block.siteName}</div>}
+          </div>
+          {block.image && (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={block.image} alt="" className="w-28 shrink-0 object-cover sm:w-40" />
+          )}
+        </a>
+      );
     default:
       return (
         <p key={key} className="my-3 rounded-md border border-dashed border-border px-3 py-2 text-xs text-ink/40">
@@ -266,6 +305,8 @@ function renderBlock(block: Block, key: string | number, onBlock?: (nb: Block) =
 // 미리보기 삽입 메뉴 — 노션식 hover "+". 블록 사이/끝에서 이미지·문단·소제목·프롬프트·체크리스트 삽입.
 const INSERT_ITEMS: { type: AddType; label: string }[] = [
   { type: 'image', label: '🖼  이미지' },
+  { type: 'gallery', label: '🎞  갤러리(카드뉴스)' },
+  { type: 'bookmark', label: '🔖  북마크' },
   { type: 'text', label: '¶  문단' },
   { type: 'heading', label: 'H  소제목' },
   { type: 'prompt', label: '</>  프롬프트' },
