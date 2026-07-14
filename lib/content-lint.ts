@@ -2,7 +2,8 @@ import type { Block, ContentBody, ContentRow } from '@/types/content';
 
 export interface LintResult {
   passed: boolean;
-  checks: { id: string; label: string; passed: boolean; detail?: string }[];
+  // blocking !== false 인 체크만 발행을 막는다. blocking:false 는 경고(정보)로만 노출.
+  checks: { id: string; label: string; passed: boolean; detail?: string; blocking?: boolean }[];
 }
 
 // 콘텐츠 본문에 허용되는 외부 도메인.
@@ -68,12 +69,7 @@ export function lintContent(
     passed: (row.job_tags?.length ?? 0) >= 1,
   });
 
-  // 3. 페르소나 커버리지
-  checks.push({
-    id: 'persona-coverage',
-    label: '페르소나 커버리지 ≥ 1명',
-    passed: (row.persona_coverage?.length ?? 0) >= 1,
-  });
+  // (페르소나 커버리지 게이트 제거 — 본가에서 미노출·미사용인 죽은 필드라 발행을 막지 않는다)
 
   // 4. 본문 내용 ≥ 1섹션 (트랙 공통) — D70 우선, legacy 폴백.
   //    구조 보장이 사라진 D70에서 "빈 본문 발행"을 막는 최소 게이트.
@@ -159,10 +155,12 @@ export function lintContent(
   });
   checks.push({
     id: 'no-ads',
-    label: violations.length === 0 ? '외부 광고 링크 0' : `외부 광고 링크 발견 (${violations.length})`,
+    label: violations.length === 0 ? '외부 링크 확인' : `화이트리스트 밖 외부 링크 (${violations.length}) — 확인 권장`,
     passed: violations.length === 0,
     detail: violations.length > 0 ? violations.join(', ') : undefined,
+    blocking: false, // 경고만. 신뢰된 운영자가 직접 큐레이션하므로 발행을 막지 않는다.
   });
 
-  return { passed: checks.every((c) => c.passed), checks };
+  // blocking !== false 인 체크만 발행 가능 여부를 결정.
+  return { passed: checks.every((c) => c.blocking === false || c.passed), checks };
 }

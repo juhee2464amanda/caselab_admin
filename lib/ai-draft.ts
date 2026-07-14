@@ -1,5 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk';
-import { ContentBodySchema, type ContentBody } from '@/types/content';
+import { ContentBodySchema, type ContentBody, JOB_TAGS, JOB_LABELS, type JobTag } from '@/types/content';
 import { runClaudeSubscription, extractJson } from '@/lib/claude-cli';
 import { BUCKETS, bucketProfile, isSeedBucket, type SeedBucket } from '@/lib/seed-curation';
 import { lintToolBody } from '@/lib/tool-body';
@@ -205,6 +205,54 @@ export interface DraftInput {
   bucket?: string;
 }
 
+/**
+ * 모델이 종종 문자열 값 안에 이스케이프 안 된 줄바꿈/제어문자·내부 따옴표를 넣어 JSON.parse가
+ * "Unterminated string"·"Bad control character"로 깨진다. 문자열 리터럴 내부만 정리한다:
+ * - 제어문자(\n \r \t 등)는 이스케이프
+ * - 따옴표는 "다음 비공백이 구조문자(, } ] :)면 종료, 아니면 내부 따옴표로 보고 이스케이프" 휴리스틱
+ */
+function sanitizeModelJson(s: string): string {
+  let out = '';
+  let inStr = false;
+  let esc = false;
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i];
+    if (!inStr) {
+      if (c === '"') inStr = true;
+      out += c;
+      continue;
+    }
+    if (esc) { out += c; esc = false; continue; }
+    if (c === '\\') { out += c; esc = true; continue; }
+    if (c === '"') {
+      let j = i + 1;
+      while (j < s.length && (s[j] === ' ' || s[j] === '\t' || s[j] === '\n' || s[j] === '\r')) j++;
+      const nxt = s[j];
+      if (nxt === undefined || nxt === ',' || nxt === '}' || nxt === ']' || nxt === ':') {
+        out += c; inStr = false; // 진짜 종료 따옴표
+      } else {
+        out += '\\"'; // 내부 따옴표 → 이스케이프
+      }
+      continue;
+    }
+    if (c === '\n') { out += '\\n'; continue; }
+    if (c === '\r') { out += '\\r'; continue; }
+    if (c === '\t') { out += '\\t'; continue; }
+    const code = c.charCodeAt(0);
+    if (code < 0x20) { out += '\\u' + code.toString(16).padStart(4, '0'); continue; }
+    out += c;
+  }
+  return out;
+}
+
+/** extractJson 후 JSON.parse. 실패하면 문자열 내 제어문자·내부 따옴표 정리로 1회 더 시도. 그래도 실패면 null. */
+function parseModelJson(raw: string): unknown | null {
+  const extracted = extractJson(raw);
+  try { return JSON.parse(extracted); } catch { /* noop */ }
+  try { return JSON.parse(sanitizeModelJson(extracted)); } catch { /* noop */ }
+  return null;
+}
+
 /** 케이스/트렌드 초안 생성. ContentBodySchema 검증 + 실패 시 1회 repair 패스. */
 export async function generateDraft(input: DraftInput): Promise<ContentBody> {
   const systemPrompt = `${input.track === 'case' ? CASE_SYSTEM : TREND_SYSTEM}\n\n${RESEARCH_RULE}`;
@@ -216,13 +264,24 @@ export async function generateDraft(input: DraftInput): Promise<ContentBody> {
     `\n\n위 주제로 초안 JSON만 반환하세요.`;
 
   let raw = await callModel(systemPrompt, userPrompt);
-  let result = ContentBodySchema.safeParse(JSON.parse(extractJson(raw)));
+  let obj = parseModelJson(raw);
 
+  // JSON 자체가 깨진 경우(문자열 내 미이스케이프 줄바꿈 등) → 유효 JSON만 다시 요청
+  if (obj == null) {
+    raw = await callModel(
+      systemPrompt,
+      `${userPrompt}\n\n[중요] 직전 출력이 유효한 JSON이 아니었습니다. 문자열 값 안의 줄바꿈은 반드시 \\n으로 이스케이프하고, 설명·코드펜스 없이 JSON 객체 하나만 반환하세요.`
+    );
+    obj = parseModelJson(raw);
+  }
+  if (obj == null) throw new Error('AI 응답을 JSON으로 읽지 못했어요(파싱 실패). 다시 생성해 주세요.');
+
+  let result = ContentBodySchema.safeParse(obj);
   if (!result.success) {
     // repair: 스키마에 정확히 맞는 JSON만 다시 받기
     const repairPrompt = `${userPrompt}\n\n[중요] 직전 출력이 스키마 검증에 실패했습니다. 설명 없이 스키마에 정확히 일치하는 JSON 객체 하나만 반환하세요.`;
-    raw = await callModel(systemPrompt, repairPrompt);
-    result = ContentBodySchema.safeParse(JSON.parse(extractJson(raw)));
+    const repaired = parseModelJson(await callModel(systemPrompt, repairPrompt));
+    if (repaired != null) result = ContentBodySchema.safeParse(repaired);
   }
 
   if (!result.success) {
@@ -264,14 +323,16 @@ export async function generateToolDraft(input: LibraryDraftInput): Promise<ToolD
   const raw = await callModel(systemPrompt, userPrompt);
 
   try {
-    let parsed = JSON.parse(extractJson(raw)) as Record<string, unknown>;
+    const parsedTop = parseModelJson(raw);
+    if (parsedTop == null) throw new Error('JSON 파싱 실패');
+    let parsed = parsedTop as Record<string, unknown>;
     let body = (parsed.body && typeof parsed.body === 'object' ? parsed.body : {}) as Record<string, unknown>;
 
     const bodyIssue = lintToolBody(body);
     if (bodyIssue) {
       // repair: 본가 상세가 렌더 못 하는 body → 계약에 맞는 JSON만 다시 받기 (generateDraft와 동일 패턴)
       const repairPrompt = `${userPrompt}\n\n[중요] 직전 출력의 body가 상세페이지 스키마 검증에 실패했습니다(${bodyIssue}). 시스템 프롬프트의 body 스키마에 정확히 일치하는 JSON 객체 하나만 다시 반환하세요.`;
-      const repaired = JSON.parse(extractJson(await callModel(systemPrompt, repairPrompt))) as Record<string, unknown>;
+      const repaired = (parseModelJson(await callModel(systemPrompt, repairPrompt)) ?? {}) as Record<string, unknown>;
       const repairedBody = (repaired.body && typeof repaired.body === 'object' ? repaired.body : {}) as Record<string, unknown>;
       if (!lintToolBody(repairedBody)) {
         parsed = repaired;
@@ -313,7 +374,9 @@ export async function generatePromptDraft(input: LibraryDraftInput): Promise<Too
   const raw = await callModel(PROMPT_SYSTEM, userPrompt);
 
   try {
-    const parsed = JSON.parse(extractJson(raw)) as Record<string, unknown>;
+    const parsedTop = parseModelJson(raw);
+    if (parsedTop == null) throw new Error('JSON 파싱 실패');
+    const parsed = parsedTop as Record<string, unknown>;
     return {
       name: typeof parsed.name === 'string' ? parsed.name : input.title,
       description: typeof parsed.description === 'string' ? parsed.description : input.title,
@@ -351,7 +414,9 @@ export async function generateGuideDraft(input: LibraryDraftInput): Promise<Guid
   const raw = await callModel(`${GUIDE_SYSTEM}\n\n${RESEARCH_RULE}`, userPrompt);
 
   try {
-    const parsed = JSON.parse(extractJson(raw)) as Record<string, unknown>;
+    const parsedTop = parseModelJson(raw);
+    if (parsedTop == null) throw new Error('JSON 파싱 실패');
+    const parsed = parsedTop as Record<string, unknown>;
     return {
       name: typeof parsed.name === 'string' ? parsed.name : input.title,
       description: typeof parsed.description === 'string' ? parsed.description : '',
@@ -405,7 +470,7 @@ export async function generateOutline(input: OutlineInput): Promise<{ title: str
   const raw = await callModel(OUTLINE_SYSTEM, userPrompt);
 
   try {
-    const parsed = JSON.parse(extractJson(raw)) as Record<string, unknown>;
+    const parsed = (parseModelJson(raw) ?? {}) as Record<string, unknown>;
     const outline = Array.isArray(parsed.outline)
       ? parsed.outline.filter((x): x is string => typeof x === 'string' && x.trim().length > 0)
       : [];
@@ -455,7 +520,7 @@ ${edge.sections.map((s) => `- ${s.name}: ${s.need}`).join('\n')}
   const raw = await callModel(system, userPrompt, { allowedTools: [], model: 'sonnet', timeoutMs: 90_000 });
 
   try {
-    const parsed = JSON.parse(extractJson(raw)) as Record<string, unknown>;
+    const parsed = (parseModelJson(raw) ?? {}) as Record<string, unknown>;
     const plan = Array.isArray(parsed.plan)
       ? parsed.plan
           .map((p) => {
@@ -478,6 +543,53 @@ ${edge.sections.map((s) => `- ${s.name}: ${s.need}`).join('\n')}
   } catch {
     // 파싱 실패 → 빈 제안(운영자가 직접 작성하거나 제안 없이 생성)
     return { angle: '', plan: [], missing: [] };
+  }
+}
+
+// ─────────────── 발행 메타 자동 제안(MD 직행 레인) ───────────────
+
+export interface ContentMeta {
+  /** 본가 필터·뱃지에 쓰이는 직무 태그(JOB_TAGS 키). 1~2개. */
+  jobTags: JobTag[];
+  /** 카드·상단 한 줄 요약 */
+  summary: string;
+  /** 본문 분량으로 계산한 읽기 시간(분) */
+  readMin: number;
+  /** 적용 시간(분) */
+  applyMin: number;
+}
+
+/** 본문 분량으로 읽기·적용 시간을 추정(결정적, AI 불필요). JSON 길이를 프록시로 사용. */
+function estimateReadingTime(body: ContentBody): { readMin: number; applyMin: number } {
+  const chars = JSON.stringify(body).length;
+  const readMin = Math.min(20, Math.max(2, Math.round(chars / 900)));
+  const applyMin = Math.min(40, Math.max(readMin + 2, Math.round(readMin * 1.6)));
+  return { readMin, applyMin };
+}
+
+/**
+ * MD 직행 생성 직후 발행 메타를 자동 채운다: 시간은 분량으로 계산, 직무 태그·요약은 sonnet로 분류(웹툴X, 빠름).
+ * 실패해도 발행이 막히지 않게 안전 기본값(기획 태그)으로 폴백한다.
+ */
+export async function suggestContentMeta(input: { title: string; markdown: string; body: ContentBody }): Promise<ContentMeta> {
+  const { readMin, applyMin } = estimateReadingTime(input.body);
+  const tagList = JOB_TAGS.map((t) => `${t}(${JOB_LABELS[t]})`).join(', ');
+  const system = `당신은 케이스랩(Caselab)의 콘텐츠 에디터입니다. 발행에 필요한 메타데이터만 뽑습니다.
+- jobTags: 이 콘텐츠가 실무에 도움 되는 직무를 아래 목록의 "영문 키"로 1~2개 선택. 반드시 이 키만 사용(다른 문자열 금지).
+  목록: ${tagList}
+- summary: 콘텐츠 카드·상단에 노출될 한 줄 요약(한국어, 40자 내외, 이모지 금지, 담백하게).
+응답은 아래 JSON 객체 하나만 반환(설명 없이): {"jobTags":["planning"],"summary":"…"}`;
+  const userPrompt = `제목: ${input.title}\n\n[문서]\n${input.markdown.slice(0, 12000)}\n\n위 콘텐츠의 메타 JSON만 반환하세요.`;
+  try {
+    const raw = await callModel(system, userPrompt, { allowedTools: [], model: 'sonnet', timeoutMs: 60_000 });
+    const parsed = (parseModelJson(raw) ?? {}) as Record<string, unknown>;
+    const jobTags = Array.isArray(parsed.jobTags)
+      ? (parsed.jobTags.filter((x): x is JobTag => typeof x === 'string' && (JOB_TAGS as readonly string[]).includes(x)))
+      : [];
+    const summary = typeof parsed.summary === 'string' ? parsed.summary.trim().slice(0, 120) : '';
+    return { jobTags: jobTags.length ? jobTags.slice(0, 2) : ['planning'], summary, readMin, applyMin };
+  } catch {
+    return { jobTags: ['planning'], summary: '', readMin, applyMin };
   }
 }
 
@@ -544,7 +656,7 @@ export async function scoreSeed(input: { title: string; rawText?: string; source
   const raw = await callModel(SCORE_SYSTEM, userPrompt, { allowedTools: [], model: 'sonnet', timeoutMs: 60_000 });
 
   try {
-    const parsed = JSON.parse(extractJson(raw)) as Record<string, unknown>;
+    const parsed = (parseModelJson(raw) ?? {}) as Record<string, unknown>;
     const bucket = isSeedBucket(parsed.bucket) ? parsed.bucket : 'etc';
     const n = typeof parsed.score === 'number' ? Math.round(parsed.score) : Number(parsed.score);
     const score = Number.isFinite(n) ? Math.min(100, Math.max(0, n)) : 0;

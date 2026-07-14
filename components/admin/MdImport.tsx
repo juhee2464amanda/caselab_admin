@@ -261,9 +261,26 @@ export function MdImport() {
       </header>
 
       {!LOCAL_AI && (
-        <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
-          초안 생성은 로컬 작업장(Claude CLI)에서만 동작해요. 여기서는 미리보기만 가능합니다.
-        </p>
+        <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-4 text-sm text-amber-800">
+          <p className="font-semibold flex items-center gap-1.5">
+            <span aria-hidden>🖥️</span> 초안 생성은 내 컴퓨터에서 열어야 동작해요
+          </p>
+          <p className="mt-1.5 text-[13px] leading-relaxed text-amber-700">
+            무료(구독 Claude)로 돌리기 위해 초안 생성은 로컬에서만 작동합니다. 아래 버튼을 누르면
+            내 컴퓨터에서 스튜디오가 켜지고 잠시 뒤 이 화면이 로컬로 다시 열려요. 그때 <b>초안 생성</b>{' '}
+            버튼이 활성화됩니다.
+          </p>
+          <a
+            href="caselab-studio://open"
+            className="mt-3 inline-flex items-center gap-2 rounded-lg bg-amber-600 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-700"
+          >
+            ▶ 내 컴퓨터에서 스튜디오 열기
+          </a>
+          <p className="mt-2 text-[12px] text-amber-600">
+            처음 누르면 “CaselabStudio 열기를 허용하시겠습니까?”가 뜨는데 <b>허용</b>을 누르세요.
+            버튼이 안 되면 터미널에서 <code className="rounded bg-amber-100 px-1">npm run studio</code>.
+          </p>
+        </div>
       )}
       {error && <p className="text-xs text-red-600">{error}</p>}
 
