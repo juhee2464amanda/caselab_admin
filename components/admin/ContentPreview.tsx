@@ -1,10 +1,12 @@
 'use client';
 
 import { useState } from 'react';
-import { ArrowUpRight, Copy, Check, User, Bot } from 'lucide-react';
+import { ArrowUpRight, Copy, Check, User, Bot, Plus, Trash2 } from 'lucide-react';
 import type { Block, ContentBody, JobTag, PainPoint, StepCard, TakingPoint } from '@/types/content';
 import { JOB_LABELS } from '@/types/content';
 import { Editable } from '@/components/admin/Editable';
+import { ImageBlockField, newBlock, type AddType } from '@/components/admin/BlockListEditor';
+import { cn } from '@/lib/utils';
 
 // 콘텐츠 미리보기 — 본가 cases/[slug]·trends/[slug] 상세 마크업 이식(2026-07-11 스냅샷).
 // onPatch/onBody를 넘기면 "편집 표면"이 된다: 텍스트 클릭 → 인라인 수정 → 폼 상태로 커밋.
@@ -179,6 +181,22 @@ function renderBlock(block: Block, key: string | number, onBlock?: (nb: Block) =
           </ul>
         </div>
       );
+    case 'image':
+      // 편집 모드: 업로드/드래그/붙여넣기 UI. 읽기: figure+img.
+      if (onBlock) {
+        return (
+          <div key={key} className="my-4">
+            <ImageBlockField block={block} onChange={onBlock} />
+          </div>
+        );
+      }
+      return (
+        <figure key={key} className="my-6">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={block.url} alt={block.alt ?? ''} className="w-full h-auto rounded-lg" loading="lazy" />
+          {block.caption && <figcaption className="mt-2 text-center text-[13px] text-ink/55">{block.caption}</figcaption>}
+        </figure>
+      );
     default:
       return (
         <p key={key} className="my-3 rounded-md border border-dashed border-border px-3 py-2 text-xs text-ink/40">
@@ -188,10 +206,82 @@ function renderBlock(block: Block, key: string | number, onBlock?: (nb: Block) =
   }
 }
 
-const renderBlocks = (blocks: Block[] | undefined, prefix: string, onBlocks?: (next: Block[]) => void) =>
-  (blocks ?? []).map((b, i) =>
-    renderBlock(b, `${prefix}-${i}`, onBlocks && ((nb) => onBlocks(upd(blocks ?? [], i, nb)))),
+// 미리보기 삽입 메뉴 — 노션식 hover "+". 블록 사이/끝에서 이미지·문단·소제목·프롬프트·체크리스트 삽입.
+const INSERT_ITEMS: { type: AddType; label: string }[] = [
+  { type: 'image', label: '🖼  이미지' },
+  { type: 'text', label: '¶  문단' },
+  { type: 'heading', label: 'H  소제목' },
+  { type: 'prompt', label: '</>  프롬프트' },
+  { type: 'checklist', label: '☑  체크리스트' },
+];
+
+function InsertBar({ onInsert }: { onInsert: (b: Block) => void }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="group/ins relative flex h-7 items-center justify-center">
+      {/* 은은한 점선 — 항상 보이고 hover 시 진해짐 */}
+      <div className="pointer-events-none absolute inset-x-0 top-1/2 -translate-y-1/2 border-t border-dashed border-accent/20 group-hover/ins:border-accent/40 transition-colors" />
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        title="여기에 블록 삽입"
+        className={cn(
+          'relative z-10 flex items-center gap-1 rounded-full border border-accent/40 bg-white px-2.5 py-1 text-[11px] font-medium text-accent shadow-sm transition-all',
+          open ? 'opacity-100' : 'opacity-60 group-hover/ins:opacity-100',
+        )}
+      >
+        <Plus className="h-3 w-3" /> 삽입
+      </button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-20" onClick={() => setOpen(false)} />
+          <div className="absolute top-8 z-30 flex flex-col overflow-hidden rounded-lg border border-border bg-white py-1 shadow-lg">
+            {INSERT_ITEMS.map((it) => (
+              <button
+                key={it.type}
+                type="button"
+                onClick={() => {
+                  onInsert(newBlock(it.type));
+                  setOpen(false);
+                }}
+                className="whitespace-nowrap px-4 py-1.5 text-left text-sm hover:bg-muted"
+              >
+                {it.label}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
   );
+}
+
+// 읽기: 블록만 렌더. 편집(onBlocks 있음): 블록 사이/끝에 삽입바 + 블록별 삭제 버튼.
+function renderBlocks(blocks: Block[] | undefined, prefix: string, onBlocks?: (next: Block[]) => void) {
+  const list = blocks ?? [];
+  if (!onBlocks) return list.map((b, i) => renderBlock(b, `${prefix}-${i}`));
+  const insertAt = (idx: number, b: Block) => onBlocks([...list.slice(0, idx), b, ...list.slice(idx)]);
+  const removeAt = (idx: number) => onBlocks(list.filter((_, k) => k !== idx));
+  const nodes: JSX.Element[] = [];
+  list.forEach((b, i) => {
+    nodes.push(<InsertBar key={`${prefix}-ins-${i}`} onInsert={(nb) => insertAt(i, nb)} />);
+    nodes.push(
+      <div key={`${prefix}-row-${i}`} className="group/blk relative">
+        <button
+          type="button"
+          onClick={() => removeAt(i)}
+          title="이 블록 삭제"
+          className="absolute -right-1 -top-1 z-10 hidden h-5 w-5 items-center justify-center rounded-full border border-border bg-white text-red-500 shadow-sm hover:bg-red-50 group-hover/blk:flex"
+        >
+          <Trash2 className="h-3 w-3" />
+        </button>
+        {renderBlock(b, `${prefix}-${i}`, (nb) => onBlocks(upd(list, i, nb)))}
+      </div>,
+    );
+  });
+  nodes.push(<InsertBar key={`${prefix}-ins-end`} onInsert={(nb) => insertAt(list.length, nb)} />);
+  return nodes;
+}
 
 function PreviewHeader({ track, title, summary, jobTags, readMin, applyMin, onPatch }: ContentPreviewProps) {
   const primaryJob = jobTags?.[0];
