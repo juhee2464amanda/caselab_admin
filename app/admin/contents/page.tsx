@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { createSupabaseServerClient, isSupabaseConfigured } from '@/lib/supabase/server';
 import { Button } from '@/components/ui/button';
 import { CategoryQuickEdit } from '@/components/admin/CategoryQuickEdit';
+import { ContentRowActions } from '@/components/admin/ContentRowActions';
 import { formatDate } from '@/lib/utils';
 
 // ─────────────── 타입 정의 ───────────────
@@ -21,6 +22,7 @@ type Row = {
   curated: boolean;
   updated_at: string;
   editHref: string;
+  table: 'contents' | 'tools';
 };
 
 const TYPE_META: { key: ContentType; label: string }[] = [
@@ -39,6 +41,7 @@ const STATUS_TABS: { key: string; label: string }[] = [
   { key: '', label: '전체' },
   { key: 'published', label: '발행' },
   { key: 'draft', label: '초안' },
+  { key: 'archived', label: '보관' },
 ];
 
 // 다른 파라미터를 보존하며 querystring 합성
@@ -73,9 +76,13 @@ export default async function AdminContents({
     .from('tools')
     .select('id, slug, name, category, status, updated_at')
     .order('updated_at', { ascending: false });
-  if (activeStatus === 'published' || activeStatus === 'draft') {
+  if (activeStatus === 'published' || activeStatus === 'draft' || activeStatus === 'archived') {
     contentsQ = contentsQ.eq('status', activeStatus);
     toolsQ = toolsQ.eq('status', activeStatus);
+  } else {
+    // 전체 = 보관 제외 (보관은 '보관' 탭에서만)
+    contentsQ = contentsQ.neq('status', 'archived');
+    toolsQ = toolsQ.neq('status', 'archived');
   }
   const [contentsRes, toolsRes] = await Promise.all([contentsQ, toolsQ]);
 
@@ -90,6 +97,7 @@ export default async function AdminContents({
       curated: !!c.curated,
       updated_at: c.updated_at,
       editHref: `/admin/contents/${c.id}`,
+      table: 'contents',
     })),
     ...(toolsRes.data ?? []).map((t): Row => ({
       id: t.id,
@@ -101,6 +109,7 @@ export default async function AdminContents({
       curated: false,
       updated_at: t.updated_at,
       editHref: `/admin/tools/${t.id}`,
+      table: 'tools',
     })),
   ].sort((a, b) => (a.updated_at < b.updated_at ? 1 : -1));
 
@@ -168,11 +177,12 @@ export default async function AdminContents({
               <th className="px-4 py-3 w-24">상태</th>
               <th className="px-4 py-3 w-16">큐레이션</th>
               <th className="px-4 py-3 w-32">수정일</th>
+              <th className="px-4 py-3 w-28 text-right">관리</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-border">
             {visible.length === 0 && (
-              <tr><td colSpan={5} className="px-4 py-10 text-center text-ink/40">콘텐츠가 없어요.</td></tr>
+              <tr><td colSpan={6} className="px-4 py-10 text-center text-ink/40">콘텐츠가 없어요.</td></tr>
             )}
             {visible.map((it) => (
               <tr key={`${it.type}-${it.id}`} className="hover:bg-muted/30">
@@ -186,12 +196,15 @@ export default async function AdminContents({
                   <div className="text-xs text-ink/40 mt-0.5">/{it.slug}</div>
                 </td>
                 <td className="px-4 py-3">
-                  <span className={`badge ${it.status === 'published' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}>
-                    {it.status === 'published' ? '발행' : it.status === 'draft' ? '초안' : it.status}
+                  <span className={`badge ${it.status === 'published' ? 'bg-green-100 text-green-700' : it.status === 'archived' ? 'bg-ink/10 text-ink/50' : 'bg-yellow-100 text-yellow-700'}`}>
+                    {it.status === 'published' ? '발행' : it.status === 'draft' ? '초안' : it.status === 'archived' ? '보관' : it.status}
                   </span>
                 </td>
                 <td className="px-4 py-3">{it.curated ? '⭐' : ''}</td>
                 <td className="px-4 py-3 text-xs text-ink/50">{formatDate(it.updated_at)}</td>
+                <td className="px-4 py-3">
+                  <ContentRowActions table={it.table} id={it.id} title={it.title} status={it.status} />
+                </td>
               </tr>
             ))}
           </tbody>
