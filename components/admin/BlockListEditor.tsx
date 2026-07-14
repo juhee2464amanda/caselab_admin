@@ -419,6 +419,7 @@ export function BookmarkField({
   const [loading, setLoading] = useState(false);
   const [note, setNote] = useState<string | null>(null);
   const [imgBusy, setImgBusy] = useState(false);
+  const [imgDrag, setImgDrag] = useState(false);
   const imgRef = useRef<HTMLInputElement>(null);
 
   const uploadThumb = async (file: File) => {
@@ -460,7 +461,17 @@ export function BookmarkField({
   const showCard = !!block.url.trim();
 
   return (
-    <div className="space-y-2">
+    <div
+      className="space-y-2"
+      onPaste={(e) => {
+        const item = Array.from(e.clipboardData.items).find((it) => it.type.startsWith('image/'));
+        const f = item?.getAsFile();
+        if (f) {
+          e.preventDefault();
+          uploadThumb(f);
+        }
+      }}
+    >
       <div className="flex gap-2">
         <Input
           value={block.url}
@@ -497,13 +508,19 @@ export function BookmarkField({
                   </button>
                 </div>
               ) : (
-                <button
-                  type="button"
+                <div
                   onClick={() => imgRef.current?.click()}
-                  className="flex h-16 w-24 flex-col items-center justify-center gap-0.5 rounded border border-dashed border-border text-[10px] text-ink/50 hover:border-ink/30"
+                  onDragOver={(e) => { e.preventDefault(); setImgDrag(true); }}
+                  onDragLeave={() => setImgDrag(false)}
+                  onDrop={(e) => { e.preventDefault(); setImgDrag(false); const f = e.dataTransfer.files?.[0]; if (f) uploadThumb(f); }}
+                  className={cn(
+                    'flex h-16 w-24 cursor-pointer flex-col items-center justify-center gap-0.5 rounded border border-dashed text-center text-[10px] transition-colors',
+                    imgDrag ? 'border-accent bg-accent/5 text-accent' : 'border-border text-ink/50 hover:border-ink/30',
+                  )}
+                  title="대표이미지 — 클릭·끌어놓기·붙여넣기(선택)"
                 >
-                  {imgBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <><Upload className="h-4 w-4" /> 대표이미지</>}
-                </button>
+                  {imgBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <><Upload className="h-4 w-4" /> 대표이미지<span className="text-ink/35">끌어놓기·클릭</span></>}
+                </div>
               )}
               <input ref={imgRef} type="file" accept="image/png,image/jpeg,image/webp,image/gif" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadThumb(f); }} />
             </div>
@@ -514,6 +531,7 @@ export function BookmarkField({
             </div>
           </div>
           <Input value={block.image ?? ''} placeholder="또는 이미지 URL 직접 입력" onChange={(e) => onChange({ ...block, image: e.target.value || undefined })} className="h-7 text-xs" />
+          <p className="text-[11px] text-ink/40">제목·설명·대표이미지는 모두 선택이에요. 링크만 있어도 저장돼요.</p>
         </div>
       )}
       {note && <p className="text-xs text-amber-600">{note}</p>}
