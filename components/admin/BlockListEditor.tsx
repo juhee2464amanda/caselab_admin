@@ -17,7 +17,7 @@ import type { Block } from '@/types/content';
  * 컨트롤드: value(Block[]) + onChange. 저장 검증은 호출측(TrackForm)에서.
  */
 
-type AddType = 'text' | 'heading' | 'prompt' | 'checklist' | 'image';
+export type AddType = 'text' | 'heading' | 'prompt' | 'checklist' | 'image';
 
 const ADD_BUTTONS: { type: AddType; label: string }[] = [
   { type: 'text', label: '문단' },
@@ -27,7 +27,8 @@ const ADD_BUTTONS: { type: AddType; label: string }[] = [
   { type: 'image', label: '이미지' },
 ];
 
-function newBlock(type: AddType): Block {
+// 미리보기 삽입 메뉴(ContentPreview)에서도 재사용.
+export function newBlock(type: AddType): Block {
   switch (type) {
     case 'text': return { type: 'text', markdown: '' };
     case 'heading': return { type: 'heading', level: 2, text: '' };
@@ -168,7 +169,8 @@ function BlockFields({ block, onChange }: { block: Block; onChange: (b: Block) =
 }
 
 // 이미지 블록 편집 — 업로드(클릭)·끌어놓기·클립보드 붙여넣기(⌘V)·URL 직접 입력 모두 지원.
-function ImageBlockField({
+// ContentPreview의 인라인 이미지 편집에서도 재사용.
+export function ImageBlockField({
   block,
   onChange,
 }: {
