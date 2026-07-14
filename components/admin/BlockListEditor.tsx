@@ -408,7 +408,7 @@ export function GalleryField({
   );
 }
 
-// 북마크 편집 — 링크를 붙이면 OG 메타(제목·설명·썸네일)를 자동으로 가져와 카드로. 필드는 수정 가능.
+// 북마크 편집 — 링크를 붙이면 OG 메타(제목·설명·썸네일) 자동. 없으면 제목·설명·대표이미지를 직접 입력/업로드해 카드 완성.
 export function BookmarkField({
   block,
   onChange,
@@ -418,6 +418,21 @@ export function BookmarkField({
 }) {
   const [loading, setLoading] = useState(false);
   const [note, setNote] = useState<string | null>(null);
+  const [imgBusy, setImgBusy] = useState(false);
+  const imgRef = useRef<HTMLInputElement>(null);
+
+  const uploadThumb = async (file: File) => {
+    if (!file.type.startsWith('image/')) return;
+    setImgBusy(true);
+    try {
+      const url = await uploadImageFile(file);
+      onChange({ ...block, image: url });
+    } catch (e) {
+      setNote((e as Error).message);
+    } finally {
+      setImgBusy(false);
+    }
+  };
 
   const fetchMeta = async (url: string) => {
     const u = url.trim();
@@ -442,7 +457,7 @@ export function BookmarkField({
     }
   };
 
-  const hasCard = !!(block.title || block.description || block.image);
+  const showCard = !!block.url.trim();
 
   return (
     <div className="space-y-2">
@@ -451,7 +466,7 @@ export function BookmarkField({
           value={block.url}
           placeholder="https://… 링크 붙여넣기 → 자동으로 카드 생성"
           onChange={(e) => onChange({ ...block, url: e.target.value })}
-          onBlur={(e) => { if (e.target.value.trim() && !hasCard) fetchMeta(e.target.value); }}
+          onBlur={(e) => { if (e.target.value.trim() && !block.title) fetchMeta(e.target.value); }}
           onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); fetchMeta((e.target as HTMLInputElement).value); } }}
         />
         <button
@@ -463,17 +478,42 @@ export function BookmarkField({
           {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : '메타 가져오기'}
         </button>
       </div>
-      {hasCard && (
-        <div className="flex overflow-hidden rounded-md border border-border">
-          <div className="min-w-0 flex-1 space-y-1 p-2.5">
-            <Input value={block.title ?? ''} placeholder="제목" onChange={(e) => onChange({ ...block, title: e.target.value })} className="h-7 border-0 px-0 text-sm font-medium" />
-            <Input value={block.description ?? ''} placeholder="설명" onChange={(e) => onChange({ ...block, description: e.target.value })} className="h-6 border-0 px-0 text-xs" />
-            {block.siteName && <div className="text-[11px] text-ink/45">{block.siteName}</div>}
+      {showCard && (
+        <div className="space-y-2 rounded-md border border-border p-2.5">
+          <div className="flex gap-2.5">
+            {/* 대표 이미지 — 자동으로 못 가져오면 직접 업로드/입력 */}
+            <div className="shrink-0">
+              {block.image ? (
+                <div className="group/bi relative">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={block.image} alt="" className="h-16 w-24 rounded object-cover" />
+                  <button
+                    type="button"
+                    onClick={() => onChange({ ...block, image: undefined })}
+                    title="이미지 제거"
+                    className="absolute -right-1.5 -top-1.5 hidden h-5 w-5 items-center justify-center rounded-full border border-border bg-white text-red-500 shadow-sm group-hover/bi:flex"
+                  >
+                    ×
+                  </button>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => imgRef.current?.click()}
+                  className="flex h-16 w-24 flex-col items-center justify-center gap-0.5 rounded border border-dashed border-border text-[10px] text-ink/50 hover:border-ink/30"
+                >
+                  {imgBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <><Upload className="h-4 w-4" /> 대표이미지</>}
+                </button>
+              )}
+              <input ref={imgRef} type="file" accept="image/png,image/jpeg,image/webp,image/gif" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadThumb(f); }} />
+            </div>
+            <div className="min-w-0 flex-1 space-y-1">
+              <Input value={block.title ?? ''} placeholder="제목" onChange={(e) => onChange({ ...block, title: e.target.value })} className="h-7 border-0 px-0 text-sm font-medium" />
+              <Input value={block.description ?? ''} placeholder="설명(직접 입력 가능)" onChange={(e) => onChange({ ...block, description: e.target.value })} className="h-6 border-0 px-0 text-xs" />
+              {block.siteName && <div className="text-[11px] text-ink/45">{block.siteName}</div>}
+            </div>
           </div>
-          {block.image && (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={block.image} alt="" className="w-24 shrink-0 object-cover" />
-          )}
+          <Input value={block.image ?? ''} placeholder="또는 이미지 URL 직접 입력" onChange={(e) => onChange({ ...block, image: e.target.value || undefined })} className="h-7 text-xs" />
         </div>
       )}
       {note && <p className="text-xs text-amber-600">{note}</p>}
