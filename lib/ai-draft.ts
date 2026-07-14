@@ -546,6 +546,70 @@ ${edge.sections.map((s) => `- ${s.name}: ${s.need}`).join('\n')}
   }
 }
 
+/** 하나의 후보(EdgeProposal) 형태로 정규화 — proposeEdge/proposeEdges 공용 파서. */
+function normalizeProposal(o: Record<string, unknown>): EdgeProposal {
+  const plan = Array.isArray(o.plan)
+    ? o.plan
+        .map((p) => {
+          const r = p as Record<string, unknown>;
+          return {
+            section: typeof r.section === 'string' ? r.section.trim() : '',
+            note: typeof r.note === 'string' ? r.note.trim() : '',
+          };
+        })
+        .filter((p) => p.section && p.note)
+    : [];
+  const missing = Array.isArray(o.missing)
+    ? o.missing.filter((x): x is string => typeof x === 'string' && x.trim().length > 0)
+    : [];
+  return { angle: typeof o.angle === 'string' ? o.angle.trim() : '', plan, missing };
+}
+
+/**
+ * proposeEdge와 같은 분석이되, 서로 뚜렷이 다른 각도 후보 N개를 한 번의 호출로 제안한다.
+ * "핵심 방향성만 align" — 운영자는 전체 본문을 받지 않고 각도/섹션 배치 후보만 보고 하나를 고른다.
+ * 고른 후보의 angle·plan을 기존 생성 경로(/api/studio/import)에 그대로 주입한다.
+ */
+export async function proposeEdges(
+  input: { track: SeedTrack; title: string; markdown: string },
+  count = 3
+): Promise<EdgeProposal[]> {
+  const edge = trackEdge(input.track);
+  const n = Math.min(4, Math.max(2, count));
+  const system = `당신은 케이스랩(Caselab)의 콘텐츠 에디터입니다.
+기획·리서치가 끝난 MD 문서를 "${TRACK_LABEL[input.track]}" 형식으로 재구성하기 전에, 서로 다른 각도의 배치 계획 후보 ${n}개를 제안합니다.
+
+[이 형식의 엣지] ${edge.edge}
+[상세 페이지 섹션 — 이 이름 그대로 계획을 세우세요]
+${edge.sections.map((s) => `- ${s.name}: ${s.need}`).join('\n')}
+[이 형식에 맞는 소재] ${edge.fits}
+[덜어낼 것] ${edge.cuts}
+[형식 규칙] ${edge.guide}
+
+- 후보 ${n}개는 각각 **뚜렷이 다른 각도**여야 합니다(같은 문서를 다른 관점·강조점·독자층으로 푼다). 서로 비슷하면 실패입니다.
+- 각 후보의 angle: 그 각도를 한 줄로(문서의 논지를 형식의 엣지에 맞게).
+- 각 후보의 plan: 위 섹션 각각에 대해, 문서의 어떤 내용을 어떻게 배치·압축할지 한 줄씩. 문서에 근거가 없는 섹션은 note를 "문서에 없음 — " 으로 시작해 대안(생략/보강)을 적으세요.
+- 각 후보의 missing: 이 형식이 요구하지만 문서에 없는 것들(지어내면 안 되는 것). 없으면 빈 배열.
+
+응답은 아래 JSON 객체 하나만 반환하세요(설명 없이):
+{ "candidates": [ { "angle": "…", "plan": [{ "section": "섹션 이름", "note": "배치 계획 한 줄" }], "missing": ["…"] } ] }`;
+
+  const userPrompt = `제목: ${input.title}\n\n[문서]\n${input.markdown.slice(0, 16000)}\n\n위 문서로 서로 다른 각도의 배치 계획 후보 ${n}개를 담은 JSON만 반환하세요.`;
+  const raw = await callModel(system, userPrompt, { allowedTools: [], model: 'sonnet', timeoutMs: 90_000 });
+
+  const parsed = (parseModelJson(raw) ?? {}) as Record<string, unknown>;
+  const list = Array.isArray(parsed.candidates) ? parsed.candidates : [];
+  const candidates = list
+    .map((c) => normalizeProposal((c ?? {}) as Record<string, unknown>))
+    .filter((c) => c.angle); // 각도 없는 빈 후보 제거
+  // 후보를 하나도 못 만들면 단수 제안으로 폴백(운영자가 최소 1개는 받도록)
+  if (candidates.length === 0) {
+    const one = await proposeEdge(input);
+    return one.angle ? [one] : [];
+  }
+  return candidates;
+}
+
 // ─────────────── 발행 메타 자동 제안(MD 직행 레인) ───────────────
 
 export interface ContentMeta {

@@ -15,6 +15,13 @@ import { FeaturedPlacer } from '@/components/admin/Studio';
 
 type Kind = 'content' | 'tool';
 
+// 엣지 제안 후보 하나 — /api/studio/edge가 서로 다른 각도 후보 배열로 반환(lib/ai-draft EdgeProposal 미러).
+type EdgeCandidate = {
+  angle: string;
+  plan: { section: string; note: string }[];
+  missing: string[];
+};
+
 // MD 직행 레인 — 텔레그램(HERMES 봇)과 논의해 만든 완성 MD를 받아
 // 타입 선택 → 초안 생성 → 편집 → 발행 → 홈배치를 한 화면에서 끝낸다.
 // (기획방향·개요·리서치는 MD에 이미 담겨 있으므로 스튜디오의 개요 단계를 생략)
@@ -46,22 +53,25 @@ export function MdImport() {
   const [dragOver, setDragOver] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
 
-  // 엣지 제안 — 트랙 형식(목업 스터디 프로파일)에 대고 각도·섹션 배치를 제안받아 수정 후 생성에 주입
+  // 엣지 제안 — 트랙 형식(목업 스터디 프로파일)에 대고 서로 다른 각도 후보 여러 개를 제안받고,
+  // 운영자는 "핵심 방향성만" 하나 골라 수정 후 생성에 주입한다(전체 본문은 확정 후 생성).
   const [edgeBusy, setEdgeBusy] = useState(false);
-  const [angle, setAngle] = useState('');
-  const [planText, setPlanText] = useState(''); // 줄 단위 "섹션 — 배치 계획"
+  const [candidates, setCandidates] = useState<EdgeCandidate[]>([]);
+  const [selectedIdx, setSelectedIdx] = useState<number | null>(null);
+  const [angle, setAngle] = useState(''); // 고른 후보의 각도(수정 가능)
+  const [planText, setPlanText] = useState(''); // 줄 단위 "섹션 — 배치 계획"(수정 가능)
   const [missing, setMissing] = useState<string[]>([]);
-  const [proposed, setProposed] = useState(false);
   // 재생성 — 값이 있으면 이 초안 id를 덮어쓴다(엣지 조정 후 다시 생성). 없으면 새 초안.
   const [replaceId, setReplaceId] = useState<string | null>(null);
 
-  // 트랙이 바뀌면 형식도 바뀌므로 제안 초기화
+  // 트랙이 바뀌면 형식도 바뀌므로 후보·선택 초기화
   const selectTrack = (t: SeedTrack) => {
     setTrack(t);
+    setCandidates([]);
+    setSelectedIdx(null);
     setAngle('');
     setPlanText('');
     setMissing([]);
-    setProposed(false);
   };
 
   const propose = async () => {
@@ -74,22 +84,29 @@ export function MdImport() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ title: title.trim(), markdown, track }),
       });
-      const json = (await res.json()) as {
-        angle?: string;
-        plan?: { section: string; note: string }[];
-        missing?: string[];
-        error?: string;
-      };
+      const json = (await res.json()) as { candidates?: EdgeCandidate[]; error?: string };
       if (!res.ok) throw new Error(json.error ?? '엣지 제안 실패');
-      setAngle(json.angle ?? '');
-      setPlanText((json.plan ?? []).map((p) => `${p.section} — ${p.note}`).join('\n'));
-      setMissing(json.missing ?? []);
-      setProposed(true);
+      setCandidates(json.candidates ?? []);
+      // 새로 제안하면 선택 초기화 — 운영자가 다시 방향을 고른다
+      setSelectedIdx(null);
+      setAngle('');
+      setPlanText('');
+      setMissing([]);
     } catch (e) {
       setError((e as Error).message);
     } finally {
       setEdgeBusy(false);
     }
+  };
+
+  // 후보 카드 클릭 → 그 각도의 배치 계획을 편집 필드에 채운다(이후 수정 가능).
+  const selectCandidate = (idx: number) => {
+    const c = candidates[idx];
+    if (!c) return;
+    setSelectedIdx(idx);
+    setAngle(c.angle);
+    setPlanText(c.plan.map((p) => `${p.section} — ${p.note}`).join('\n'));
+    setMissing(c.missing);
   };
 
   const applyMarkdown = (text: string, name?: string) => {
@@ -438,8 +455,8 @@ export function MdImport() {
                   );
                 })()}
 
-                {/* 엣지 제안 — MD를 이 형식에 대고 각도·섹션 배치를 제안받아 수정 후 생성에 주입 */}
-                {!proposed ? (
+                {/* 엣지 제안 — MD를 이 형식에 대고 서로 다른 각도 후보 여러 개를 받아, 방향성만 하나 골라 주입 */}
+                {candidates.length === 0 ? (
                   <Button
                     size="sm"
                     variant="outline"
@@ -447,36 +464,89 @@ export function MdImport() {
                     onClick={propose}
                   >
                     {edgeBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Wand2 className="h-3.5 w-3.5" />}
-                    {edgeBusy ? '문서를 형식에 대보는 중…' : '이 타입으로 엣지 제안'}
+                    {edgeBusy ? '문서를 형식에 대보는 중…' : '이 타입으로 각도 후보 제안'}
                   </Button>
                 ) : (
-                  <div className="space-y-2 border-t border-border pt-3">
-                    <label className="block text-xs font-medium text-ink/70">
-                      각도 <span className="font-normal text-ink/40">(수정 가능)</span>
-                    </label>
-                    <input
-                      value={angle}
-                      onChange={(e) => setAngle(e.target.value)}
-                      className="w-full rounded-lg border border-border bg-white px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-accent"
-                    />
-                    <label className="block text-xs font-medium text-ink/70">
-                      섹션 배치 계획 <span className="font-normal text-ink/40">(한 줄 = 한 섹션, 수정 가능)</span>
-                    </label>
-                    <textarea
-                      value={planText}
-                      onChange={(e) => setPlanText(e.target.value)}
-                      rows={Math.min(10, Math.max(4, planText.split('\n').length + 1))}
-                      className="w-full rounded-lg border border-border bg-white px-3 py-2 text-xs leading-relaxed focus:outline-none focus:ring-1 focus:ring-accent"
-                    />
-                    {missing.length > 0 && (
-                      <p className="text-[11px] text-amber-700">
-                        문서에 없는 것(지어내지 않고 생략·문서 범위로 제한): {missing.join(' · ')}
+                  <div className="space-y-3 border-t border-border pt-3">
+                    <div className="flex items-center justify-between">
+                      <p className="text-xs font-medium text-ink/70">
+                        각도 후보 <span className="font-normal text-ink/40">— 방향성만 하나 고르세요</span>
                       </p>
+                      <Button size="sm" variant="ghost" disabled={edgeBusy} onClick={propose}>
+                        {edgeBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Wand2 className="h-3.5 w-3.5" />} 다시
+                        제안
+                      </Button>
+                    </div>
+
+                    {/* 후보 카드 — 클릭하면 그 각도의 배치 계획이 아래 편집 필드에 채워짐 */}
+                    <div className="grid gap-2 sm:grid-cols-2">
+                      {candidates.map((c, i) => (
+                        <button
+                          key={i}
+                          type="button"
+                          onClick={() => selectCandidate(i)}
+                          className={cn(
+                            'rounded-lg border p-3 text-left transition-colors',
+                            selectedIdx === i
+                              ? 'border-accent bg-accent/5 ring-1 ring-accent'
+                              : 'border-border bg-white hover:border-ink/30'
+                          )}
+                        >
+                          <p className="flex items-start gap-1.5 text-xs font-medium text-ink/85">
+                            <span
+                              className={cn(
+                                'mt-0.5 inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-[10px]',
+                                selectedIdx === i ? 'bg-accent text-white' : 'bg-muted text-ink/50'
+                              )}
+                            >
+                              {i + 1}
+                            </span>
+                            {c.angle}
+                          </p>
+                          <ul className="mt-2 space-y-0.5">
+                            {c.plan.slice(0, 3).map((p, j) => (
+                              <li key={j} className="truncate text-[11px] text-ink/55">
+                                <span className="text-ink/70">{p.section}</span> · {p.note}
+                              </li>
+                            ))}
+                            {c.plan.length > 3 && (
+                              <li className="text-[11px] text-ink/40">+{c.plan.length - 3}개 섹션…</li>
+                            )}
+                          </ul>
+                          {c.missing.length > 0 && (
+                            <p className="mt-1.5 text-[10px] text-amber-700">문서에 없음: {c.missing.join(' · ')}</p>
+                          )}
+                        </button>
+                      ))}
+                    </div>
+
+                    {/* 고른 후보 다듬기 — 각도·섹션 배치를 그대로 쓰거나 수정 후 생성에 주입 */}
+                    {selectedIdx !== null && (
+                      <div className="space-y-2 rounded-lg border border-border bg-white p-3">
+                        <label className="block text-xs font-medium text-ink/70">
+                          각도 <span className="font-normal text-ink/40">(수정 가능)</span>
+                        </label>
+                        <input
+                          value={angle}
+                          onChange={(e) => setAngle(e.target.value)}
+                          className="w-full rounded-lg border border-border bg-white px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-accent"
+                        />
+                        <label className="block text-xs font-medium text-ink/70">
+                          섹션 배치 계획 <span className="font-normal text-ink/40">(한 줄 = 한 섹션, 수정 가능)</span>
+                        </label>
+                        <textarea
+                          value={planText}
+                          onChange={(e) => setPlanText(e.target.value)}
+                          rows={Math.min(10, Math.max(4, planText.split('\n').length + 1))}
+                          className="w-full rounded-lg border border-border bg-white px-3 py-2 text-xs leading-relaxed focus:outline-none focus:ring-1 focus:ring-accent"
+                        />
+                        {missing.length > 0 && (
+                          <p className="text-[11px] text-amber-700">
+                            문서에 없는 것(지어내지 않고 생략·문서 범위로 제한): {missing.join(' · ')}
+                          </p>
+                        )}
+                      </div>
                     )}
-                    <Button size="sm" variant="ghost" disabled={edgeBusy} onClick={propose}>
-                      {edgeBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Wand2 className="h-3.5 w-3.5" />} 다시
-                      제안
-                    </Button>
                   </div>
                 )}
               </div>
