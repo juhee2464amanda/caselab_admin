@@ -680,3 +680,59 @@ export async function scoreSeed(input: { title: string; rawText?: string; source
     return { bucket: 'etc', score: 0, reason: '자동 채점 실패(재분석 필요)', suggestedAngle: '', headline: '', essence: {} };
   }
 }
+
+// ─────────────── 인라인 부분 수정 제안(편집 표면) ───────────────
+
+export interface RefineInput {
+  /** 수정 대상 텍스트(드래그 선택 구간 또는 필드 전체 값). rich면 인라인 마크다운 마커(**굵게** ==형광펜== [텍스트](url)) 포함 가능. */
+  text: string;
+  /** 운영자가 적은 '수정 각도'(예: "더 간결하게", "구체 사례 추가"). */
+  instruction: string;
+  /** 편집 중인 위치 힌트(예: "실전 케이스 · 문단", "도구 소개"). 선택. */
+  context?: string;
+  /** rich 필드면 인라인 마크다운 마커를 유지·활용해도 된다. */
+  rich?: boolean;
+  /** 반환할 후보 수(기본 3, 1~4). */
+  count?: number;
+}
+
+/**
+ * 편집 표면(ContentPreview/ToolPreview)에서 지정한 텍스트를 '수정 각도'대로 다시 쓴 후보 2~4개를 반환.
+ * 재작성 작업이라 웹서치 불필요 + 가벼운 모델(sonnet). 실패 시 빈 배열(운영자가 직접 수정).
+ */
+export async function refineText(input: RefineInput): Promise<{ candidates: string[] }> {
+  const text = input.text?.trim();
+  const instruction = input.instruction?.trim();
+  if (!text || !instruction) return { candidates: [] };
+  const count = Math.min(4, Math.max(1, input.count ?? 3));
+
+  const markerRule = input.rich
+    ? '원문은 인라인 서식 마커를 쓸 수 있습니다: **굵게**, ==형광펜==, [텍스트](URL). 필요하면 후보에도 같은 마커를 쓰되, 새 URL은 지어내지 말고 원문에 있던 링크만 유지하세요.'
+    : '일반 텍스트로만 답하세요(마크다운 서식 기호 금지).';
+
+  const system = `당신은 케이스랩(Caselab)의 콘텐츠 에디터입니다. 운영자가 지정한 "대상 텍스트"를 "수정 각도"에 맞게 다시 쓴 후보를 제안합니다.
+
+[규칙]
+- 대상 텍스트의 핵심 의미·사실은 보존하고, 수정 각도가 요구하는 변화만 반영하세요.
+- 사실·수치·이름·URL을 새로 지어내지 마세요(원문에 있던 것만 사용).
+- 한국어, 케이스랩의 담백한 1인칭 운영자 톤. 본문에 이모지를 넣지 마세요.
+- 수정 각도가 길이를 명시하지 않으면 원문과 비슷한 분량을 유지하세요.
+- 서로 뚜렷이 다른 방향의 후보 ${count}개를 만드세요(같은 문장 재탕 금지).
+- ${markerRule}
+
+응답은 아래 JSON 객체 하나만 반환하세요(설명 없이):
+{ "candidates": ["후보1", "후보2", ...] }`;
+
+  const ctx = input.context?.trim() ? `[편집 위치] ${input.context.trim()}\n` : '';
+  const userPrompt = `${ctx}[수정 각도] ${instruction}\n\n[대상 텍스트]\n${text.slice(0, 8000)}\n\n위 대상 텍스트를 수정 각도대로 다시 쓴 후보 ${count}개를 JSON으로 반환하세요.`;
+
+  const raw = await callModel(system, userPrompt, { allowedTools: [], model: 'sonnet', timeoutMs: 60_000 });
+  const parsed = (parseModelJson(raw) ?? {}) as Record<string, unknown>;
+  const candidates = Array.isArray(parsed.candidates)
+    ? parsed.candidates
+        .filter((x): x is string => typeof x === 'string' && x.trim().length > 0)
+        .map((s) => s.trim())
+        .slice(0, count)
+    : [];
+  return { candidates };
+}
