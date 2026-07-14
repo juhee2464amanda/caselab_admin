@@ -70,7 +70,6 @@ export function TrackForm({ initial, onSaved, startInPreview }: Props) {
   const [bodyJson, setBodyJson] = useState(JSON.stringify(body, null, 2));
   const [bodyError, setBodyError] = useState<string | null>(null);
   const [aiBusy, setAiBusy] = useState(false);
-  const [manualConfirms, setManualConfirms] = useState({ tone: false, related: false, mobile: false });
   // 라이브 미리보기 — 현재 폼 상태(body 포함)를 본가 상세 마크업으로 렌더.
   // 더블클릭 인라인 편집이 폼 상태로 커밋되므로 미리보기 자체가 편집 표면이다.
   const [previewOpen, setPreviewOpen] = useState(startInPreview ?? false);
@@ -143,7 +142,8 @@ export function TrackForm({ initial, onSaved, startInPreview }: Props) {
     body,
   });
 
-  const canPublish = lint.passed && Object.values(manualConfirms).every(Boolean);
+  // 발행 게이트 = 자동 lint(차단 항목)만. 수동 확인 체크는 폐지(솔로 운영 마찰 제거).
+  const canPublish = lint.passed;
 
   function save(status: 'draft' | 'published') {
     if (bodyError) return alert('본문 JSON 오류: ' + bodyError);
@@ -358,40 +358,25 @@ export function TrackForm({ initial, onSaved, startInPreview }: Props) {
           <section className="card p-5">
             <h3 className="font-semibold text-sm mb-3">발행 게이트 (자동)</h3>
             <ul className="space-y-1.5">
-              {lint.checks.map((c) => (
-                <li key={c.id} className="flex items-start gap-2 text-xs">
-                  {c.passed ? (
-                    <CheckCircle2 className="h-3.5 w-3.5 text-green-600 mt-0.5 shrink-0" />
-                  ) : (
-                    <AlertCircle className="h-3.5 w-3.5 text-red-500 mt-0.5 shrink-0" />
-                  )}
-                  <span className={c.passed ? 'text-ink/60' : 'text-red-600 font-medium'}>
-                    {c.label}
-                    {c.detail && <span className="block text-[10px] mt-0.5">{c.detail}</span>}
-                  </span>
-                </li>
-              ))}
+              {lint.checks.map((c) => {
+                const warn = c.blocking === false; // 실패해도 발행 안 막는 경고
+                return (
+                  <li key={c.id} className="flex items-start gap-2 text-xs">
+                    {c.passed ? (
+                      <CheckCircle2 className="h-3.5 w-3.5 text-green-600 mt-0.5 shrink-0" />
+                    ) : (
+                      <AlertCircle
+                        className={cn('h-3.5 w-3.5 mt-0.5 shrink-0', warn ? 'text-amber-500' : 'text-red-500')}
+                      />
+                    )}
+                    <span className={c.passed ? 'text-ink/60' : warn ? 'text-amber-600' : 'text-red-600 font-medium'}>
+                      {c.label}
+                      {c.detail && <span className="block text-[10px] mt-0.5">{c.detail}</span>}
+                    </span>
+                  </li>
+                );
+              })}
             </ul>
-          </section>
-
-          <section className="card p-5">
-            <h3 className="font-semibold text-sm mb-3">수동 확인 (3)</h3>
-            <div className="space-y-2">
-              {([
-                ['tone', '1인칭 톤 (저도 어려웠어요 류)'],
-                ['related', '추천 사이드바·캐러셀 시각 확인'],
-                ['mobile', '모바일 1회 직접 확인'],
-              ] as const).map(([key, label]) => (
-                <label key={key} className="flex items-center gap-2 text-xs">
-                  <input
-                    type="checkbox"
-                    checked={manualConfirms[key]}
-                    onChange={(e) => setManualConfirms((c) => ({ ...c, [key]: e.target.checked }))}
-                  />
-                  {label}
-                </label>
-              ))}
-            </div>
           </section>
 
           <section className="card p-5">

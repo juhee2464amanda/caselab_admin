@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { createSupabaseAdminClient } from '@/lib/supabase/admin';
-import { generateDraft, generateToolDraft, generatePromptDraft, generateGuideDraft } from '@/lib/ai-draft';
+import { generateDraft, generateToolDraft, generatePromptDraft, generateGuideDraft, suggestContentMeta } from '@/lib/ai-draft';
 import { isSeedTrack, type SeedTrack } from '@/lib/seed-tracks';
 import { trackEdge } from '@/lib/track-edges';
 import { slugify } from '@/lib/utils';
@@ -147,13 +147,19 @@ export async function POST(req: NextRequest) {
 
     // case | trend → contents
     const body = await generateDraft({ track, title, summary: markdown, direction, outline: edgePlan, sourceType: 'manual' });
+    // 발행 메타 자동 채움 — 읽기/적용 시간·직무 태그·요약을 미리 채워 발행 게이트를 통과시킨다(운영자 수동 입력 마찰 제거).
+    const meta = await suggestContentMeta({ title, markdown, body });
     const { data: content, error } = await admin
       .from('contents')
       .insert({
         slug: slugBase,
         track,
         title,
+        summary: meta.summary || null,
         body,
+        read_min: meta.readMin,
+        apply_min: meta.applyMin,
+        job_tags: meta.jobTags,
         status: 'draft',
       })
       .select('id')
