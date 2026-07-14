@@ -4,6 +4,7 @@ import { useRef, useState } from 'react';
 import { UploadCloud } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { cn } from '@/lib/utils';
 
 // 콘텐츠 썸네일 등록 — 이미지 업로드(공개 버킷) 또는 URL 직접 입력.
 // 자유 URL 입력만 있던 시절 "fable5prompt" 같은 잘못된 값이 들어가 홈 히어로가 깨지던 문제 방지용.
@@ -12,6 +13,22 @@ export function ThumbnailField({ value, onChange }: { value: string; onChange: (
   const [uploading, setUploading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [broken, setBroken] = useState(false);
+  const [dragOver, setDragOver] = useState(false);
+
+  function onDrop(e: React.DragEvent) {
+    e.preventDefault();
+    setDragOver(false);
+    const f = Array.from(e.dataTransfer.files).find((x) => x.type.startsWith('image/'));
+    if (f) void upload(f);
+    else setErr('이미지 파일만 끌어놓을 수 있어요.');
+  }
+  function onPaste(e: React.ClipboardEvent) {
+    const f = Array.from(e.clipboardData.items).find((it) => it.type.startsWith('image/'))?.getAsFile();
+    if (f) {
+      e.preventDefault();
+      void upload(f);
+    }
+  }
 
   async function upload(file: File) {
     setUploading(true);
@@ -34,16 +51,27 @@ export function ThumbnailField({ value, onChange }: { value: string; onChange: (
   return (
     <div>
       <Label className="text-xs">썸네일</Label>
-      <p className="text-[11px] text-ink/40 mt-0.5">홈 히어로·카드에 노출돼요. 이미지를 올리거나 이미지 URL을 붙여넣으세요.</p>
-      <div className="mt-1.5 flex items-start gap-3">
-        <div className="w-24 h-16 rounded-md border border-border bg-muted overflow-hidden shrink-0 flex items-center justify-center">
+      <p className="text-[11px] text-ink/40 mt-0.5">홈 히어로·카드에 노출돼요. 이미지를 끌어놓거나, 올리거나, 이미지 URL을 붙여넣으세요.</p>
+      <div className="mt-1.5 flex items-start gap-3" onPaste={onPaste}>
+        <button
+          type="button"
+          onClick={() => fileRef.current?.click()}
+          onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+          onDragLeave={() => setDragOver(false)}
+          onDrop={onDrop}
+          title="클릭 또는 이미지 끌어놓기"
+          className={cn(
+            'w-24 h-16 rounded-md border overflow-hidden shrink-0 flex items-center justify-center transition-colors',
+            dragOver ? 'border-accent border-dashed bg-accent/10' : 'border-border bg-muted hover:border-ink/30',
+          )}
+        >
           {value && !broken ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img src={value} alt="" onError={() => setBroken(true)} className="w-full h-full object-cover" />
           ) : (
-            <span className="text-[10px] text-ink/30">{value ? '깨진 URL' : '없음'}</span>
+            <span className="text-[10px] text-ink/30 px-1 text-center leading-tight">{dragOver ? '여기에 놓기' : value ? '깨진 URL' : '끌어놓기'}</span>
           )}
-        </div>
+        </button>
         <div className="flex-1 space-y-1.5">
           <button
             type="button"
