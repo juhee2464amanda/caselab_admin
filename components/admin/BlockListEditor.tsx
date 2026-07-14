@@ -1,10 +1,11 @@
 'use client';
 
-import { useState } from 'react';
-import { ChevronUp, ChevronDown, Trash2, Plus } from 'lucide-react';
+import { useRef, useState } from 'react';
+import { ChevronUp, ChevronDown, Trash2, Plus, Loader2, Upload } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import { cn } from '@/lib/utils';
 import type { Block } from '@/types/content';
 
 /**
@@ -16,13 +17,14 @@ import type { Block } from '@/types/content';
  * 컨트롤드: value(Block[]) + onChange. 저장 검증은 호출측(TrackForm)에서.
  */
 
-type AddType = 'text' | 'heading' | 'prompt' | 'checklist';
+type AddType = 'text' | 'heading' | 'prompt' | 'checklist' | 'image';
 
 const ADD_BUTTONS: { type: AddType; label: string }[] = [
   { type: 'text', label: '문단' },
   { type: 'heading', label: '소제목' },
   { type: 'prompt', label: '프롬프트' },
   { type: 'checklist', label: '체크리스트' },
+  { type: 'image', label: '이미지' },
 ];
 
 function newBlock(type: AddType): Block {
@@ -31,10 +33,11 @@ function newBlock(type: AddType): Block {
     case 'heading': return { type: 'heading', level: 2, text: '' };
     case 'prompt': return { type: 'prompt', label: '', prompt: '' };
     case 'checklist': return { type: 'checklist', title: '', items: [''] };
+    case 'image': return { type: 'image', url: '', alt: '', caption: '' };
   }
 }
 
-const EDITABLE = new Set(['text', 'heading', 'prompt', 'checklist']);
+const EDITABLE = new Set(['text', 'heading', 'prompt', 'checklist', 'image']);
 
 export function BlockListEditor({
   value,
@@ -95,7 +98,7 @@ export function BlockListEditor({
 }
 
 const BLOCK_LABEL: Record<string, string> = {
-  text: '문단', heading: '소제목', prompt: '프롬프트', checklist: '체크리스트',
+  text: '문단', heading: '소제목', prompt: '프롬프트', checklist: '체크리스트', image: '이미지',
 };
 
 function BlockFields({ block, onChange }: { block: Block; onChange: (b: Block) => void }) {
@@ -157,5 +160,107 @@ function BlockFields({ block, onChange }: { block: Block; onChange: (b: Block) =
     );
   }
 
+  if (block.type === 'image') {
+    return <ImageBlockField block={block} onChange={onChange} />;
+  }
+
   return null;
+}
+
+// 이미지 블록 편집 — 업로드(클릭)·끌어놓기·클립보드 붙여넣기(⌘V)·URL 직접 입력 모두 지원.
+function ImageBlockField({
+  block,
+  onChange,
+}: {
+  block: Extract<Block, { type: 'image' }>;
+  onChange: (b: Block) => void;
+}) {
+  const [uploading, setUploading] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [dragOver, setDragOver] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  const upload = async (file: File) => {
+    setUploading(true);
+    setErr(null);
+    try {
+      const fd = new FormData();
+      fd.append('file', file);
+      const res = await fetch('/api/admin/upload-image', { method: 'POST', body: fd });
+      const json = (await res.json()) as { url?: string; error?: string };
+      if (!res.ok || !json.url) throw new Error(json.error ?? '업로드 실패');
+      onChange({ ...block, url: json.url });
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  return (
+    <div
+      className="space-y-2"
+      onPaste={(e) => {
+        const item = Array.from(e.clipboardData.items).find((it) => it.type.startsWith('image/'));
+        const f = item?.getAsFile();
+        if (f) {
+          e.preventDefault();
+          upload(f);
+        }
+      }}
+    >
+      {block.url ? (
+        <div className="flex items-start gap-3">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={block.url} alt="" className="max-h-40 rounded-md border border-border" />
+          <button type="button" onClick={() => onChange({ ...block, url: '' })} className="text-xs text-accent hover:underline shrink-0">
+            교체
+          </button>
+        </div>
+      ) : (
+        <div
+          onClick={() => fileRef.current?.click()}
+          onDragOver={(e) => {
+            e.preventDefault();
+            setDragOver(true);
+          }}
+          onDragLeave={() => setDragOver(false)}
+          onDrop={(e) => {
+            e.preventDefault();
+            setDragOver(false);
+            const f = e.dataTransfer.files?.[0];
+            if (f) upload(f);
+          }}
+          className={cn(
+            'flex cursor-pointer flex-col items-center justify-center gap-1.5 rounded-lg border border-dashed px-4 py-8 text-center text-xs transition-colors',
+            dragOver ? 'border-accent bg-accent/5' : 'border-border hover:border-ink/30',
+          )}
+        >
+          {uploading ? (
+            <><Loader2 className="h-5 w-5 animate-spin text-ink/40" /> 업로드 중…</>
+          ) : (
+            <>
+              <Upload className="h-5 w-5 text-ink/40" />
+              <span className="text-ink/60">이미지를 끌어놓거나 클릭해서 선택</span>
+              <span className="text-ink/40">여기에 붙여넣기(⌘V)도 돼요</span>
+            </>
+          )}
+        </div>
+      )}
+      <input
+        ref={fileRef}
+        type="file"
+        accept="image/png,image/jpeg,image/webp,image/gif"
+        className="hidden"
+        onChange={(e) => {
+          const f = e.target.files?.[0];
+          if (f) upload(f);
+        }}
+      />
+      <Input value={block.url} placeholder="또는 이미지 URL 직접 붙여넣기" onChange={(e) => onChange({ ...block, url: e.target.value })} />
+      <Input value={block.caption ?? ''} placeholder="캡션 (선택)" onChange={(e) => onChange({ ...block, caption: e.target.value })} />
+      <Input value={block.alt ?? ''} placeholder="대체 텍스트 alt (접근성, 선택)" onChange={(e) => onChange({ ...block, alt: e.target.value })} />
+      {err && <p className="text-xs text-red-600">{err}</p>}
+    </div>
+  );
 }

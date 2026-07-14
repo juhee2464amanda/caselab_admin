@@ -2,7 +2,7 @@
 
 import { createElement, useRef, useState, type HTMLAttributes } from 'react';
 import { createPortal } from 'react-dom';
-import { Bold, Highlighter, RemoveFormatting } from 'lucide-react';
+import { Bold, Highlighter, Link2, RemoveFormatting } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { inlineMdToHtml, htmlToInlineMd } from '@/lib/inline-md';
 
@@ -184,6 +184,20 @@ export function Editable({ value, onCommit, as = 'span', multiline, rich, placeh
               onClick={() => exec(() => wrapSelection((t) => `<mark class="rounded-sm bg-amber-200/80 px-0.5">${t}</mark>`))}
             >
               <Highlighter className="h-3.5 w-3.5 text-amber-600" />
+            </button>
+            <button
+              type="button"
+              title="링크"
+              className="rounded p-1.5 hover:bg-muted"
+              onClick={() => {
+                const url = window.prompt('링크 URL:');
+                if (url && url.trim()) {
+                  const safe = url.trim().replace(/["<>]/g, '');
+                  exec(() => wrapSelection((t) => `<a href="${safe}" target="_blank" rel="noopener noreferrer" class="text-accent underline underline-offset-2">${t}</a>`));
+                }
+              }}
+            >
+              <Link2 className="h-3.5 w-3.5 text-accent" />
             </button>
             <button
               type="button"
