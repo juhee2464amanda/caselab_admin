@@ -190,7 +190,8 @@ export function TrackForm({ initial, onSaved, startInPreview }: Props) {
         router.refresh();
         return;
       }
-      router.push('/admin');
+      // 단독 편집(/admin/contents/[id]·/new): 저장·발행 후 admin 홈이 아니라 콘텐츠 목록으로.
+      router.push('/admin/contents');
       router.refresh();
     });
   }

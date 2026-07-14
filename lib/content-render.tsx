@@ -9,6 +9,7 @@ import { PromptBlock } from '@/components/content/PromptBlock';
 import { ResultCompare } from '@/components/content/ResultCompare';
 import { RoleCard } from '@/components/content/RoleCard';
 import { FrameworkRef } from '@/components/content/FrameworkRef';
+import { ContentGallery } from '@/components/admin/ContentGallery';
 
 export function renderBlock(block: Block, key: string | number): React.ReactElement {
   switch (block.type) {
@@ -60,7 +61,22 @@ export function renderBlock(block: Block, key: string | number): React.ReactElem
       );
     case 'image':
       return (
-        <figure key={key} className="my-6">
+        <figure
+          key={key}
+          className={[
+            'my-6',
+            block.size === 'small' ? 'max-w-[320px]' : block.size === 'medium' ? 'max-w-[480px]' : '',
+            block.size === 'small' || block.size === 'medium'
+              ? block.align === 'left'
+                ? 'mr-auto'
+                : block.align === 'right'
+                  ? 'ml-auto'
+                  : 'mx-auto'
+              : '',
+          ]
+            .filter(Boolean)
+            .join(' ')}
+        >
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src={block.url} alt={block.alt ?? ''} className="w-full h-auto rounded-lg" loading="lazy" />
           {block.caption && (
@@ -68,6 +84,43 @@ export function renderBlock(block: Block, key: string | number): React.ReactElem
           )}
         </figure>
       );
+    case 'gallery':
+      return <ContentGallery key={key} images={block.images} />;
+    case 'bookmark': {
+      let host = block.url;
+      try {
+        host = new URL(block.url).hostname.replace(/^www\./, '');
+      } catch {
+        /* noop */
+      }
+      return (
+        <a
+          key={key}
+          href={block.url}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="my-4 flex overflow-hidden rounded-lg border border-border no-underline transition-colors hover:bg-muted/40"
+        >
+          <div className="min-w-0 flex-1 p-3.5">
+            <div className="line-clamp-1 font-medium text-ink">{block.title || block.url}</div>
+            {block.description && <div className="mt-1 line-clamp-2 text-xs text-ink/60">{block.description}</div>}
+            <div className="mt-2 flex items-center gap-1.5 text-[11px] text-ink/45">
+              {block.favicon && (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={block.favicon} alt="" className="h-3.5 w-3.5 rounded-sm" />
+              )}
+              <span className="line-clamp-1">{block.siteName || host}</span>
+            </div>
+          </div>
+          {block.image && (
+            <div className="w-28 shrink-0 sm:w-40">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={block.image} alt="" className="h-full w-full object-cover" />
+            </div>
+          )}
+        </a>
+      );
+    }
     case 'failure':
       return (
         <FailureSection key={key} title={block.title}>

@@ -1,13 +1,14 @@
 'use client';
 
 import { useState, useRef } from 'react';
-import { ArrowUpRight, Copy, Check, User, Bot, Plus, Trash2, Sparkles } from 'lucide-react';
+import { ArrowUpRight, Copy, Check, User, Bot, Plus, Trash2, Sparkles, ChevronUp, ChevronDown, AlignLeft, AlignCenter, AlignRight } from 'lucide-react';
 import type { Block, ContentBody, JobTag, PainPoint, StepCard, TakingPoint } from '@/types/content';
 import { JOB_LABELS } from '@/types/content';
 import { Editable } from '@/components/admin/Editable';
 import { useRefine, sectionToLines } from '@/components/admin/RefinePanel';
 import { sectionSpecs, isEmptySection, type SectionSpec } from '@/lib/content-sections';
-import { ImageBlockField, newBlock, type AddType } from '@/components/admin/BlockListEditor';
+import { ImageBlockField, GalleryField, BookmarkField, newBlock, type AddType } from '@/components/admin/BlockListEditor';
+import { ContentGallery } from '@/components/admin/ContentGallery';
 import { cn } from '@/lib/utils';
 
 // 콘텐츠 미리보기 — 본가 cases/[slug]·trends/[slug] 상세 마크업 이식(2026-07-11 스냅샷).
@@ -105,6 +106,69 @@ function PromptBlockView({ label, prompt, onCommit }: { label?: string; prompt: 
 
 // 본가 lib/content-render.tsx의 초안 관련 블록만 이식(text/heading/prompt/result-compare/role-card/checklist).
 // onBlock을 넘기면 각 블록 텍스트가 클릭 인라인 편집 대상이 된다.
+// 이미지 figure 크기·정렬 클래스(읽기/편집 공통). small·medium만 max-w+정렬, full은 본문폭.
+function imgFigCls(size?: string, align?: string) {
+  return [
+    'my-6',
+    size === 'small' ? 'max-w-[320px]' : size === 'medium' ? 'max-w-[480px]' : '',
+    size === 'small' || size === 'medium' ? (align === 'left' ? 'mr-auto' : align === 'right' ? 'ml-auto' : 'mx-auto') : '',
+  ]
+    .filter(Boolean)
+    .join(' ');
+}
+
+// 미리보기 인라인 이미지 — 실제 크기·정렬로 렌더 + hover 툴바(크기/정렬/교체) + 캡션 인라인.
+// 업로드 전(url 없음)이면 드롭존(ImageBlockField).
+function PreviewImage({ block, onChange }: { block: Extract<Block, { type: 'image' }>; onChange: (b: Block) => void }) {
+  if (!block.url) {
+    return (
+      <div className="my-4">
+        <ImageBlockField block={block} onChange={onChange} />
+      </div>
+    );
+  }
+  const size = block.size ?? 'full';
+  const align = block.align ?? 'center';
+  return (
+    <figure className={cn('group/img relative', imgFigCls(block.size, block.align))}>
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img src={block.url} alt={block.alt ?? ''} className="w-full h-auto rounded-lg" />
+      <div className="absolute left-1/2 top-2 z-10 hidden -translate-x-1/2 items-center gap-1 rounded-lg border border-border bg-white/95 px-1.5 py-1 shadow-md group-hover/img:flex">
+        {([['small', 'S'], ['medium', 'M'], ['full', '전체']] as const).map(([v, l]) => (
+          <button
+            key={v}
+            type="button"
+            onClick={() => onChange({ ...block, size: v })}
+            className={cn('rounded px-1.5 py-0.5 text-[11px]', size === v ? 'bg-accent text-white' : 'text-ink/60 hover:bg-muted')}
+          >
+            {l}
+          </button>
+        ))}
+        <span className="mx-0.5 h-3.5 w-px bg-border" />
+        {([['left', AlignLeft], ['center', AlignCenter], ['right', AlignRight]] as const).map(([v, Icon]) => (
+          <button
+            key={v}
+            type="button"
+            disabled={size === 'full'}
+            title={size === 'full' ? '전체폭에선 정렬이 없어요' : '정렬'}
+            onClick={() => onChange({ ...block, align: v })}
+            className={cn('rounded p-1 disabled:opacity-25', align === v && size !== 'full' ? 'bg-accent text-white' : 'text-ink/60 hover:bg-muted')}
+          >
+            <Icon className="h-3 w-3" />
+          </button>
+        ))}
+        <span className="mx-0.5 h-3.5 w-px bg-border" />
+        <button type="button" onClick={() => onChange({ ...block, url: '' })} className="rounded px-1.5 py-0.5 text-[11px] text-accent hover:bg-muted">
+          교체
+        </button>
+      </div>
+      <figcaption className="mt-2 text-center text-[13px] text-ink/55">
+        <Editable value={block.caption ?? ''} onCommit={(v) => onChange({ ...block, caption: v })} placeholder="＋ 캡션" className="inline-block min-w-[40px]" />
+      </figcaption>
+    </figure>
+  );
+}
+
 function renderBlock(block: Block, key: string | number, onBlock?: (nb: Block) => void) {
   switch (block.type) {
     case 'text':
@@ -208,20 +272,52 @@ function renderBlock(block: Block, key: string | number, onBlock?: (nb: Block) =
         </div>
       );
     case 'image':
-      // 편집 모드: 업로드/드래그/붙여넣기 UI. 읽기: figure+img.
-      if (onBlock) {
-        return (
-          <div key={key} className="my-4">
-            <ImageBlockField block={block} onChange={onBlock} />
-          </div>
-        );
-      }
+      // 편집: 실제 크기·정렬로 렌더 + hover 툴바(크기/정렬/교체). 업로드 전이면 드롭존.
+      if (onBlock) return <PreviewImage key={key} block={block} onChange={onBlock} />;
       return (
-        <figure key={key} className="my-6">
+        <figure key={key} className={imgFigCls(block.size, block.align)}>
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src={block.url} alt={block.alt ?? ''} className="w-full h-auto rounded-lg" loading="lazy" />
           {block.caption && <figcaption className="mt-2 text-center text-[13px] text-ink/55">{block.caption}</figcaption>}
         </figure>
+      );
+    case 'gallery':
+      // 편집: 카드뉴스 미리보기 + 관리(추가·순서·삭제). 읽기: 캐러셀.
+      if (onBlock) {
+        return (
+          <div key={key} className="my-4 space-y-2">
+            {block.images.length > 0 && <ContentGallery images={block.images} />}
+            <GalleryField block={block} onChange={onBlock} />
+          </div>
+        );
+      }
+      return <ContentGallery key={key} images={block.images} />;
+    case 'bookmark':
+      if (onBlock) {
+        return (
+          <div key={key} className="my-4">
+            <BookmarkField block={block} onChange={onBlock} />
+          </div>
+        );
+      }
+      return (
+        <a
+          key={key}
+          href={block.url}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="my-4 flex overflow-hidden rounded-lg border border-border no-underline transition-colors hover:bg-muted/40"
+        >
+          <div className="min-w-0 flex-1 p-3.5">
+            <div className="line-clamp-1 font-medium text-ink">{block.title || block.url}</div>
+            {block.description && <div className="mt-1 line-clamp-2 text-xs text-ink/60">{block.description}</div>}
+            {block.siteName && <div className="mt-2 text-[11px] text-ink/45">{block.siteName}</div>}
+          </div>
+          {block.image && (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={block.image} alt="" className="w-28 shrink-0 object-cover sm:w-40" />
+          )}
+        </a>
       );
     default:
       return (
@@ -235,6 +331,8 @@ function renderBlock(block: Block, key: string | number, onBlock?: (nb: Block) =
 // 미리보기 삽입 메뉴 — 노션식 hover "+". 블록 사이/끝에서 이미지·문단·소제목·프롬프트·체크리스트 삽입.
 const INSERT_ITEMS: { type: AddType; label: string }[] = [
   { type: 'image', label: '🖼  이미지' },
+  { type: 'gallery', label: '🎞  갤러리(카드뉴스)' },
+  { type: 'bookmark', label: '🔖  북마크' },
   { type: 'text', label: '¶  문단' },
   { type: 'heading', label: 'H  소제목' },
   { type: 'prompt', label: '</>  프롬프트' },
@@ -288,19 +386,30 @@ function renderBlocks(blocks: Block[] | undefined, prefix: string, onBlocks?: (n
   if (!onBlocks) return list.map((b, i) => renderBlock(b, `${prefix}-${i}`));
   const insertAt = (idx: number, b: Block) => onBlocks([...list.slice(0, idx), b, ...list.slice(idx)]);
   const removeAt = (idx: number) => onBlocks(list.filter((_, k) => k !== idx));
+  const moveAt = (idx: number, dir: -1 | 1) => {
+    const j = idx + dir;
+    if (j < 0 || j >= list.length) return;
+    const next = [...list];
+    [next[idx], next[j]] = [next[j], next[idx]];
+    onBlocks(next);
+  };
   const nodes: JSX.Element[] = [];
   list.forEach((b, i) => {
     nodes.push(<InsertBar key={`${prefix}-ins-${i}`} onInsert={(nb) => insertAt(i, nb)} />);
     nodes.push(
       <div key={`${prefix}-row-${i}`} className="group/blk relative">
-        <button
-          type="button"
-          onClick={() => removeAt(i)}
-          title="이 블록 삭제"
-          className="absolute -right-1 -top-1 z-10 hidden h-5 w-5 items-center justify-center rounded-full border border-border bg-white text-red-500 shadow-sm hover:bg-red-50 group-hover/blk:flex"
-        >
-          <Trash2 className="h-3 w-3" />
-        </button>
+        {/* hover 컨트롤 — 위/아래 이동 + 삭제 */}
+        <div className="absolute -right-1 -top-2 z-10 hidden items-center gap-0.5 rounded-full border border-border bg-white px-1 py-0.5 shadow-sm group-hover/blk:flex">
+          <button type="button" onClick={() => moveAt(i, -1)} disabled={i === 0} title="위로" className="p-0.5 text-ink/50 hover:text-ink disabled:opacity-25">
+            <ChevronUp className="h-3.5 w-3.5" />
+          </button>
+          <button type="button" onClick={() => moveAt(i, 1)} disabled={i === list.length - 1} title="아래로" className="p-0.5 text-ink/50 hover:text-ink disabled:opacity-25">
+            <ChevronDown className="h-3.5 w-3.5" />
+          </button>
+          <button type="button" onClick={() => removeAt(i)} title="삭제" className="p-0.5 text-red-500 hover:text-red-700">
+            <Trash2 className="h-3.5 w-3.5" />
+          </button>
+        </div>
         {renderBlock(b, `${prefix}-${i}`, (nb) => onBlocks(upd(list, i, nb)))}
       </div>,
     );
