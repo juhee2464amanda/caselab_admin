@@ -86,6 +86,14 @@ export const ChecklistBlockSchema = z.object({
   items: z.array(z.string().min(1)).min(1),
 });
 
+// 이미지 블록 — 운영자가 본문에 직접 삽입(업로드/URL). 본가 types/content.ts와 동일.
+export const ImageBlockSchema = z.object({
+  type: z.literal('image'),
+  url: z.string().min(1),
+  alt: z.string().optional(),
+  caption: z.string().optional(),
+});
+
 // FailureSection는 내부에 BlockSchema를 가짐 → lazy 사용
 export type Block =
   | z.infer<typeof TextBlockSchema>
@@ -99,6 +107,7 @@ export type Block =
   | z.infer<typeof FrameworkRefBlockSchema>
   | z.infer<typeof ContextCardBlockSchema>
   | z.infer<typeof ChecklistBlockSchema>
+  | z.infer<typeof ImageBlockSchema>
   | { type: 'failure'; title: string; blocks: Block[] };
 
 export const BlockSchema: z.ZodType<Block> = z.lazy(() =>
@@ -114,6 +123,7 @@ export const BlockSchema: z.ZodType<Block> = z.lazy(() =>
     FrameworkRefBlockSchema,
     ContextCardBlockSchema,
     ChecklistBlockSchema,
+    ImageBlockSchema,
     z.object({
       type: z.literal('failure'),
       title: z.string().min(1),

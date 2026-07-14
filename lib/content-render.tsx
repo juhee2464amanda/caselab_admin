@@ -58,6 +58,16 @@ export function renderBlock(block: Block, key: string | number): React.ReactElem
           </ul>
         </div>
       );
+    case 'image':
+      return (
+        <figure key={key} className="my-6">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={block.url} alt={block.alt ?? ''} className="w-full h-auto rounded-lg" loading="lazy" />
+          {block.caption && (
+            <figcaption className="mt-2 text-center text-[13px] text-ink/55">{block.caption}</figcaption>
+          )}
+        </figure>
+      );
     case 'failure':
       return (
         <FailureSection key={key} title={block.title}>
