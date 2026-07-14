@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
-import { proposeEdge } from '@/lib/ai-draft';
+import { proposeEdges } from '@/lib/ai-draft';
 import { isSeedTrack, type SeedTrack } from '@/lib/seed-tracks';
 
 export const runtime = 'nodejs';
@@ -31,8 +31,9 @@ export async function POST(req: NextRequest) {
   if (!isSeedTrack(parsed.track)) return NextResponse.json({ error: 'invalid track' }, { status: 400 });
 
   try {
-    const proposal = await proposeEdge({ track: parsed.track, title, markdown });
-    return NextResponse.json(proposal);
+    // 서로 다른 각도 후보 여러 개 — 운영자가 방향성만 보고 하나를 고른다("핵심 방향성 align").
+    const candidates = await proposeEdges({ track: parsed.track, title, markdown });
+    return NextResponse.json({ candidates });
   } catch (e) {
     return NextResponse.json({ error: (e as Error).message }, { status: 500 });
   }
