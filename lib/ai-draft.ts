@@ -6,6 +6,7 @@ import { lintToolBody } from '@/lib/tool-body';
 import { sourceProfile } from '@/lib/seed-sources';
 import type { SeedTrack } from '@/lib/seed-tracks';
 import { trackEdge } from '@/lib/track-edges';
+import { sectionSpec, isEmptySection } from '@/lib/content-sections';
 
 // 본문(블록 배열) 작성 규칙 — D70 스키마의 BlockSchema는 "type" 판별자가 필수다.
 // 초안 단계에선 가장 안전한 두 블록만 쓰게 강제(운영자가 폼에서 다른 블록 추가).
@@ -679,4 +680,179 @@ export async function scoreSeed(input: { title: string; rawText?: string; source
     // 파싱 실패 → 보수적으로 etc/저점 처리(운영자가 재분석 가능)
     return { bucket: 'etc', score: 0, reason: '자동 채점 실패(재분석 필요)', suggestedAngle: '', headline: '', essence: {} };
   }
+}
+
+// ─────────────── 인라인 부분 수정 제안(편집 표면) ───────────────
+
+export interface RefineInput {
+  /** 수정 대상 텍스트(드래그 선택 구간 또는 필드 전체 값). rich면 인라인 마크다운 마커(**굵게** ==형광펜== [텍스트](url)) 포함 가능. */
+  text: string;
+  /** 운영자가 적은 '수정 각도'(예: "더 간결하게", "구체 사례 추가"). */
+  instruction: string;
+  /** 편집 중인 위치 힌트(예: "실전 케이스 · 문단", "도구 소개"). 선택. */
+  context?: string;
+  /** rich 필드면 인라인 마크다운 마커를 유지·활용해도 된다. */
+  rich?: boolean;
+  /** 운영자가 첨부한 추가 참고자료(.md 등) — 각도를 바꾸는 info. 선택. */
+  reference?: string;
+  /** 반환할 후보 수(기본 3, 1~4). */
+  count?: number;
+}
+
+/**
+ * 편집 표면(ContentPreview/ToolPreview)에서 지정한 텍스트를 '수정 각도'대로 다시 쓴 후보 2~4개를 반환.
+ * 재작성 작업이라 웹서치 불필요 + 가벼운 모델(sonnet). 실패 시 빈 배열(운영자가 직접 수정).
+ */
+/** 후보 하나 — 어떤 방향인지 짧은 라벨 + 실제 값(text kind는 문자열). */
+export interface RefineCandidate<T = string> {
+  /** 이 후보의 방향을 8자 내외로(예: "간결 강조형", "사례 추가형"). 선택 시 차이를 한눈에. */
+  label: string;
+  value: T;
+}
+
+export async function refineText(input: RefineInput): Promise<{ candidates: RefineCandidate<string>[] }> {
+  const text = input.text?.trim();
+  const instruction = input.instruction?.trim();
+  if (!text || !instruction) return { candidates: [] };
+  const count = Math.min(4, Math.max(1, input.count ?? 3));
+
+  const markerRule = input.rich
+    ? '원문은 인라인 서식 마커를 쓸 수 있습니다: **굵게**, ==형광펜==, [텍스트](URL). 필요하면 후보에도 같은 마커를 쓰되, 새 URL은 지어내지 말고 원문에 있던 링크만 유지하세요.'
+    : '일반 텍스트로만 답하세요(마크다운 서식 기호 금지).';
+
+  const system = `당신은 케이스랩(Caselab)의 콘텐츠 에디터입니다. 운영자가 지정한 "대상 텍스트"를 "수정 각도"에 맞게 다시 쓴 후보를 제안합니다.
+
+[규칙]
+- 대상 텍스트의 핵심 의미·사실은 보존하고, 수정 각도가 요구하는 변화만 반영하세요.
+- 사실·수치·이름·URL을 새로 지어내지 마세요(원문에 있던 것만 사용).
+- 한국어, 케이스랩의 담백한 1인칭 운영자 톤. 본문에 이모지를 넣지 마세요.
+- 수정 각도가 길이를 명시하지 않으면 원문과 비슷한 분량을 유지하세요.
+- 서로 뚜렷이 다른 방향의 후보 ${count}개를 만드세요(같은 문장 재탕 금지).
+- 각 후보에 그 방향을 요약한 짧은 label을 붙이세요(8자 내외, 예: "간결 강조형", "사례 추가형", "질문 도입형"). 후보끼리 서로 다르게.
+- ${markerRule}
+
+응답은 아래 JSON 객체 하나만 반환하세요(설명 없이):
+{ "candidates": [ { "label": "간결 강조형", "value": "다시 쓴 텍스트" }, ... ] }`;
+
+  const ctx = input.context?.trim() ? `[편집 위치] ${input.context.trim()}\n` : '';
+  const ref = input.reference?.trim() ? `\n\n[추가 참고자료 — 이 정보를 반영해 각도를 잡으세요]\n${input.reference.trim().slice(0, 8000)}` : '';
+  const userPrompt = `${ctx}[수정 각도] ${instruction}${ref}\n\n[대상 텍스트]\n${text.slice(0, 8000)}\n\n위 대상 텍스트를 수정 각도대로 다시 쓴 후보 ${count}개를 JSON으로 반환하세요(각 후보에 label 포함).`;
+
+  const raw = await callModel(system, userPrompt, { allowedTools: [], model: 'sonnet', timeoutMs: 60_000 });
+  const parsed = (parseModelJson(raw) ?? {}) as Record<string, unknown>;
+  const candidates: RefineCandidate<string>[] = [];
+  if (Array.isArray(parsed.candidates)) {
+    for (const c of parsed.candidates) {
+      let label = '';
+      let value = '';
+      if (typeof c === 'string') value = c.trim(); // 하위호환(모델이 라벨 생략 시)
+      else if (c && typeof c === 'object') {
+        const o = c as Record<string, unknown>;
+        label = typeof o.label === 'string' ? o.label.trim() : '';
+        value = typeof o.value === 'string' ? o.value.trim() : '';
+      }
+      if (value) candidates.push({ label, value });
+      if (candidates.length >= count) break;
+    }
+  }
+  return { candidates };
+}
+
+// ─────────────── 섹션 통째 수정 제안(자유 재구성) ───────────────
+
+export interface RefineSectionInput {
+  /** content(케이스/트렌드)면 지정 → 후보를 전체 ContentBodySchema로 검증(무효 후보 제거). tool이면 생략(형태 가드만). */
+  track?: 'case' | 'trend';
+  /** 현재 전체 body — 섹션 후보를 끼워 스키마 검증. */
+  body: Record<string, unknown>;
+  /** body의 섹션 키(예: "forWho", "painPoints", "what"). */
+  sectionKey: string;
+  /** 사람이 읽는 섹션 이름(예: "누구한테 중요해요"). */
+  sectionLabel: string;
+  instruction: string;
+  /** 추가 참고자료(.md 등). 선택. */
+  reference?: string;
+  count?: number;
+}
+
+/**
+ * 섹션(카드/항목 배열 또는 객체) 전체를 '수정 각도'대로 자유 재구성한 후보를 반환.
+ * 항목 추가·병합·분할·순서변경 허용. content면 {...body, [key]:후보}를 스키마 검증해 유효 후보만 남긴다(렌더 안전).
+ */
+export async function refineSection(input: RefineSectionInput): Promise<{ candidates: RefineCandidate<unknown>[] }> {
+  const instruction = input.instruction?.trim();
+  const current = input.body?.[input.sectionKey]; // 생성 시 키가 아예 없을 수 있음(undefined)
+  if (!instruction) return { candidates: [] };
+  const count = Math.min(4, Math.max(1, input.count ?? 3));
+
+  // 빈 섹션(또는 키 없음)이면 "생성" 모드 — 섹션 정의(content-sections)의 예시를 형태 힌트로 삼아 새로 작성.
+  const empty = isEmptySection(current);
+  const example = empty && input.track ? sectionSpec(input.track, input.sectionKey)?.example : undefined;
+  const shapeRef = empty && example !== undefined ? example : current;
+  if (shapeRef === undefined || shapeRef === null) return { candidates: [] }; // 형태 힌트 없음(생성 불가)
+  const isArr = Array.isArray(shapeRef);
+  const shapeJson = JSON.stringify(shapeRef, null, 2);
+
+  const system = empty
+    ? `당신은 케이스랩(Caselab)의 콘텐츠 에디터입니다. 문서에 새로 추가할 한 섹션의 내용을, 운영자가 준 "핵심 내용·방향·주의사항"에 맞춰 새로 작성한 후보를 제안합니다.
+
+[규칙]
+- 아래 "형태 예시"와 같은 JSON 형태(${isArr ? '배열' : '객체'} + 같은 키 이름·타입)로 작성하세요. 항목 개수는 내용에 맞게 정하면 됩니다.
+- 키 이름/타입은 예시와 동일하게(새 키 발명 금지). 값은 예시 문구를 쓰지 말고 실제 내용으로 채우세요.
+- 운영자가 준 핵심 내용·참고자료에 있는 사실만 쓰고, 수치·이름·URL을 새로 지어내지 마세요.
+- 한국어, 담백한 1인칭 운영자 톤. 이모지 금지.
+- 서로 뚜렷이 다른 방향의 후보 ${count}개(구성 재탕 금지).
+- 각 후보에 방향을 요약한 짧은 label(8자 내외, 예: "핵심 압축형", "사례 중심형"). 후보끼리 다르게.
+
+응답은 아래 JSON만 반환(설명 없이). candidates의 각 원소는 { label, value } 이고 value는 이 섹션의 값(예시와 같은 형태):
+{ "candidates": [ { "label": "핵심 압축형", "value": <섹션 값> }, ... ] }`
+    : `당신은 케이스랩(Caselab)의 콘텐츠 에디터입니다. 문서의 한 섹션 전체를 "수정 각도"에 맞게 다시 구성한 후보를 제안합니다.
+
+[규칙]
+- 아래 "현재 섹션 JSON"과 같은 JSON 형태(${isArr ? '배열' : '객체'} + 같은 키 이름·타입)를 유지하세요. 단, 항목을 추가·병합·분할·순서변경해도 됩니다(자유 재구성).
+- 각 항목의 키 이름/타입은 현재와 동일하게(새 키 발명 금지). 텍스트 값만 새로 씁니다.
+- 사실·수치·이름·URL을 새로 지어내지 마세요(현재 내용/참고자료에 있는 것만).
+- 한국어, 담백한 1인칭 운영자 톤. 이모지 금지.
+- 서로 뚜렷이 다른 방향의 후보 ${count}개(같은 구성 재탕 금지).
+- 각 후보에 그 재구성 방향을 요약한 짧은 label을 붙이세요(8자 내외, 예: "카드 확장형", "핵심 압축형", "직무별 정리형"). 후보끼리 서로 다르게.
+
+응답은 아래 JSON만 반환(설명 없이). candidates의 각 원소는 { label, value } 이고 value는 이 섹션의 새 값(현재와 같은 형태):
+{ "candidates": [ { "label": "카드 확장형", "value": <섹션 값> }, ... ] }`;
+
+  const ref = input.reference?.trim() ? `\n\n[추가 참고자료 — 이 정보를 반영하세요]\n${input.reference.trim().slice(0, 8000)}` : '';
+  const userPrompt = empty
+    ? `[새 섹션] ${input.sectionLabel}\n[넣을 핵심 내용·방향·주의사항] ${instruction}${ref}\n\n[형태 예시]\n${shapeJson.slice(0, 12000)}\n\n위 요청 내용을 예시 형태로 담은 후보 ${count}개를 JSON으로 반환하세요(각 후보에 label 포함).`
+    : `[섹션] ${input.sectionLabel}\n[수정 각도] ${instruction}${ref}\n\n[현재 섹션 JSON]\n${shapeJson.slice(0, 12000)}\n\n위 섹션을 수정 각도대로 다시 구성한 후보 ${count}개를 JSON으로 반환하세요(각 후보에 label 포함).`;
+
+  const raw = await callModel(system, userPrompt, { allowedTools: [], model: 'sonnet', timeoutMs: 90_000 });
+  const parsed = (parseModelJson(raw) ?? {}) as Record<string, unknown>;
+  const list = Array.isArray(parsed.candidates) ? parsed.candidates : [];
+
+  // 전체 body 검증은 "원본 body가 이미 스키마를 통과할 때"만 후보 판별자로 쓴다.
+  // 원본이 이미 스키마 밖이면(예: 아직 스키마에 없는 신블록 포함) 전체 검증이 후보와 무관하게 늘 실패하므로,
+  // 그럴 땐 형태 가드(배열↔배열)만으로 통과시킨다(운영자가 검토 후 적용).
+  const strict = !!input.track && ContentBodySchema.safeParse(input.body).success;
+
+  const out: RefineCandidate<unknown>[] = [];
+  for (const c of list) {
+    // 모델이 {label, value}로 감쌌으면 풀고, 아니면 원소 자체를 섹션 값으로 본다.
+    let label = '';
+    let value: unknown = c;
+    if (c && typeof c === 'object' && !Array.isArray(c) && 'value' in (c as Record<string, unknown>)) {
+      const o = c as Record<string, unknown>;
+      label = typeof o.label === 'string' ? o.label.trim() : '';
+      value = o.value;
+    }
+    if (isArr !== Array.isArray(value)) continue; // 형태 가드
+    if (value === null || typeof value !== 'object') continue;
+    if (strict) {
+      const res = ContentBodySchema.safeParse({ ...input.body, [input.sectionKey]: value });
+      if (!res.success) continue;
+      out.push({ label, value: (res.data as Record<string, unknown>)[input.sectionKey] });
+    } else {
+      out.push({ label, value });
+    }
+    if (out.length >= count) break;
+  }
+  return { candidates: out };
 }
