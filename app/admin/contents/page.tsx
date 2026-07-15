@@ -45,22 +45,30 @@ const STATUS_TABS: { key: string; label: string }[] = [
 ];
 
 // 다른 파라미터를 보존하며 querystring 합성
-function buildHref(params: { type?: string; status?: string }): string {
+function buildHref(params: { type?: string; status?: string; q?: string }): string {
   const qs = new URLSearchParams();
   if (params.type) qs.set('type', params.type);
   if (params.status) qs.set('status', params.status);
+  if (params.q) qs.set('q', params.q);
   const s = qs.toString();
   return s ? `/admin/contents?${s}` : '/admin/contents';
+}
+
+// PostgREST .or() 필터에서 특수문자(쉼표·괄호)가 구문을 깨지 않도록 제거
+function sanitizeSearch(raw: string): string {
+  return raw.replace(/[,()*%]/g, ' ').trim();
 }
 
 export default async function AdminContents({
   searchParams,
 }: {
-  searchParams: Promise<{ type?: string; status?: string }>;
+  searchParams: Promise<{ type?: string; status?: string; q?: string }>;
 }) {
   const sp = await searchParams;
   const activeType = (sp.type ?? '') as ContentType | '';
   const activeStatus = sp.status ?? '';
+  const rawQuery = (sp.q ?? '').trim();
+  const query = sanitizeSearch(rawQuery);
 
   if (!isSupabaseConfigured()) {
     return <div className="p-4 sm:p-8 text-sm text-ink/60">Supabase 연결 후 사용할 수 있어요.</div>;
@@ -83,6 +91,11 @@ export default async function AdminContents({
     // 전체 = 보관 제외 (보관은 '보관' 탭에서만)
     contentsQ = contentsQ.neq('status', 'archived');
     toolsQ = toolsQ.neq('status', 'archived');
+  }
+  // 검색: 제목·slug 대상 부분 일치 (대소문자 무시)
+  if (query) {
+    contentsQ = contentsQ.or(`title.ilike.%${query}%,slug.ilike.%${query}%`);
+    toolsQ = toolsQ.or(`name.ilike.%${query}%,slug.ilike.%${query}%`);
   }
   const [contentsRes, toolsRes] = await Promise.all([contentsQ, toolsQ]);
 
@@ -133,10 +146,31 @@ export default async function AdminContents({
         </div>
       </header>
 
+      {/* 검색 */}
+      <form method="get" className="mb-4 flex flex-wrap items-center gap-2">
+        {activeType && <input type="hidden" name="type" value={activeType} />}
+        {activeStatus && <input type="hidden" name="status" value={activeStatus} />}
+        <div className="relative flex-1 min-w-[200px] max-w-sm">
+          <input
+            type="search"
+            name="q"
+            defaultValue={rawQuery}
+            placeholder="제목·slug로 검색"
+            className="flex h-10 w-full rounded-md border border-border bg-white pl-3 pr-3 py-2 text-sm placeholder:text-ink/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2"
+          />
+        </div>
+        <Button type="submit" variant="outline">검색</Button>
+        {rawQuery && (
+          <Link href={buildHref({ type: activeType || undefined, status: activeStatus || undefined })} className="text-xs text-ink/50 hover:underline">
+            초기화
+          </Link>
+        )}
+      </form>
+
       {/* 타입 필터 */}
       <div className="mb-2 flex flex-wrap gap-2 text-sm">
         <Link
-          href={buildHref({ status: activeStatus })}
+          href={buildHref({ status: activeStatus, q: rawQuery })}
           className={`chip ${!activeType ? 'chip-active' : ''}`}
         >
           전체 <span className="ml-1 text-ink/40">{rows.length}</span>
@@ -146,7 +180,7 @@ export default async function AdminContents({
           return (
             <Link
               key={t.key}
-              href={buildHref({ type: t.key, status: activeStatus })}
+              href={buildHref({ type: t.key, status: activeStatus, q: rawQuery })}
               className={`chip ${activeType === t.key ? 'chip-active' : ''}`}
             >
               {t.label} <span className="ml-1 text-ink/40">{n}</span>
@@ -160,7 +194,7 @@ export default async function AdminContents({
         {STATUS_TABS.map((s) => (
           <Link
             key={s.key || 'all'}
-            href={buildHref({ type: activeType || undefined, status: s.key || undefined })}
+            href={buildHref({ type: activeType || undefined, status: s.key || undefined, q: rawQuery })}
             className={`chip ${activeStatus === s.key ? 'chip-active' : ''}`}
           >
             {s.label}
@@ -182,7 +216,7 @@ export default async function AdminContents({
           </thead>
           <tbody className="divide-y divide-border">
             {visible.length === 0 && (
-              <tr><td colSpan={6} className="px-4 py-10 text-center text-ink/40">콘텐츠가 없어요.</td></tr>
+              <tr><td colSpan={6} className="px-4 py-10 text-center text-ink/40">{rawQuery ? `'${rawQuery}' 검색 결과가 없어요.` : '콘텐츠가 없어요.'}</td></tr>
             )}
             {visible.map((it) => (
               <tr key={`${it.type}-${it.id}`} className="hover:bg-muted/30">
