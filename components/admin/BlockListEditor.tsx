@@ -7,6 +7,8 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
 import type { Block } from '@/types/content';
+import { ImageZoom } from '@/components/admin/ImageZoom';
+import { uploadImageFile, uploadImageFromUrl, extractDroppedImage, extractDroppedImages } from '@/lib/image-upload';
 
 /**
  * #6 Phase 1 — 재사용 블록 리스트 에디터.
@@ -180,16 +182,6 @@ function BlockFields({ block, onChange }: { block: Block; onChange: (b: Block) =
   return null;
 }
 
-// ── 이미지 업로드 공통 헬퍼(단일 파일 → 공개 URL) ────────────────
-async function uploadImageFile(file: File): Promise<string> {
-  const fd = new FormData();
-  fd.append('file', file);
-  const res = await fetch('/api/admin/upload-image', { method: 'POST', body: fd });
-  const json = (await res.json()) as { url?: string; error?: string };
-  if (!res.ok || !json.url) throw new Error(json.error ?? '업로드 실패');
-  return json.url;
-}
-
 // 이미지 블록 편집 — 업로드(클릭)·끌어놓기·클립보드 붙여넣기(⌘V)·URL 직접 입력 모두 지원.
 // ContentPreview의 인라인 이미지 편집에서도 재사용.
 export function ImageBlockField({
@@ -204,22 +196,18 @@ export function ImageBlockField({
   const [dragOver, setDragOver] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
-  const upload = async (file: File) => {
+  const run = async (fn: () => Promise<string>) => {
     setUploading(true);
     setErr(null);
     try {
-      const fd = new FormData();
-      fd.append('file', file);
-      const res = await fetch('/api/admin/upload-image', { method: 'POST', body: fd });
-      const json = (await res.json()) as { url?: string; error?: string };
-      if (!res.ok || !json.url) throw new Error(json.error ?? '업로드 실패');
-      onChange({ ...block, url: json.url });
+      onChange({ ...block, url: await fn() });
     } catch (e) {
       setErr((e as Error).message);
     } finally {
       setUploading(false);
     }
   };
+  const upload = (file: File) => run(() => uploadImageFile(file));
 
   return (
     <div
@@ -236,8 +224,7 @@ export function ImageBlockField({
       {block.url ? (
         <div className="space-y-2">
           <div className="flex items-start gap-3">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={block.url} alt="" className="max-h-40 rounded-md border border-border" />
+            <ImageZoom src={block.url} alt="" className="max-h-40 rounded-md border border-border" />
             <button type="button" onClick={() => onChange({ ...block, url: '' })} className="text-xs text-accent hover:underline shrink-0">
               교체
             </button>
@@ -271,8 +258,10 @@ export function ImageBlockField({
           onDrop={(e) => {
             e.preventDefault();
             setDragOver(false);
-            const f = e.dataTransfer.files?.[0];
-            if (f) upload(f);
+            const { file, url } = extractDroppedImage(e.dataTransfer);
+            if (file) upload(file);
+            else if (url) run(() => uploadImageFromUrl(url));
+            else setErr('이미지 파일이나 이미지를 끌어놓아 주세요.');
           }}
           className={cn(
             'flex cursor-pointer flex-col items-center justify-center gap-1.5 rounded-lg border border-dashed px-4 py-8 text-center text-xs transition-colors',
@@ -337,6 +326,18 @@ export function GalleryField({
       setBusy(false);
     }
   };
+  // 웹/다른 탭에서 끈 이미지 한 장 — 서버가 fetch해서 저장 후 갤러리에 추가.
+  const addUrl = async (src: string) => {
+    setBusy(true);
+    setErr(null);
+    try {
+      onChange({ ...block, images: [...imgs, { url: await uploadImageFromUrl(src) }] });
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
   const update = (i: number, patch: Partial<{ url: string; caption: string }>) =>
     onChange({ ...block, images: imgs.map((im, k) => (k === i ? { ...im, ...patch } : im)) });
   const remove = (i: number) => onChange({ ...block, images: imgs.filter((_, k) => k !== i) });
@@ -363,8 +364,7 @@ export function GalleryField({
         <div className="grid grid-cols-3 gap-2">
           {imgs.map((im, i) => (
             <div key={i} className="group/g relative overflow-hidden rounded-md border border-border">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={im.url} alt="" className="h-24 w-full object-cover" />
+              <ImageZoom src={im.url} alt="" className="h-24 w-full object-cover" />
               <div className="absolute right-1 top-1 hidden gap-0.5 rounded-full bg-white/90 px-1 py-0.5 shadow-sm group-hover/g:flex">
                 <button type="button" onClick={() => move(i, -1)} disabled={i === 0} className="p-0.5 text-ink/60 disabled:opacity-25" title="앞으로"><ChevronLeft className="h-3 w-3" /></button>
                 <button type="button" onClick={() => move(i, 1)} disabled={i === imgs.length - 1} className="p-0.5 text-ink/60 disabled:opacity-25" title="뒤로"><ChevronRight className="h-3 w-3" /></button>
@@ -379,7 +379,14 @@ export function GalleryField({
         onClick={() => fileRef.current?.click()}
         onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
         onDragLeave={() => setDragOver(false)}
-        onDrop={(e) => { e.preventDefault(); setDragOver(false); addFiles(Array.from(e.dataTransfer.files)); }}
+        onDrop={(e) => {
+          e.preventDefault();
+          setDragOver(false);
+          const { files, url } = extractDroppedImages(e.dataTransfer);
+          if (files.length) addFiles(files);
+          else if (url) addUrl(url);
+          else setErr('이미지 파일이나 이미지를 끌어놓아 주세요.');
+        }}
         className={cn(
           'flex cursor-pointer flex-col items-center justify-center gap-1 rounded-lg border border-dashed px-4 py-6 text-center text-xs transition-colors',
           dragOver ? 'border-accent bg-accent/5' : 'border-border hover:border-ink/30',
@@ -422,17 +429,18 @@ export function BookmarkField({
   const [imgDrag, setImgDrag] = useState(false);
   const imgRef = useRef<HTMLInputElement>(null);
 
-  const uploadThumb = async (file: File) => {
-    if (!file.type.startsWith('image/')) return;
+  const runThumb = async (fn: () => Promise<string>) => {
     setImgBusy(true);
     try {
-      const url = await uploadImageFile(file);
-      onChange({ ...block, image: url });
+      onChange({ ...block, image: await fn() });
     } catch (e) {
       setNote((e as Error).message);
     } finally {
       setImgBusy(false);
     }
+  };
+  const uploadThumb = (file: File) => {
+    if (file.type.startsWith('image/')) runThumb(() => uploadImageFile(file));
   };
 
   const fetchMeta = async (url: string) => {
@@ -496,8 +504,7 @@ export function BookmarkField({
             <div className="shrink-0">
               {block.image ? (
                 <div className="group/bi relative">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={block.image} alt="" className="h-16 w-24 rounded object-cover" />
+                  <ImageZoom src={block.image} alt="" className="h-16 w-24 rounded object-cover" />
                   <button
                     type="button"
                     onClick={() => onChange({ ...block, image: undefined })}
@@ -512,7 +519,13 @@ export function BookmarkField({
                   onClick={() => imgRef.current?.click()}
                   onDragOver={(e) => { e.preventDefault(); setImgDrag(true); }}
                   onDragLeave={() => setImgDrag(false)}
-                  onDrop={(e) => { e.preventDefault(); setImgDrag(false); const f = e.dataTransfer.files?.[0]; if (f) uploadThumb(f); }}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    setImgDrag(false);
+                    const { file, url } = extractDroppedImage(e.dataTransfer);
+                    if (file) uploadThumb(file);
+                    else if (url) runThumb(() => uploadImageFromUrl(url));
+                  }}
                   className={cn(
                     'flex h-16 w-24 cursor-pointer flex-col items-center justify-center gap-0.5 rounded border border-dashed text-center text-[10px] transition-colors',
                     imgDrag ? 'border-accent bg-accent/5 text-accent' : 'border-border text-ink/50 hover:border-ink/30',

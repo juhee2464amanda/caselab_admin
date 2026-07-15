@@ -533,6 +533,7 @@ export function ToolForm({ initial, onSaved, startInPreview }: Props) {
                 onPatch={(p) => {
                   if (p.name !== undefined) setName(p.name);
                   if (p.description !== undefined) setDescription(p.description);
+                  if (p.thumbnailUrl !== undefined) setThumbnailUrl(p.thumbnailUrl);
                 }}
                 onBody={(next) => syncBody(JSON.stringify(next, null, 2))}
               />

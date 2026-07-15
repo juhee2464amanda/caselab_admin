@@ -4,19 +4,12 @@ import { useRef, useState } from 'react';
 import { ArrowUpRight, Copy, Check, ExternalLink, Upload, Loader2, Trash2, Plus } from 'lucide-react';
 import { ToolBodySchema, type ToolBody } from '@/lib/tool-body';
 import { Editable } from '@/components/admin/Editable';
+import { ImageZoom } from '@/components/admin/ImageZoom';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
+import { uploadImageFile, uploadImageFromUrl, extractDroppedImage } from '@/lib/image-upload';
 
 type FeatureImage = { url: string; caption?: string };
-
-async function uploadToolImage(file: File): Promise<string> {
-  const fd = new FormData();
-  fd.append('file', file);
-  const res = await fetch('/api/admin/upload-image', { method: 'POST', body: fd });
-  const json = (await res.json()) as { url?: string; error?: string };
-  if (!res.ok || !json.url) throw new Error(json.error ?? '업로드 실패');
-  return json.url;
-}
 
 // 기능 이미지 편집 — 업로드(클릭)·끌어놓기·붙여넣기(⌘V)·URL 직접 입력·캡션·삭제.
 // ToolBody feature.image 계약({url, caption?})만 다룬다(strict 스키마라 size/align 넣으면 발행 차단됨).
@@ -26,17 +19,18 @@ function FeatureImageField({ image, onChange }: { image?: FeatureImage; onChange
   const [dragOver, setDragOver] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
-  const up = async (file: File) => {
+  const commit = async (fn: () => Promise<string>) => {
     setUploading(true);
     setErr(null);
     try {
-      onChange({ url: await uploadToolImage(file), caption: image?.caption });
+      onChange({ url: await fn(), caption: image?.caption });
     } catch (e) {
       setErr((e as Error).message);
     } finally {
       setUploading(false);
     }
   };
+  const up = (file: File) => commit(() => uploadImageFile(file));
 
   const onPaste = (e: React.ClipboardEvent) => {
     const f = Array.from(e.clipboardData.items).find((it) => it.type.startsWith('image/'))?.getAsFile();
@@ -51,8 +45,7 @@ function FeatureImageField({ image, onChange }: { image?: FeatureImage; onChange
       {image?.url ? (
         <>
           <figure className="overflow-hidden rounded-xl border border-border bg-muted">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={image.url} alt={image.caption ?? ''} className="block w-full" />
+            <ImageZoom src={image.url} alt={image.caption ?? ''} className="block w-full" />
           </figure>
           <div className="flex items-center gap-2">
             <Input
@@ -70,7 +63,14 @@ function FeatureImageField({ image, onChange }: { image?: FeatureImage; onChange
           onClick={() => fileRef.current?.click()}
           onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
           onDragLeave={() => setDragOver(false)}
-          onDrop={(e) => { e.preventDefault(); setDragOver(false); const f = e.dataTransfer.files?.[0]; if (f) up(f); }}
+          onDrop={(e) => {
+            e.preventDefault();
+            setDragOver(false);
+            const { file, url } = extractDroppedImage(e.dataTransfer);
+            if (file) up(file);
+            else if (url) commit(() => uploadImageFromUrl(url));
+            else setErr('이미지 파일이나 이미지를 끌어놓아 주세요.');
+          }}
           className={cn(
             'flex cursor-pointer flex-col items-center justify-center gap-1 rounded-lg border border-dashed px-4 py-5 text-center text-xs transition-colors',
             dragOver ? 'border-accent bg-accent/5' : 'border-border hover:border-ink/30',
@@ -99,6 +99,121 @@ function FeatureImageField({ image, onChange }: { image?: FeatureImage; onChange
   );
 }
 
+// 히어로 썸네일 편집 — 16:10 박스 자체가 드롭존. 끌어놓기·클릭·붙여넣기(⌘V).
+// thumbnail_url은 body가 아니라 폼 상태라 onPatch({ thumbnailUrl })로 커밋한다.
+function HeroThumbnailField({
+  url,
+  emoji,
+  name,
+  onCommit,
+}: {
+  url?: string | null;
+  emoji?: string | null;
+  name: string;
+  onCommit: (url: string) => void;
+}) {
+  const [uploading, setUploading] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [dragOver, setDragOver] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  const run = async (fn: () => Promise<string>) => {
+    setUploading(true);
+    setErr(null);
+    try {
+      onCommit(await fn());
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const onDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setDragOver(false);
+    const { file, url: dropped } = extractDroppedImage(e.dataTransfer);
+    if (file) run(() => uploadImageFile(file));
+    else if (dropped) run(() => uploadImageFromUrl(dropped));
+    else setErr('이미지 파일이나 이미지를 끌어놓아 주세요.');
+  };
+
+  const onPaste = (e: React.ClipboardEvent) => {
+    const f = Array.from(e.clipboardData.items).find((it) => it.type.startsWith('image/'))?.getAsFile();
+    if (f) {
+      e.preventDefault();
+      run(() => uploadImageFile(f));
+    }
+  };
+
+  return (
+    <div className="space-y-1.5">
+      <div
+        onPaste={onPaste}
+        onDragOver={(e) => {
+          e.preventDefault();
+          setDragOver(true);
+        }}
+        onDragLeave={() => setDragOver(false)}
+        onDrop={onDrop}
+        className={cn(
+          'group relative aspect-[16/10] overflow-hidden rounded-2xl border bg-muted outline-none transition-colors',
+          dragOver ? 'border-accent ring-2 ring-accent/30' : 'border-border',
+        )}
+      >
+        {url ? (
+          // 이미지 클릭 = 확대(라이트박스). 교체는 우상단 버튼·끌어놓기·⌘V.
+          <ImageZoom src={url} alt={name} className="h-full w-full object-cover" />
+        ) : (
+          <button
+            type="button"
+            onClick={() => fileRef.current?.click()}
+            className="flex h-full w-full flex-col items-center justify-center gap-1 bg-gradient-to-br from-muted to-border hover:opacity-90"
+          >
+            <span className="text-[56px] leading-none opacity-50">{emoji || '🛠️'}</span>
+            <span className="text-[11px] text-ink/50">이미지 끌어놓기·클릭·붙여넣기(⌘V)</span>
+          </button>
+        )}
+        {/* 업로드 중·드래그 오버레이 — pointer-events-none이라 이미지 클릭(확대)을 막지 않는다. */}
+        {(uploading || dragOver) && (
+          <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-1 bg-black/45 text-center text-xs text-white">
+            {uploading ? (
+              <>
+                <Loader2 className="h-5 w-5 animate-spin" /> 업로드 중…
+              </>
+            ) : (
+              <>
+                <Upload className="h-5 w-5" /> <span>여기에 놓기</span>
+              </>
+            )}
+          </div>
+        )}
+        {url && !uploading && (
+          <button
+            type="button"
+            onClick={() => fileRef.current?.click()}
+            title="이미지 교체"
+            className="absolute right-2 top-2 hidden items-center gap-1 rounded-full bg-black/55 px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-black/70 group-hover:flex"
+          >
+            <Upload className="h-3 w-3" /> 교체
+          </button>
+        )}
+      </div>
+      <input
+        ref={fileRef}
+        type="file"
+        accept="image/png,image/jpeg,image/webp,image/gif"
+        className="hidden"
+        onChange={(e) => {
+          const f = e.target.files?.[0];
+          if (f) run(() => uploadImageFile(f));
+        }}
+      />
+      {err && <p className="text-xs text-red-600">{err}</p>}
+    </div>
+  );
+}
+
 // 자료(도구/프롬프트/가이드) 미리보기 — 발행 전 "실제 올라가는 모습" 검수·편집 표면.
 // 도구: 본가 components/tools/ToolDetail.tsx 마크업 이식(2026-07-11 스냅샷, Snipit 목업 정합).
 // onPatch/onBody를 넘기면 텍스트 클릭 → 인라인 수정 → 폼 상태로 커밋.
@@ -116,8 +231,8 @@ export interface ToolPreviewProps {
   thumbnailUrl?: string | null;
   thumbnailEmoji?: string | null;
   jobTags?: string[];
-  /** 메타(이름·설명) 인라인 수정 커밋 */
-  onPatch?: (patch: Partial<{ name: string; description: string }>) => void;
+  /** 메타(이름·설명·썸네일) 인라인 수정 커밋 */
+  onPatch?: (patch: Partial<{ name: string; description: string; thumbnailUrl: string }>) => void;
   /** body(jsonb) 인라인 수정 커밋 */
   onBody?: (next: Record<string, unknown>) => void;
 }
@@ -178,16 +293,19 @@ function ToolDetailPreview({
     <div>
       {/* Hero — ToolDetail 정합: 썸네일 16:10(이미지→이모지 폴백) + 칩/태그/CTA */}
       <section className="grid grid-cols-1 md:grid-cols-[1fr_1.1fr] gap-6 md:gap-9 md:items-center mb-10">
-        <div className="aspect-[16/10] rounded-2xl overflow-hidden border border-border bg-muted">
-          {thumbnailUrl ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={thumbnailUrl} alt={name} className="w-full h-full object-cover" />
-          ) : (
-            <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-muted to-border">
-              <span className="text-[56px] opacity-50">{thumbnailEmoji || '🛠️'}</span>
-            </div>
-          )}
-        </div>
+        {onPatch ? (
+          <HeroThumbnailField url={thumbnailUrl} emoji={thumbnailEmoji} name={name} onCommit={(u) => onPatch({ thumbnailUrl: u })} />
+        ) : (
+          <div className="aspect-[16/10] rounded-2xl overflow-hidden border border-border bg-muted">
+            {thumbnailUrl ? (
+              <ImageZoom src={thumbnailUrl} alt={name} className="w-full h-full object-cover" />
+            ) : (
+              <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-muted to-border">
+                <span className="text-[56px] opacity-50">{thumbnailEmoji || '🛠️'}</span>
+              </div>
+            )}
+          </div>
+        )}
         <div className="flex flex-col gap-3.5">
           <span className="inline-flex w-fit items-center gap-1.5 text-xs font-bold text-accent bg-accent-50 px-2.5 py-1 rounded">
             AI 도구
@@ -207,6 +325,7 @@ function ToolDetailPreview({
           <Editable
             as="p"
             multiline
+            rich
             value={description ?? ''}
             placeholder={onPatch ? '한 줄 소개 (클릭해서 입력)' : ''}
             onCommit={onPatch && ((v) => onPatch({ description: v }))}
@@ -378,8 +497,7 @@ function ToolDetailPreview({
                   ) : (
                     f.image && (
                       <figure className="mt-3 rounded-xl border border-border overflow-hidden bg-muted">
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img src={f.image.url} alt={f.image.caption ?? f.title} loading="lazy" className="block w-full" />
+                        <ImageZoom src={f.image.url} alt={f.image.caption ?? f.title} loading="lazy" className="block w-full" />
                         {f.image.caption && (
                           <figcaption className="border-t border-border bg-white px-3.5 py-2 text-[12px] text-ink/50 break-keep">
                             {f.image.caption}
@@ -455,6 +573,7 @@ function ToolDetailPreview({
             <Editable
               as="p"
               multiline
+              rich
               value={body.pricingNote}
               onCommit={set && ((v) => set({ pricingNote: v }))}
               className="mt-3.5 text-[13px] text-ink/40 block"
@@ -539,6 +658,7 @@ function PromptCardPreview({
       <Editable
         as="p"
         multiline
+        rich
         value={description ?? ''}
         placeholder={onPatch ? '설명 (클릭해서 입력)' : ''}
         onCommit={onPatch && ((v) => onPatch({ description: v }))}
@@ -547,11 +667,11 @@ function PromptCardPreview({
       {(prompt || set) && <CopyBox text={prompt} onCommit={set && ((v) => set({ prompt: v }))} />}
       <p className="text-[13px] text-ink/60 leading-relaxed">
         <strong className="text-ink/80">사용법</strong> ·{' '}
-        <Editable value={howToUse} multiline placeholder={set ? '클릭해서 입력' : ''} onCommit={set && ((v) => set({ howToUse: v }))} />
+        <Editable value={howToUse} multiline rich placeholder={set ? '클릭해서 입력' : ''} onCommit={set && ((v) => set({ howToUse: v }))} />
       </p>
       <p className="text-[13px] text-ink/60 leading-relaxed">
         <strong className="text-ink/80">예시</strong> ·{' '}
-        <Editable value={example} multiline placeholder={set ? '클릭해서 입력' : ''} onCommit={set && ((v) => set({ example: v }))} />
+        <Editable value={example} multiline rich placeholder={set ? '클릭해서 입력' : ''} onCommit={set && ((v) => set({ example: v }))} />
       </p>
       <p className="text-[11px] text-ink/40">바로 복사 가능</p>
     </div>
