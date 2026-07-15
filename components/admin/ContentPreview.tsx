@@ -114,6 +114,7 @@ function PromptBlockView({ label, prompt, onCommit }: { label?: string; prompt: 
         as="pre"
         multiline
         value={prompt}
+        placeholder={onCommit ? '클릭해서 프롬프트를 입력하세요' : undefined}
         onCommit={onCommit}
         className="px-4 py-3 text-sm whitespace-pre-wrap font-sans leading-relaxed hover:bg-white/10"
       />
@@ -196,6 +197,7 @@ function renderBlock(block: Block, key: string | number, onBlock?: (nb: Block) =
           multiline
           rich
           value={block.markdown}
+          placeholder={onBlock ? '클릭해서 문단 내용을 입력하세요' : undefined}
           onCommit={onBlock && ((v) => onBlock({ ...block, markdown: v }))}
           className="text-[16px] leading-[1.75] text-ink/85 my-4 whitespace-pre-wrap block"
         />
@@ -206,6 +208,7 @@ function renderBlock(block: Block, key: string | number, onBlock?: (nb: Block) =
           key={key}
           as={block.level === 2 ? 'h2' : 'h3'}
           value={block.text}
+          placeholder={onBlock ? '소제목을 입력하세요' : undefined}
           onCommit={onBlock && ((v) => onBlock({ ...block, text: v }))}
           className={
             block.level === 2 ? 'font-serif text-2xl font-semibold mt-10 mb-3 block' : 'font-serif text-xl font-semibold mt-8 mb-2 block'
@@ -277,12 +280,12 @@ function renderBlock(block: Block, key: string | number, onBlock?: (nb: Block) =
     case 'checklist':
       return (
         <div key={key} className="my-4 rounded-md border border-border bg-white p-5">
-          <Editable as="h4" value={block.title} onCommit={onBlock && ((v) => onBlock({ ...block, title: v }))} className="font-semibold mb-3 block" />
+          <Editable as="h4" value={block.title} placeholder={onBlock ? '체크리스트 제목' : undefined} onCommit={onBlock && ((v) => onBlock({ ...block, title: v }))} className="font-semibold mb-3 block" />
           <ul className="space-y-1.5">
             {block.items.map((it, i) => (
               <li key={i} className="flex gap-2 text-sm text-ink/85">
                 <span className="text-accent">✓</span>
-                <Editable value={it} rich onCommit={onBlock && ((v) => onBlock({ ...block, items: upd(block.items, i, v) }))} />
+                <Editable value={it} rich placeholder={onBlock ? '항목 내용' : undefined} onCommit={onBlock && ((v) => onBlock({ ...block, items: upd(block.items, i, v) }))} />
               </li>
             ))}
           </ul>
