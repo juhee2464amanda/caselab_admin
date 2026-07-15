@@ -157,6 +157,17 @@ export const BlockSchema: z.ZodType<Block> = z.lazy(() =>
 );
 
 // ───────────────────────────────────────────────────────────
+// 자유 리치 섹션 — 트렌드처럼 이미지·갤러리·북마크·문단 등 블록을
+// 각 섹션에 자유 배치. 도구·케이스·프롬프트·가이드 상세 공통으로 재사용.
+// ───────────────────────────────────────────────────────────
+export const RichSectionSchema = z.object({
+  label: z.string().optional(),
+  heading: z.string().optional(),
+  blocks: z.array(BlockSchema),
+});
+export type RichSection = z.infer<typeof RichSectionSchema>;
+
+// ───────────────────────────────────────────────────────────
 // 트랙별 본문 스키마
 // ───────────────────────────────────────────────────────────
 export const FrameworkStepSchema = z.object({
@@ -227,6 +238,13 @@ export const CaseBodySchema = z.object({
   cons: z.array(z.string()).optional(),
   takingPoints: z.array(TakingPointSchema).optional(),
 
+  // 자유 리치 섹션 — 고정 7섹션 뒤에 순서대로 렌더 (이미지·링크·갤러리 등)
+  sections: z.array(RichSectionSchema).optional(),
+
+  // 고정 섹션 소제목·리드 오버라이드 (키=섹션키, 예: forWho·painPoints.lead).
+  // 비어있으면 기본 문구 사용. 미리보기에서 클릭 편집.
+  headings: z.record(z.string(), z.string()).optional(),
+
   // legacy (4섹션) — D70 폼은 이 필드를 안 만든다. 단, 기존 콘텐츠 보존을 위해
   //   optional로 두어 폼이 read/preserve 가능. (본가는 required지만 런타임 검증 안 함 → 안전)
   essence: z.array(BlockSchema).optional(),
@@ -247,6 +265,9 @@ export const TrendBodySchema = z.object({
   deepDive: z.array(BlockSchema).optional(),
   soWhat: z.array(BlockSchema).optional(),
   sources: z.array(SourceLinkSchema).optional(),
+
+  // 고정 섹션 소제목 오버라이드 (키=섹션키, 예: what·why). 비면 기본 문구.
+  headings: z.record(z.string(), z.string()).optional(),
 
   // legacy — 본가는 제거했으나 admin lint/기존 default 호환 위해 optional 보존. (Phase 3에서 제거)
   whats_new: z.array(BlockSchema).optional(),

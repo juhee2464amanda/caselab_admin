@@ -36,12 +36,21 @@ export interface ContentPreviewProps {
 
 const upd = <T,>(arr: T[], i: number, v: T): T[] => arr.map((x, idx) => (idx === i ? v : x));
 
-function SectionHeader({ num, title, onRefine, onDelete }: { num: string; title: string; onRefine?: () => void; onDelete?: () => void }) {
+function SectionHeader({ num, title, onTitle, onRefine, onDelete }: { num: string; title: string; onTitle?: (v: string) => void; onRefine?: () => void; onDelete?: () => void }) {
   return (
     <>
       <div className="text-xs font-bold text-ink/40 tracking-[0.08em] mb-0.5">{num}</div>
       <div className="mb-5 flex items-center gap-2">
-        <h2 className="text-[22px] md:text-2xl font-extrabold tracking-[-0.025em] break-keep">{title}</h2>
+        {onTitle ? (
+          <Editable
+            as="h2"
+            value={title}
+            onCommit={onTitle}
+            className="text-[22px] md:text-2xl font-extrabold tracking-[-0.025em] break-keep"
+          />
+        ) : (
+          <h2 className="text-[22px] md:text-2xl font-extrabold tracking-[-0.025em] break-keep">{title}</h2>
+        )}
         {onRefine && (
           <button
             type="button"
@@ -69,8 +78,16 @@ function SectionHeader({ num, title, onRefine, onDelete }: { num: string; title:
   );
 }
 
-function SectionLead({ text }: { text: string }) {
-  return <p className="text-[15px] text-ink/60 leading-[1.7] mb-4 max-w-[600px] break-keep">{text}</p>;
+function SectionLead({ text, onCommit }: { text: string; onCommit?: (v: string) => void }) {
+  return (
+    <Editable
+      as="p"
+      multiline
+      value={text}
+      onCommit={onCommit}
+      className="text-[15px] text-ink/60 leading-[1.7] mb-4 max-w-[600px] break-keep block"
+    />
+  );
 }
 
 function PromptBlockView({ label, prompt, onCommit }: { label?: string; prompt: string; onCommit?: (v: string) => void }) {
@@ -455,11 +472,21 @@ function CasePreviewBody({ body, onBody, onSectionRefine, onSectionDelete }: { b
   const set = onBody && ((patch: Partial<CaseBodyT>) => onBody({ ...body, ...patch }));
   const sh = (key: string, label: string) => (onSectionRefine ? () => onSectionRefine(key, label) : undefined);
   const del = (key: string) => (onSectionDelete ? () => onSectionDelete(key) : undefined);
+  // 소제목·리드 오버라이드 — 기본 문구를 클릭 편집으로 덮어씀(비우면 기본 복귀).
+  const h = (key: string, def: string) => body.headings?.[key]?.trim() || def;
+  const setH = (key: string) =>
+    set &&
+    ((v: string) => {
+      const headings = { ...(body.headings ?? {}) };
+      if (v.trim()) headings[key] = v;
+      else delete headings[key];
+      set({ headings });
+    });
   return (
     <div className="prose-caselab">
       {body.forWho && body.forWho.length > 0 && (
         <section className="pt-2">
-          <SectionHeader num="01" title="이런 분들을 위한 글이에요" onRefine={sh('forWho', '이런 분들을 위한 글이에요')} onDelete={del('forWho')} />
+          <SectionHeader num="01" title={h('forWho', '이런 분들을 위한 글이에요')} onTitle={setH('forWho')} onRefine={sh('forWho', '이런 분들을 위한 글이에요')} onDelete={del('forWho')} />
           <div className="bg-muted rounded-xl p-6">
             <div className="flex flex-col gap-2">
               {body.forWho.map((t, i) => (
@@ -475,15 +502,15 @@ function CasePreviewBody({ body, onBody, onSectionRefine, onSectionDelete }: { b
 
       {body.caseIntro && body.caseIntro.length > 0 && (
         <section className="pt-11 mt-11 border-t border-border">
-          <SectionHeader num="02" title="어떤 케이스를 다루나요" onRefine={sh('caseIntro', '어떤 케이스를 다루나요')} onDelete={del('caseIntro')} />
+          <SectionHeader num="02" title={h('caseIntro', '어떤 케이스를 다루나요')} onTitle={setH('caseIntro')} onRefine={sh('caseIntro', '어떤 케이스를 다루나요')} onDelete={del('caseIntro')} />
           {renderBlocks(body.caseIntro, 'intro', set && ((next) => set({ caseIntro: next })))}
         </section>
       )}
 
       {body.painPoints && body.painPoints.length > 0 && (
         <section className="pt-11 mt-11 border-t border-border">
-          <SectionHeader num="03" title="보통 이런 일에서 막히는 이유" onRefine={sh('painPoints', '보통 이런 일에서 막히는 이유')} onDelete={del('painPoints')} />
-          <SectionLead text="실무에서 반복적으로 나오는 3가지 문제와, 그 근본 원인을 정리했습니다." />
+          <SectionHeader num="03" title={h('painPoints', '보통 이런 일에서 막히는 이유')} onTitle={setH('painPoints')} onRefine={sh('painPoints', '보통 이런 일에서 막히는 이유')} onDelete={del('painPoints')} />
+          <SectionLead text={h('painPoints.lead', '실무에서 반복적으로 나오는 3가지 문제와, 그 근본 원인을 정리했습니다.')} onCommit={setH('painPoints.lead')} />
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mt-2">
             {body.painPoints.map((p, i) => {
               const setP = set && ((patch: Partial<PainPoint>) => set({ painPoints: upd(body.painPoints!, i, { ...p, ...patch }) }));
@@ -509,7 +536,7 @@ function CasePreviewBody({ body, onBody, onSectionRefine, onSectionDelete }: { b
 
       {body.frameworkReference && (
         <section className="pt-11 mt-11 border-t border-border">
-          <SectionHeader num="04" title="적용한 Framework" onRefine={sh('frameworkReference', '적용한 Framework')} onDelete={del('frameworkReference')} />
+          <SectionHeader num="04" title={h('frameworkReference', '적용한 Framework')} onTitle={setH('frameworkReference')} onRefine={sh('frameworkReference', '적용한 Framework')} onDelete={del('frameworkReference')} />
           <div className="border border-border rounded-xl p-6 bg-white">
             <div className="text-[11px] font-bold tracking-[0.06em] text-ink/40 uppercase mb-3">Framework</div>
             <Editable
@@ -531,8 +558,8 @@ function CasePreviewBody({ body, onBody, onSectionRefine, onSectionDelete }: { b
 
       {body.stepCards && body.stepCards.length > 0 && (
         <section className="pt-11 mt-11 border-t border-border">
-          <SectionHeader num="05" title="단계별 AI 활용" onRefine={sh('stepCards', '단계별 AI 활용')} onDelete={del('stepCards')} />
-          <SectionLead text='단계마다 사람이 먼저 손으로 만든 입력이 있어야 AI 출력이 쓸 만합니다. 각 단계는 "사람이 할 일 / AI에 시킬 일 / 프롬프트 / 결과 비교" 4개로 구성됩니다.' />
+          <SectionHeader num="05" title={h('stepCards', '단계별 AI 활용')} onTitle={setH('stepCards')} onRefine={sh('stepCards', '단계별 AI 활용')} onDelete={del('stepCards')} />
+          <SectionLead text={h('stepCards.lead', '단계마다 사람이 먼저 손으로 만든 입력이 있어야 AI 출력이 쓸 만합니다. 각 단계는 "사람이 할 일 / AI에 시킬 일 / 프롬프트 / 결과 비교" 4개로 구성됩니다.')} onCommit={setH('stepCards.lead')} />
           <div className="flex flex-col gap-3.5 mt-3.5">
             {body.stepCards.map((step, i) => (
               <StepCardView
@@ -547,7 +574,7 @@ function CasePreviewBody({ body, onBody, onSectionRefine, onSectionDelete }: { b
 
       {body.pros && body.cons && (body.pros.length > 0 || body.cons.length > 0) && (
         <section className="pt-11 mt-11 border-t border-border">
-          <SectionHeader num="06" title="좋았던 점 · 아쉬웠던 점" />
+          <SectionHeader num="06" title={h('prosCons', '좋았던 점 · 아쉬웠던 점')} onTitle={setH('prosCons')} />
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-2">
             {(
               [
@@ -573,8 +600,8 @@ function CasePreviewBody({ body, onBody, onSectionRefine, onSectionDelete }: { b
 
       {body.takingPoints && body.takingPoints.length > 0 && (
         <section className="pt-11 mt-11 border-t border-border">
-          <SectionHeader num="07" title="핵심 Taking point" onRefine={sh('takingPoints', '핵심 Taking point')} onDelete={del('takingPoints')} />
-          <SectionLead text="이 글에서 가져갈 3가지. 본인 일에 바로 옮길 수 있는 액션도 함께." />
+          <SectionHeader num="07" title={h('takingPoints', '핵심 Taking point')} onTitle={setH('takingPoints')} onRefine={sh('takingPoints', '핵심 Taking point')} onDelete={del('takingPoints')} />
+          <SectionLead text={h('takingPoints.lead', '이 글에서 가져갈 3가지. 본인 일에 바로 옮길 수 있는 액션도 함께.')} onCommit={setH('takingPoints.lead')} />
           <div className="flex flex-col gap-2.5 mt-2">
             {body.takingPoints.map((tp, i) => {
               const setT = set && ((patch: Partial<TakingPoint>) => set({ takingPoints: upd(body.takingPoints!, i, { ...tp, ...patch }) }));
@@ -665,27 +692,37 @@ function TrendPreviewBody({ body, onBody, onSectionRefine, onSectionDelete }: { 
   const set = onBody && ((patch: Partial<TrendBodyT>) => onBody({ ...body, ...patch }));
   const sh = (key: string, label: string) => (onSectionRefine ? () => onSectionRefine(key, label) : undefined);
   const del = (key: string) => (onSectionDelete ? () => onSectionDelete(key) : undefined);
+  // 소제목 오버라이드 — 기본 문구를 클릭 편집으로 덮어씀(비우면 기본 복귀).
+  const h = (key: string, def: string) => body.headings?.[key]?.trim() || def;
+  const setH = (key: string) =>
+    set &&
+    ((v: string) => {
+      const headings = { ...(body.headings ?? {}) };
+      if (v.trim()) headings[key] = v;
+      else delete headings[key];
+      set({ headings });
+    });
   let n = 0;
   const num = () => String(++n).padStart(2, '0');
   return (
     <div className="prose-caselab">
       {body.what && body.what.length > 0 && (
         <section className="pt-2">
-          <SectionHeader num={num()} title="무슨 소식이에요" onRefine={sh('what', '무슨 소식이에요')} onDelete={del('what')} />
+          <SectionHeader num={num()} title={h('what', '무슨 소식이에요')} onTitle={setH('what')} onRefine={sh('what', '무슨 소식이에요')} onDelete={del('what')} />
           {renderBlocks(body.what, 'what', set && ((next) => set({ what: next })))}
         </section>
       )}
 
       {body.why && body.why.length > 0 && (
         <section className="pt-11 mt-11 border-t border-border">
-          <SectionHeader num={num()} title="왜 지금 화두예요" onRefine={sh('why', '왜 지금 화두예요')} onDelete={del('why')} />
+          <SectionHeader num={num()} title={h('why', '왜 지금 화두예요')} onTitle={setH('why')} onRefine={sh('why', '왜 지금 화두예요')} onDelete={del('why')} />
           {renderBlocks(body.why, 'why', set && ((next) => set({ why: next })))}
         </section>
       )}
 
       {body.forWho && body.forWho.length > 0 && (
         <section className="pt-11 mt-11 border-t border-border">
-          <SectionHeader num={num()} title="누구한테 중요해요" onRefine={sh('forWho', '누구한테 중요해요')} onDelete={del('forWho')} />
+          <SectionHeader num={num()} title={h('forWho', '누구한테 중요해요')} onTitle={setH('forWho')} onRefine={sh('forWho', '누구한테 중요해요')} onDelete={del('forWho')} />
           <div className="grid gap-3 sm:grid-cols-2 mt-1">
             {body.forWho.map((w, i) => (
               <div key={i} className="rounded-xl border border-border bg-white p-4">
@@ -710,7 +747,7 @@ function TrendPreviewBody({ body, onBody, onSectionRefine, onSectionDelete }: { 
 
       {body.keyPoints && body.keyPoints.length > 0 && (
         <section className="pt-11 mt-11 border-t border-border">
-          <SectionHeader num={num()} title="핵심만 빠르게" onRefine={sh('keyPoints', '핵심만 빠르게')} onDelete={del('keyPoints')} />
+          <SectionHeader num={num()} title={h('keyPoints', '핵심만 빠르게')} onTitle={setH('keyPoints')} onRefine={sh('keyPoints', '핵심만 빠르게')} onDelete={del('keyPoints')} />
           <ul className="flex flex-col gap-2.5 mt-1">
             {body.keyPoints.map((k, i) => (
               <li key={i} className="flex gap-3 items-start">
@@ -732,14 +769,14 @@ function TrendPreviewBody({ body, onBody, onSectionRefine, onSectionDelete }: { 
 
       {body.deepDive && body.deepDive.length > 0 && (
         <section className="pt-11 mt-11 border-t border-border">
-          <SectionHeader num={num()} title="좀 더 들어가면" onRefine={sh('deepDive', '좀 더 들어가면')} onDelete={del('deepDive')} />
+          <SectionHeader num={num()} title={h('deepDive', '좀 더 들어가면')} onTitle={setH('deepDive')} onRefine={sh('deepDive', '좀 더 들어가면')} onDelete={del('deepDive')} />
           {renderBlocks(body.deepDive, 'deep', set && ((next) => set({ deepDive: next })))}
         </section>
       )}
 
       {body.soWhat && body.soWhat.length > 0 && (
         <section className="pt-11 mt-11 border-t border-border">
-          <SectionHeader num={num()} title="그래서, 내 일엔?" onRefine={sh('soWhat', '그래서, 내 일엔?')} onDelete={del('soWhat')} />
+          <SectionHeader num={num()} title={h('soWhat', '그래서, 내 일엔?')} onTitle={setH('soWhat')} onRefine={sh('soWhat', '그래서, 내 일엔?')} onDelete={del('soWhat')} />
           <div className="rounded-xl border border-accent/20 bg-accent-50/40 p-5">
             {renderBlocks(body.soWhat, 'so', set && ((next) => set({ soWhat: next })))}
           </div>
@@ -748,7 +785,11 @@ function TrendPreviewBody({ body, onBody, onSectionRefine, onSectionDelete }: { 
 
       {body.sources && body.sources.length > 0 && (
         <section className="pt-11 mt-11 border-t border-border">
-          <div className="text-xs font-bold text-ink/40 tracking-[0.08em] mb-3">출처·더 보기</div>
+          <Editable
+            value={h('sources', '출처·더 보기')}
+            onCommit={setH('sources')}
+            className="text-xs font-bold text-ink/40 tracking-[0.08em] mb-3 block"
+          />
           <ul className="flex flex-col gap-1.5">
             {body.sources.map((s, i) => (
               <li key={i} className="flex items-center gap-1">

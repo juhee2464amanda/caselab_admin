@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { RichSectionSchema } from '@/types/content';
 
 /**
  * 본가(caselab) types/tool.ts ToolBody 계약의 미러 스키마.
@@ -38,6 +39,16 @@ export const ToolBodySchema = z
     useCases: z
       .array(z.object({ href: z.string(), tag: z.string(), title: z.string(), meta: z.string() }))
       .optional(),
+    /**
+     * 자유 리치 섹션 — 트렌드와 동일한 블록(문단·이미지·갤러리·북마크 등)을
+     * 각 섹션에 자유 배치. 본가 ToolDetail이 고정 섹션 뒤에 순서대로 렌더한다.
+     */
+    sections: z.array(RichSectionSchema).optional(),
+    /**
+     * 고정 섹션 소제목·라벨 오버라이드 (키=섹션id, 예: when·when.label·features).
+     * 비면 기본 문구. 미리보기에서 클릭 편집.
+     */
+    headings: z.record(z.string(), z.string()).optional(),
   })
   .strict();
 
