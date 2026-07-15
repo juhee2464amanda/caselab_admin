@@ -14,11 +14,10 @@ import { useRefine } from '@/components/admin/RefinePanel';
 // 편집 중에는 선택 후 플로팅 툴바(B/형광펜/서식지우기) 또는 Cmd+B로 서식 적용 → 커밋 시 마커로 저장.
 // 편집 중에는 React가 텍스트 노드를 다시 그리지 않도록 커밋 시에만 부모 상태를 갱신한다.
 //
-// AI 수정 제안(NEXT_PUBLIC_LOCAL_AI=true + RefineProvider 안): hover 시 ✨(필드 전체), 편집 중 드래그
+// AI 수정 제안(RefineProvider 안): hover 시 ✨(필드 전체), 편집 중 드래그
 // 선택 후 툴바 ✨(선택 구간). 대상+적용클로저를 useRefine().open으로 우측 RefinePanel에 올린다.
-
-// 로컬(Claude CLI) 환경에서만 AI 버튼 노출 — Vercel엔 미설정(MdImport의 LOCAL_AI 게이팅과 동일).
-const AI_REFINE = process.env.NEXT_PUBLIC_LOCAL_AI === 'true';
+// 노출 여부는 프로바이더(우측 패널) 유무로만 판단 — 섹션 수정 버튼·RefinePanel과 동일 기준으로 맞춘다.
+// (예전엔 여기만 추가로 NEXT_PUBLIC_LOCAL_AI를 요구해 패널·섹션 버튼은 뜨는데 ✨만 사라지는 불일치가 있었음, 2026-07-15)
 
 // 클릭한 화면 좌표(x,y)에 해당하는 캐럿 위치를 구한다. 지원 안 되면 텍스트 끝으로 폴백.
 function caretRangeFromPoint(x: number, y: number, el: HTMLElement): Range {
@@ -67,7 +66,7 @@ export function Editable({ value, onCommit, as = 'span', multiline, rich, refine
   const refiningRef = useRef(false); // 리파인 패널로 포커스가 옮겨간 동안 blur-커밋을 막는다(선택 구간 보존).
   const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const refine = useRefine();
-  const canRefine = AI_REFINE && !!refine; // 프로바이더(우측 패널)가 있을 때만 ✨ 노출
+  const canRefine = !!refine; // 프로바이더(우측 패널)가 있을 때만 ✨ 노출 — 섹션 수정 버튼·패널과 동일 기준
 
   if (!onCommit) {
     if (rich && value) {
