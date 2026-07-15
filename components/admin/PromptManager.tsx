@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { ThumbnailField } from '@/components/admin/ThumbnailField';
 import { createSupabaseBrowserClient } from '@/lib/supabase/client';
 
 // 바로쓰는 프롬프트 관리 — tools(category='prompt').
@@ -26,6 +27,7 @@ export type PromptRow = {
   id: string;
   name: string;
   description: string | null; // 복사 박스 밖 설명 (본가 카드에서 박스 위에 노출)
+  thumbnail_url: string | null; // 본가 리스트 카드·히어로 썸네일 (없으면 브랜드 폴백)
   status: string;
   pick_order: number | null;
   job_tags: string[] | null; // admin 분류·검색용 태그 (본가 /prompts는 아직 미노출)
@@ -41,7 +43,7 @@ function slugify(s: string): string {
   return s.toLowerCase().trim().replace(/[^a-z0-9가-힣]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 50) || 'prompt';
 }
 
-const EMPTY = { name: '', description: '', prompt: '', category: 'think' as PromptCategory, source: '', sourceUrl: '', pickOrder: '', tags: '' };
+const EMPTY = { name: '', description: '', thumbnailUrl: '', prompt: '', category: 'think' as PromptCategory, source: '', sourceUrl: '', pickOrder: '', tags: '' };
 
 export function PromptManager({ initial }: { initial: PromptRow[] }) {
   const router = useRouter();
@@ -58,6 +60,7 @@ export function PromptManager({ initial }: { initial: PromptRow[] }) {
     setF({
       name: p.name,
       description: p.description ?? '',
+      thumbnailUrl: p.thumbnail_url ?? '',
       prompt: b.prompt ?? '',
       category: (PROMPT_CATEGORIES as readonly string[]).includes(b.promptCategory ?? '') ? (b.promptCategory as PromptCategory) : 'think',
       source: b.source ?? '',
@@ -79,6 +82,7 @@ export function PromptManager({ initial }: { initial: PromptRow[] }) {
     const payload = {
       name: f.name.trim(),
       description: f.description.trim() || null,
+      thumbnail_url: f.thumbnailUrl.trim() || null,
       pick_order: pickOrder,
       job_tags: f.tags.split(',').map((t) => t.trim()).filter(Boolean),
       body: {
@@ -138,7 +142,14 @@ export function PromptManager({ initial }: { initial: PromptRow[] }) {
   const renderRow = (p: PromptRow) => (
     <div key={p.id} className="px-4 py-3">
       <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
+        <div className="flex items-start gap-3 min-w-0">
+          {p.thumbnail_url ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={p.thumbnail_url} alt="" className="h-11 w-11 rounded-md object-cover border border-border shrink-0 mt-0.5" />
+          ) : (
+            <div className="h-11 w-11 rounded-md bg-ink/5 border border-border shrink-0 mt-0.5 flex items-center justify-center text-[9px] font-semibold text-ink/25">Caselab</div>
+          )}
+          <div className="min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
             <span className="font-medium">{p.name}</span>
             {p.pick_order != null && <span className="badge bg-accent/10 text-accent">PICK {p.pick_order}</span>}
@@ -150,6 +161,7 @@ export function PromptManager({ initial }: { initial: PromptRow[] }) {
           </div>
           {p.description && <p className="text-xs text-ink/60 mt-1 line-clamp-1">{p.description}</p>}
           {p.body?.prompt && <p className="text-xs text-ink/50 mt-1 line-clamp-2 whitespace-pre-line font-mono">{p.body.prompt}</p>}
+          </div>
         </div>
         <div className="flex items-center gap-2 shrink-0 text-xs">
           <span className={`badge ${p.status === 'published' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}>{p.status === 'published' ? '발행' : '비공개'}</span>
@@ -185,6 +197,7 @@ export function PromptManager({ initial }: { initial: PromptRow[] }) {
         </div>
         <div><Label className="text-xs">설명 <span className="text-ink/40">(복사 박스 밖에 노출 · 어떤 프롬프트인지 → 어떤 상황에서 쓰는지 → 누구를 위한 것인지 순서로, 줄바꿈 구분)</span></Label><Textarea className="mt-1 text-xs" rows={3} value={f.description} onChange={(e) => setF((p) => ({ ...p, description: e.target.value }))} placeholder={'회의록을 결정사항·액션아이템으로 정리하는 프롬프트입니다.\n회의 직후 공유용 요약이 필요할 때 씁니다.\n반복 회의를 운영하는 PM·팀 리드를 위한 프롬프트입니다.'} /></div>
         <div><Label className="text-xs">프롬프트 본문 * <span className="text-ink/40">(사용자가 복사해 가는 텍스트만 — 설명 섞지 않기)</span></Label><Textarea className="mt-1 font-mono text-xs" rows={6} value={f.prompt} onChange={(e) => setF((p) => ({ ...p, prompt: e.target.value }))} /></div>
+        <ThumbnailField value={f.thumbnailUrl} onChange={(url) => setF((p) => ({ ...p, thumbnailUrl: url }))} />
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           <div><Label className="text-xs">출처 라벨</Label><Input className="mt-1" value={f.source} onChange={(e) => setF((p) => ({ ...p, source: e.target.value }))} placeholder="Anthropic 공식" /></div>
           <div><Label className="text-xs">출처 URL</Label><Input className="mt-1" value={f.sourceUrl} onChange={(e) => setF((p) => ({ ...p, sourceUrl: e.target.value }))} placeholder="https://…" /></div>
