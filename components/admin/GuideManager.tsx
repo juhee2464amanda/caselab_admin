@@ -7,7 +7,11 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { RichTextarea } from '@/components/admin/RichTextarea';
+import { GalleryField } from '@/components/admin/BlockListEditor';
 import { createSupabaseBrowserClient } from '@/lib/supabase/client';
+
+type GuideImage = { url: string; caption?: string };
 
 // 공식 가이드 관리 — tools(category='guide').
 // 본가 /guides가 읽는 계약: name, description, url, body{guideCategory, source, sourceType, …}.
@@ -47,6 +51,8 @@ export type Guide = {
     thumbBg?: string;
     thumbColor?: string;
     linkLabel?: string;
+    bodyRich?: string; // 본가 내부 상세페이지 본문(마커 리치 텍스트) — 있으면 카드가 상세로 링크
+    images?: GuideImage[];
   } | null;
 };
 
@@ -58,7 +64,7 @@ function asCategory(v: unknown): GuideCategory {
   return typeof v === 'string' && (GUIDE_CATEGORIES as readonly string[]).includes(v) ? (v as GuideCategory) : 'prompt';
 }
 
-const EMPTY = { name: '', url: '', description: '', source: '', guideCategory: 'prompt' as GuideCategory, sourceType: 'default' as SourceType };
+const EMPTY = { name: '', url: '', description: '', source: '', guideCategory: 'prompt' as GuideCategory, sourceType: 'default' as SourceType, bodyRich: '', images: [] as GuideImage[] };
 
 export function GuideManager({ initial }: { initial: Guide[] }) {
   const router = useRouter();
@@ -79,6 +85,8 @@ export function GuideManager({ initial }: { initial: Guide[] }) {
       source: b.source ?? g.job_tags?.[0] ?? '',
       guideCategory: asCategory(b.guideCategory),
       sourceType: (SOURCE_TYPES as readonly string[]).includes(b.sourceType ?? '') ? (b.sourceType as SourceType) : 'default',
+      bodyRich: b.bodyRich ?? '',
+      images: b.images ?? [],
     });
     if (typeof window !== 'undefined') window.scrollTo({ top: 0, behavior: 'smooth' });
   }
@@ -101,6 +109,8 @@ export function GuideManager({ initial }: { initial: Guide[] }) {
         guideCategory: f.guideCategory,
         source: source || undefined,
         sourceType: f.sourceType,
+        bodyRich: f.bodyRich.trim() || undefined,
+        images: f.images.length ? f.images : undefined,
       },
     };
     let err;
@@ -167,7 +177,17 @@ export function GuideManager({ initial }: { initial: Guide[] }) {
           </div>
         </div>
         <div><Label className="text-xs">링크 (URL) *</Label><Input className="mt-1" value={f.url} onChange={(e) => setF((p) => ({ ...p, url: e.target.value }))} placeholder="https://platform.openai.com/docs/..." /></div>
-        <div><Label className="text-xs">설명</Label><Textarea className="mt-1" rows={2} value={f.description} onChange={(e) => setF((p) => ({ ...p, description: e.target.value }))} /></div>
+        <div><Label className="text-xs">설명 <span className="text-ink/40">(목록 카드 요약 · 짧게. 서식 없이 표시돼요)</span></Label><Textarea className="mt-1" rows={2} value={f.description} onChange={(e) => setF((p) => ({ ...p, description: e.target.value }))} /></div>
+        <div>
+          <Label className="text-xs">상세 본문 <span className="text-ink/40">(선택 · 채우면 본가에 내부 상세페이지가 생기고 카드가 그리로 연결돼요. 비우면 카드가 원문 링크로 직행 · 텍스트 선택 후 서식)</span></Label>
+          <RichTextarea className="mt-1" rows={6} value={f.bodyRich} onChange={(v) => setF((p) => ({ ...p, bodyRich: v }))} placeholder={'이 가이드를 왜/어떻게 보면 좋은지, 핵심 요약, 우리 맥락에서의 포인트 등.\n비워두면 예전처럼 카드가 바로 원문으로 연결돼요.'} />
+        </div>
+        <div>
+          <Label className="text-xs">참고 이미지 <span className="text-ink/40">(선택 · 상세페이지 본문 아래 노출 · 2장 이상이면 카드뉴스)</span></Label>
+          <div className="mt-1">
+            <GalleryField block={{ type: 'gallery', images: f.images }} onChange={(b) => setF((p) => ({ ...p, images: b.type === 'gallery' ? b.images : p.images }))} />
+          </div>
+        </div>
         {error && <p className="text-sm text-red-600">{error}</p>}
         <div className="flex justify-end gap-2">
           {editId && <Button type="button" variant="outline" onClick={reset}>취소</Button>}
@@ -188,6 +208,7 @@ export function GuideManager({ initial }: { initial: Guide[] }) {
                     {g.body?.sourceType && g.body.sourceType !== 'default' && (
                       <span className="badge bg-ink/5 text-ink/60">{SOURCE_TYPE_LABELS[(SOURCE_TYPES as readonly string[]).includes(g.body.sourceType) ? (g.body.sourceType as SourceType) : 'default']}</span>
                     )}
+                    {(g.body?.bodyRich?.trim() || (g.body?.images?.length ?? 0) > 0) && <span className="badge bg-accent/10 text-accent">상세</span>}
                   </div>
                   {g.description && <p className="text-sm text-ink/60 mt-0.5">{g.description}</p>}
                   <p className="text-xs text-ink/40 mt-0.5 break-all">{g.url}</p>

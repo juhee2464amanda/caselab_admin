@@ -1,5 +1,5 @@
 // 미니 인라인 마크업 — 콘텐츠 텍스트 필드의 강조 표기 정본.
-// DB에는 마커 문자열로 저장: **굵게**, ==형광펜==, [텍스트](url) 링크
+// DB에는 마커 문자열로 저장: **굵게**, __밑줄__, ==형광펜==, [텍스트](url) 링크
 // admin(Editable rich 모드)과 본가 렌더가 같은 규칙을 파싱한다.
 // 본가 대응: caselab lib/inline-md.tsx (renderInline) — 규칙 바꾸면 양쪽 같이.
 
@@ -10,6 +10,7 @@ const escapeHtml = (s: string) =>
 export function inlineMdToHtml(text: string): string {
   return escapeHtml(text)
     .replace(/\*\*([^*\n][^*]*?)\*\*/g, '<strong>$1</strong>')
+    .replace(/__([^_\n][^_]*?)__/g, '<u>$1</u>')
     .replace(/==([^=\n][^=]*?)==/g, '<mark class="rounded-sm bg-amber-200/80 px-0.5">$1</mark>')
     .replace(
       /\[([^\]\n]+)\]\(([^)\s]+)\)/g,
@@ -27,6 +28,7 @@ export function htmlToInlineMd(root: HTMLElement): string {
     if (tag === 'BR') return '\n';
     if (!inner.trim()) return tag === 'DIV' || tag === 'P' ? '\n' : inner;
     if (tag === 'B' || tag === 'STRONG') return `**${inner}**`;
+    if (tag === 'U') return `__${inner}__`;
     if (tag === 'MARK') return `==${inner}==`;
     if (tag === 'A') {
       const href = node.getAttribute('href') || '';
@@ -36,9 +38,11 @@ export function htmlToInlineMd(root: HTMLElement): string {
       // execCommand/붙여넣기가 만드는 스타일 span 흡수
       const fw = node.style.fontWeight;
       const bolded = fw === 'bold' || (Number(fw) || 0) >= 600;
+      const underlined = /underline/.test(node.style.textDecoration || node.style.textDecorationLine || '');
       const highlighted = !!node.style.backgroundColor && node.style.backgroundColor !== 'transparent';
       let out = inner;
       if (bolded) out = `**${out}**`;
+      if (underlined) out = `__${out}__`;
       if (highlighted) out = `==${out}==`;
       return out;
     }
