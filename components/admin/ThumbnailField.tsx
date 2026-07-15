@@ -5,6 +5,8 @@ import { UploadCloud } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { cn } from '@/lib/utils';
+import { ImageZoom } from '@/components/admin/ImageZoom';
+import { uploadImageFile, uploadImageFromUrl, extractDroppedImage } from '@/lib/image-upload';
 
 // 콘텐츠 썸네일 등록 — 이미지 업로드(공개 버킷) 또는 URL 직접 입력.
 // 자유 URL 입력만 있던 시절 "fable5prompt" 같은 잘못된 값이 들어가 홈 히어로가 깨지던 문제 방지용.
@@ -18,9 +20,10 @@ export function ThumbnailField({ value, onChange }: { value: string; onChange: (
   function onDrop(e: React.DragEvent) {
     e.preventDefault();
     setDragOver(false);
-    const f = Array.from(e.dataTransfer.files).find((x) => x.type.startsWith('image/'));
-    if (f) void upload(f);
-    else setErr('이미지 파일만 끌어놓을 수 있어요.');
+    const { file, url } = extractDroppedImage(e.dataTransfer);
+    if (file) void upload(file);
+    else if (url) void run(() => uploadImageFromUrl(url));
+    else setErr('이미지 파일이나 이미지를 끌어놓아 주세요.');
   }
   function onPaste(e: React.ClipboardEvent) {
     const f = Array.from(e.clipboardData.items).find((it) => it.type.startsWith('image/'))?.getAsFile();
@@ -30,22 +33,20 @@ export function ThumbnailField({ value, onChange }: { value: string; onChange: (
     }
   }
 
-  async function upload(file: File) {
+  async function run(fn: () => Promise<string>) {
     setUploading(true);
     setErr(null);
     try {
-      const fd = new FormData();
-      fd.append('file', file);
-      const res = await fetch('/api/admin/upload-image', { method: 'POST', body: fd });
-      const json = (await res.json()) as { url?: string; error?: string };
-      if (!res.ok || !json.url) throw new Error(json.error ?? '업로드 실패');
       setBroken(false);
-      onChange(json.url);
+      onChange(await fn());
     } catch (e) {
       setErr((e as Error).message);
     } finally {
       setUploading(false);
     }
+  }
+  function upload(file: File) {
+    return run(() => uploadImageFile(file));
   }
 
   return (
@@ -59,15 +60,14 @@ export function ThumbnailField({ value, onChange }: { value: string; onChange: (
           onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
           onDragLeave={() => setDragOver(false)}
           onDrop={onDrop}
-          title="클릭 또는 이미지 끌어놓기"
+          title={value ? '이미지 클릭 = 확대 · 끌어놓기 = 교체' : '클릭 또는 이미지 끌어놓기'}
           className={cn(
             'w-24 h-16 rounded-md border overflow-hidden shrink-0 flex items-center justify-center transition-colors',
             dragOver ? 'border-accent border-dashed bg-accent/10' : 'border-border bg-muted hover:border-ink/30',
           )}
         >
           {value && !broken ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={value} alt="" onError={() => setBroken(true)} className="w-full h-full object-cover" />
+            <ImageZoom src={value} alt="" onError={() => setBroken(true)} className="w-full h-full object-cover" />
           ) : (
             <span className="text-[10px] text-ink/30 px-1 text-center leading-tight">{dragOver ? '여기에 놓기' : value ? '깨진 URL' : '끌어놓기'}</span>
           )}
