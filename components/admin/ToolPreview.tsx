@@ -1,9 +1,103 @@
 'use client';
 
-import { useState } from 'react';
-import { ArrowUpRight, Copy, Check, ExternalLink } from 'lucide-react';
+import { useRef, useState } from 'react';
+import { ArrowUpRight, Copy, Check, ExternalLink, Upload, Loader2, Trash2, Plus } from 'lucide-react';
 import { ToolBodySchema, type ToolBody } from '@/lib/tool-body';
 import { Editable } from '@/components/admin/Editable';
+import { Input } from '@/components/ui/input';
+import { cn } from '@/lib/utils';
+
+type FeatureImage = { url: string; caption?: string };
+
+async function uploadToolImage(file: File): Promise<string> {
+  const fd = new FormData();
+  fd.append('file', file);
+  const res = await fetch('/api/admin/upload-image', { method: 'POST', body: fd });
+  const json = (await res.json()) as { url?: string; error?: string };
+  if (!res.ok || !json.url) throw new Error(json.error ?? '업로드 실패');
+  return json.url;
+}
+
+// 기능 이미지 편집 — 업로드(클릭)·끌어놓기·붙여넣기(⌘V)·URL 직접 입력·캡션·삭제.
+// ToolBody feature.image 계약({url, caption?})만 다룬다(strict 스키마라 size/align 넣으면 발행 차단됨).
+function FeatureImageField({ image, onChange }: { image?: FeatureImage; onChange: (img: FeatureImage | undefined) => void }) {
+  const [uploading, setUploading] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [dragOver, setDragOver] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  const up = async (file: File) => {
+    setUploading(true);
+    setErr(null);
+    try {
+      onChange({ url: await uploadToolImage(file), caption: image?.caption });
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const onPaste = (e: React.ClipboardEvent) => {
+    const f = Array.from(e.clipboardData.items).find((it) => it.type.startsWith('image/'))?.getAsFile();
+    if (f) {
+      e.preventDefault();
+      up(f);
+    }
+  };
+
+  return (
+    <div className="mt-3 space-y-2" onPaste={onPaste}>
+      {image?.url ? (
+        <>
+          <figure className="overflow-hidden rounded-xl border border-border bg-muted">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={image.url} alt={image.caption ?? ''} className="block w-full" />
+          </figure>
+          <div className="flex items-center gap-2">
+            <Input
+              value={image.caption ?? ''}
+              placeholder="캡션 (선택)"
+              onChange={(e) => onChange({ url: image.url, caption: e.target.value || undefined })}
+              className="h-8 text-xs"
+            />
+            <button type="button" onClick={() => fileRef.current?.click()} className="shrink-0 text-xs font-semibold text-accent hover:underline">교체</button>
+            <button type="button" onClick={() => onChange(undefined)} className="shrink-0 text-xs text-red-500 hover:underline">삭제</button>
+          </div>
+        </>
+      ) : (
+        <div
+          onClick={() => fileRef.current?.click()}
+          onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+          onDragLeave={() => setDragOver(false)}
+          onDrop={(e) => { e.preventDefault(); setDragOver(false); const f = e.dataTransfer.files?.[0]; if (f) up(f); }}
+          className={cn(
+            'flex cursor-pointer flex-col items-center justify-center gap-1 rounded-lg border border-dashed px-4 py-5 text-center text-xs transition-colors',
+            dragOver ? 'border-accent bg-accent/5' : 'border-border hover:border-ink/30',
+          )}
+        >
+          {uploading ? (
+            <><Loader2 className="h-4 w-4 animate-spin text-ink/40" /> 업로드 중…</>
+          ) : (
+            <>
+              <Upload className="h-4 w-4 text-ink/40" />
+              <span className="text-ink/60">이미지 끌어놓기·클릭·붙여넣기(⌘V)</span>
+            </>
+          )}
+        </div>
+      )}
+      <input
+        ref={fileRef}
+        type="file"
+        accept="image/png,image/jpeg,image/webp,image/gif"
+        className="hidden"
+        onChange={(e) => { const f = e.target.files?.[0]; if (f) up(f); }}
+      />
+      <Input value={image?.url ?? ''} placeholder="또는 이미지 URL 직접 붙여넣기" onChange={(e) => onChange(e.target.value ? { url: e.target.value, caption: image?.caption } : undefined)} className="h-8 text-xs" />
+      {err && <p className="text-xs text-red-600">{err}</p>}
+    </div>
+  );
+}
 
 // 자료(도구/프롬프트/가이드) 미리보기 — 발행 전 "실제 올라가는 모습" 검수·편집 표면.
 // 도구: 본가 components/tools/ToolDetail.tsx 마크업 이식(2026-07-11 스냅샷, Snipit 목업 정합).
@@ -167,17 +261,37 @@ function ToolDetailPreview({
         >
           <div className="space-y-3.5">
             {body.about.paragraphs.map((p, i) => (
-              <Editable
-                key={i}
-                as="p"
-                multiline
-                rich
-                value={p}
-                onCommit={set && ((v) => set({ about: { ...body.about!, paragraphs: upd(body.about!.paragraphs, i, v) } }))}
-                className="text-[15.5px] leading-[1.75] text-ink/80 max-w-[680px] break-keep block"
-              />
+              <div key={i} className="flex items-start gap-2">
+                <Editable
+                  as="p"
+                  multiline
+                  rich
+                  value={p}
+                  onCommit={set && ((v) => set({ about: { ...body.about!, paragraphs: upd(body.about!.paragraphs, i, v) } }))}
+                  className="flex-1 text-[15.5px] leading-[1.75] text-ink/80 max-w-[680px] break-keep block"
+                />
+                {set && body.about!.paragraphs.length > 1 && (
+                  <button
+                    type="button"
+                    title="이 문단 삭제"
+                    onClick={() => set({ about: { ...body.about!, paragraphs: body.about!.paragraphs.filter((_, k) => k !== i) } })}
+                    className="mt-1.5 shrink-0 text-ink/30 hover:text-red-500"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
+                )}
+              </div>
             ))}
           </div>
+          {set && (
+            <button
+              type="button"
+              onClick={() => set({ about: { ...body.about!, paragraphs: [...body.about!.paragraphs, ''] } })}
+              className="mt-3 inline-flex items-center gap-1 text-xs font-semibold text-accent hover:underline"
+            >
+              <Plus className="h-3.5 w-3.5" /> 문단 추가
+            </button>
+          )}
         </Section>
       )}
 
@@ -186,12 +300,24 @@ function ToolDetailPreview({
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
             {body.whenToUse.map((w, i) => (
               <div key={i} className="p-4 border border-border rounded-[10px] bg-white">
-                {w.icon && <span className="text-lg block mb-1.5">{w.icon}</span>}
-                <Editable
-                  value={w.title}
-                  onCommit={set && ((v) => set({ whenToUse: upd(body.whenToUse!, i, { ...w, title: v }) }))}
-                  className="text-sm font-bold tracking-[-0.02em] mb-1 break-keep block"
-                />
+                <div className="flex items-start gap-2">
+                  {w.icon && <span className="text-lg block mb-1.5">{w.icon}</span>}
+                  <Editable
+                    value={w.title}
+                    onCommit={set && ((v) => set({ whenToUse: upd(body.whenToUse!, i, { ...w, title: v }) }))}
+                    className="flex-1 text-sm font-bold tracking-[-0.02em] mb-1 break-keep block"
+                  />
+                  {set && (
+                    <button
+                      type="button"
+                      title="이 항목 삭제"
+                      onClick={() => set({ whenToUse: body.whenToUse!.filter((_, k) => k !== i) })}
+                      className="shrink-0 text-ink/30 hover:text-red-500"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  )}
+                </div>
                 <Editable
                   as="div"
                   multiline
@@ -203,6 +329,15 @@ function ToolDetailPreview({
               </div>
             ))}
           </div>
+          {set && (
+            <button
+              type="button"
+              onClick={() => set({ whenToUse: [...body.whenToUse!, { title: '', desc: '' }] })}
+              className="mt-3 inline-flex items-center gap-1 text-xs font-semibold text-accent hover:underline"
+            >
+              <Plus className="h-3.5 w-3.5" /> 항목 추가
+            </button>
+          )}
         </Section>
       )}
 
@@ -213,11 +348,23 @@ function ToolDetailPreview({
               <div key={i} className="flex gap-4 py-4 border-b border-border items-start">
                 <div className="text-[13px] font-extrabold text-ink/30 min-w-6 tracking-[0.04em]">{String(i + 1).padStart(2, '0')}</div>
                 <div className="flex-1 min-w-0">
-                  <Editable
-                    value={f.title}
-                    onCommit={set && ((v) => set({ features: upd(body.features!, i, { ...f, title: v }) }))}
-                    className="text-[15px] font-bold tracking-[-0.02em] mb-1 break-keep block"
-                  />
+                  <div className="flex items-start gap-2">
+                    <Editable
+                      value={f.title}
+                      onCommit={set && ((v) => set({ features: upd(body.features!, i, { ...f, title: v }) }))}
+                      className="flex-1 text-[15px] font-bold tracking-[-0.02em] mb-1 break-keep block"
+                    />
+                    {set && (
+                      <button
+                        type="button"
+                        title="이 기능 삭제"
+                        onClick={() => set({ features: body.features!.filter((_, k) => k !== i) })}
+                        className="mt-0.5 shrink-0 text-ink/30 hover:text-red-500"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    )}
+                  </div>
                   <Editable
                     as="div"
                     multiline
@@ -226,21 +373,34 @@ function ToolDetailPreview({
                     onCommit={set && ((v) => set({ features: upd(body.features!, i, { ...f, desc: v }) }))}
                     className="text-[13.5px] text-ink/60 leading-relaxed break-keep block"
                   />
-                  {f.image && (
-                    <figure className="mt-3 rounded-xl border border-border overflow-hidden bg-muted">
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src={f.image.url} alt={f.image.caption ?? f.title} loading="lazy" className="block w-full" />
-                      {f.image.caption && (
-                        <figcaption className="border-t border-border bg-white px-3.5 py-2 text-[12px] text-ink/50 break-keep">
-                          {f.image.caption}
-                        </figcaption>
-                      )}
-                    </figure>
+                  {set ? (
+                    <FeatureImageField image={f.image} onChange={(img) => set({ features: upd(body.features!, i, { ...f, image: img }) })} />
+                  ) : (
+                    f.image && (
+                      <figure className="mt-3 rounded-xl border border-border overflow-hidden bg-muted">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={f.image.url} alt={f.image.caption ?? f.title} loading="lazy" className="block w-full" />
+                        {f.image.caption && (
+                          <figcaption className="border-t border-border bg-white px-3.5 py-2 text-[12px] text-ink/50 break-keep">
+                            {f.image.caption}
+                          </figcaption>
+                        )}
+                      </figure>
+                    )
                   )}
                 </div>
               </div>
             ))}
           </div>
+          {set && (
+            <button
+              type="button"
+              onClick={() => set({ features: [...body.features!, { title: '', desc: '' }] })}
+              className="mt-3 inline-flex items-center gap-1 text-xs font-semibold text-accent hover:underline"
+            >
+              <Plus className="h-3.5 w-3.5" /> 기능 추가
+            </button>
+          )}
         </Section>
       )}
 
@@ -249,11 +409,23 @@ function ToolDetailPreview({
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             {body.pricing.map((p, i) => (
               <div key={i} className="p-5 border border-border rounded-xl bg-white">
-                <Editable
-                  value={p.name}
-                  onCommit={set && ((v) => set({ pricing: upd(body.pricing!, i, { ...p, name: v }) }))}
-                  className="text-[13px] font-bold text-ink/50 uppercase tracking-[0.04em] mb-1.5 block"
-                />
+                <div className="flex items-start gap-2">
+                  <Editable
+                    value={p.name}
+                    onCommit={set && ((v) => set({ pricing: upd(body.pricing!, i, { ...p, name: v }) }))}
+                    className="flex-1 text-[13px] font-bold text-ink/50 uppercase tracking-[0.04em] mb-1.5 block"
+                  />
+                  {set && (
+                    <button
+                      type="button"
+                      title="이 플랜 삭제"
+                      onClick={() => set({ pricing: body.pricing!.filter((_, k) => k !== i) })}
+                      className="shrink-0 text-ink/30 hover:text-red-500"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  )}
+                </div>
                 <Editable
                   value={p.amount}
                   onCommit={set && ((v) => set({ pricing: upd(body.pricing!, i, { ...p, amount: v }) }))}
@@ -270,6 +442,15 @@ function ToolDetailPreview({
               </div>
             ))}
           </div>
+          {set && (
+            <button
+              type="button"
+              onClick={() => set({ pricing: [...body.pricing!, { name: '', amount: '', includes: '' }] })}
+              className="mt-3 inline-flex items-center gap-1 text-xs font-semibold text-accent hover:underline"
+            >
+              <Plus className="h-3.5 w-3.5" /> 플랜 추가
+            </button>
+          )}
           {body.pricingNote !== undefined && (
             <Editable
               as="p"
@@ -294,6 +475,33 @@ function ToolDetailPreview({
             ))}
           </div>
         </Section>
+      )}
+
+      {/* 섹션 추가 — 없는 섹션을 편집 모드에서 바로 만든다(빈 도구도 이미지/기능을 붙일 수 있게). */}
+      {set && (!body.about || !body.whenToUse?.length || !body.features?.length || !body.pricing?.length) && (
+        <div className="mt-8 flex flex-wrap items-center gap-2 border-t border-dashed border-border pt-4">
+          <span className="text-xs font-semibold text-ink/40">섹션 추가</span>
+          {!body.about && (
+            <button type="button" onClick={() => set({ about: { paragraphs: [''] } })} className="inline-flex items-center gap-1 rounded-full border border-border px-2.5 py-1 text-xs font-semibold text-ink/60 hover:border-accent hover:text-accent">
+              <Plus className="h-3 w-3" /> 소개
+            </button>
+          )}
+          {!body.whenToUse?.length && (
+            <button type="button" onClick={() => set({ whenToUse: [{ title: '', desc: '' }] })} className="inline-flex items-center gap-1 rounded-full border border-border px-2.5 py-1 text-xs font-semibold text-ink/60 hover:border-accent hover:text-accent">
+              <Plus className="h-3 w-3" /> 언제 쓰나
+            </button>
+          )}
+          {!body.features?.length && (
+            <button type="button" onClick={() => set({ features: [{ title: '', desc: '' }] })} className="inline-flex items-center gap-1 rounded-full border border-border px-2.5 py-1 text-xs font-semibold text-ink/60 hover:border-accent hover:text-accent">
+              <Plus className="h-3 w-3" /> 주요 기능(이미지)
+            </button>
+          )}
+          {!body.pricing?.length && (
+            <button type="button" onClick={() => set({ pricing: [{ name: '', amount: '', includes: '' }] })} className="inline-flex items-center gap-1 rounded-full border border-border px-2.5 py-1 text-xs font-semibold text-ink/60 hover:border-accent hover:text-accent">
+              <Plus className="h-3 w-3" /> 가격
+            </button>
+          )}
+        </div>
       )}
     </div>
   );

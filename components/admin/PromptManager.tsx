@@ -5,10 +5,13 @@ import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { ThumbnailField } from '@/components/admin/ThumbnailField';
+import { RichTextarea } from '@/components/admin/RichTextarea';
+import { GalleryField } from '@/components/admin/BlockListEditor';
 import { createSupabaseBrowserClient } from '@/lib/supabase/client';
+
+type PromptImage = { url: string; caption?: string };
 
 // 바로쓰는 프롬프트 관리 — tools(category='prompt').
 // 본가 /prompts가 읽는 계약: name, pick_order, body{prompt, promptCategory, source, sourceUrl}.
@@ -36,6 +39,7 @@ export type PromptRow = {
     promptCategory?: string;
     source?: string;
     sourceUrl?: string;
+    images?: PromptImage[]; // 본가 상세에서 프롬프트 아래 참고 이미지로 노출
   } | null;
 };
 
@@ -43,7 +47,7 @@ function slugify(s: string): string {
   return s.toLowerCase().trim().replace(/[^a-z0-9가-힣]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 50) || 'prompt';
 }
 
-const EMPTY = { name: '', description: '', thumbnailUrl: '', prompt: '', category: 'think' as PromptCategory, source: '', sourceUrl: '', pickOrder: '', tags: '' };
+const EMPTY = { name: '', description: '', thumbnailUrl: '', prompt: '', category: 'think' as PromptCategory, source: '', sourceUrl: '', pickOrder: '', tags: '', images: [] as PromptImage[] };
 
 export function PromptManager({ initial }: { initial: PromptRow[] }) {
   const router = useRouter();
@@ -67,6 +71,7 @@ export function PromptManager({ initial }: { initial: PromptRow[] }) {
       sourceUrl: b.sourceUrl ?? '',
       pickOrder: p.pick_order == null ? '' : String(p.pick_order),
       tags: (p.job_tags ?? []).join(', '),
+      images: b.images ?? [],
     });
     if (typeof window !== 'undefined') window.scrollTo({ top: 0, behavior: 'smooth' });
   }
@@ -90,6 +95,7 @@ export function PromptManager({ initial }: { initial: PromptRow[] }) {
         promptCategory: f.category,
         source: f.source.trim() || undefined,
         sourceUrl: f.sourceUrl.trim() || undefined,
+        images: f.images.length ? f.images : undefined,
       },
     };
     let err;
@@ -195,8 +201,14 @@ export function PromptManager({ initial }: { initial: PromptRow[] }) {
             </Select>
           </div>
         </div>
-        <div><Label className="text-xs">설명 <span className="text-ink/40">(복사 박스 밖에 노출 · 어떤 프롬프트인지 → 어떤 상황에서 쓰는지 → 누구를 위한 것인지 순서로, 줄바꿈 구분)</span></Label><Textarea className="mt-1 text-xs" rows={3} value={f.description} onChange={(e) => setF((p) => ({ ...p, description: e.target.value }))} placeholder={'회의록을 결정사항·액션아이템으로 정리하는 프롬프트입니다.\n회의 직후 공유용 요약이 필요할 때 씁니다.\n반복 회의를 운영하는 PM·팀 리드를 위한 프롬프트입니다.'} /></div>
-        <div><Label className="text-xs">프롬프트 본문 * <span className="text-ink/40">(사용자가 복사해 가는 텍스트만 — 설명 섞지 않기)</span></Label><Textarea className="mt-1 font-mono text-xs" rows={6} value={f.prompt} onChange={(e) => setF((p) => ({ ...p, prompt: e.target.value }))} /></div>
+        <div><Label className="text-xs">설명 <span className="text-ink/40">(복사 박스 밖에 노출 · 어떤 프롬프트인지 → 어떤 상황에서 쓰는지 → 누구를 위한 것인지 순서로, 줄바꿈 구분 · 텍스트 선택 후 서식)</span></Label><RichTextarea className="mt-1" rows={3} value={f.description} onChange={(v) => setF((p) => ({ ...p, description: v }))} placeholder={'회의록을 결정사항·액션아이템으로 정리하는 프롬프트입니다.\n회의 직후 공유용 요약이 필요할 때 씁니다.\n반복 회의를 운영하는 PM·팀 리드를 위한 프롬프트입니다.'} /></div>
+        <div><Label className="text-xs">프롬프트 본문 * <span className="text-ink/40">(사용자가 복사해 가는 텍스트만 — 설명 섞지 않기 · 굵게/밑줄/형광펜 마커는 복사 시 함께 딸려가요)</span></Label><RichTextarea className="mt-1" rows={6} mono value={f.prompt} onChange={(v) => setF((p) => ({ ...p, prompt: v }))} /></div>
+        <div>
+          <Label className="text-xs">참고 이미지 <span className="text-ink/40">(선택 · 본가 프롬프트 상세에서 본문 아래에 노출 · 2장 이상이면 카드뉴스)</span></Label>
+          <div className="mt-1">
+            <GalleryField block={{ type: 'gallery', images: f.images }} onChange={(b) => setF((p) => ({ ...p, images: b.type === 'gallery' ? b.images : p.images }))} />
+          </div>
+        </div>
         <ThumbnailField value={f.thumbnailUrl} onChange={(url) => setF((p) => ({ ...p, thumbnailUrl: url }))} />
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           <div><Label className="text-xs">출처 라벨</Label><Input className="mt-1" value={f.source} onChange={(e) => setF((p) => ({ ...p, source: e.target.value }))} placeholder="Anthropic 공식" /></div>

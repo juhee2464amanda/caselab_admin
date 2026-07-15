@@ -2,7 +2,7 @@
 
 import { createElement, useRef, useState, type HTMLAttributes } from 'react';
 import { createPortal } from 'react-dom';
-import { Bold, Highlighter, Link2, RemoveFormatting, Sparkles } from 'lucide-react';
+import { Bold, Underline, Highlighter, Link2, RemoveFormatting, Sparkles } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { inlineMdToHtml, htmlToInlineMd } from '@/lib/inline-md';
 import { useRefine } from '@/components/admin/RefinePanel';
@@ -112,6 +112,32 @@ export function Editable({ value, onCommit, as = 'span', multiline, rich, refine
     if (!sel || sel.isCollapsed) return;
     const text = sel.toString();
     document.execCommand('insertHTML', false, build(text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')));
+  };
+
+  // 선택 구간이 이미 형광펜(<mark>) 안이면 그 <mark>를 벗겨 강조를 지운다. 아니면 false.
+  const clearHighlight = (): boolean => {
+    const el = ref.current;
+    const sel = window.getSelection();
+    if (!el || !sel || !sel.rangeCount) return false;
+    let node: Node | null = sel.anchorNode;
+    while (node && node !== el) {
+      if (node instanceof HTMLElement && node.tagName === 'MARK') {
+        const parent = node.parentNode;
+        if (parent) {
+          while (node.firstChild) parent.insertBefore(node.firstChild, node);
+          parent.removeChild(node);
+        }
+        return true;
+      }
+      node = node.parentNode;
+    }
+    return false;
+  };
+
+  // 형광펜 토글 — 강조 안이면 지우고, 아니면 선택 구간을 <mark>로 감싼다.
+  const toggleHighlight = () => {
+    if (clearHighlight()) return;
+    wrapSelection((t) => `<mark class="rounded-sm bg-amber-200/80 px-0.5">${t}</mark>`);
   };
 
   // 필드 위쪽에 뜨는 컨트롤 바 앵커(hover·편집 공통).
@@ -279,11 +305,14 @@ export function Editable({ value, onCommit, as = 'span', multiline, rich, refine
                 <button type="button" title="굵게 (⌘B)" className="rounded p-1.5 hover:bg-muted" onClick={() => exec(() => document.execCommand('bold'))}>
                   <Bold className="h-3.5 w-3.5" />
                 </button>
+                <button type="button" title="밑줄 (⌘U)" className="rounded p-1.5 hover:bg-muted" onClick={() => exec(() => document.execCommand('underline'))}>
+                  <Underline className="h-3.5 w-3.5" />
+                </button>
                 <button
                   type="button"
-                  title="형광펜"
+                  title="형광펜 (다시 누르면 지움)"
                   className="rounded p-1.5 hover:bg-muted"
-                  onClick={() => exec(() => wrapSelection((t) => `<mark class="rounded-sm bg-amber-200/80 px-0.5">${t}</mark>`))}
+                  onClick={() => exec(toggleHighlight)}
                 >
                   <Highlighter className="h-3.5 w-3.5 text-amber-600" />
                 </button>
