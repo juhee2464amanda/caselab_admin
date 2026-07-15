@@ -1,6 +1,6 @@
 'use client';
 
-import { createContext, useCallback, useContext, useRef, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 import { Sparkles, Loader2, X, Paperclip } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { inlineMdToHtml } from '@/lib/inline-md';
@@ -18,8 +18,11 @@ export interface RefineRequest {
   scope: 'selection' | 'field' | 'section';
   /** 후보 종류 */
   kind: 'text' | 'section';
-  /** section kind에서 기존 수정(refine)인지 빈 섹션 새로 생성(generate)인지. 기본 refine. */
+  /** 기존 수정(refine)인지 빈 대상 새로 생성(generate)인지. 기본 refine.
+   *  generate + kind 'section' = 빈 섹션 생성, generate + kind 'text' = 빈 문단 초안. */
   mode?: 'refine' | 'generate';
+  /** generate(text) 진입점 — 'direction'(방향 적고 초안) / 'file'(파일 넣고 초안, 패널이 파일창을 바로 연다). */
+  draftSource?: 'direction' | 'file';
   /** rich 필드면 후보를 인라인 마크다운으로 렌더(text kind) */
   rich: boolean;
   /** 편집 위치 힌트(grounding) */
@@ -104,8 +107,9 @@ export function sectionToLines(v: unknown): string {
 
 // request 단위로 상태를 새로 시작하려고 key로 마운트를 교체한다.
 function RefineForm({ request, onApply }: { request: RefineRequest; onApply: (chosen: unknown) => void }) {
-  const { target, scope, kind, rich, context, section, mode } = request;
+  const { target, scope, kind, rich, context, section, mode, draftSource } = request;
   const generate = mode === 'generate';
+  const draftText = generate && kind === 'text'; // 빈 문단 초안 — 방향 또는 파일만으로 생성 가능
   const [instruction, setInstruction] = useState('');
   const [reference, setReference] = useState('');
   const [refName, setRefName] = useState('');
@@ -121,9 +125,15 @@ function RefineForm({ request, onApply }: { request: RefineRequest; onApply: (ch
     setRefName(file.name);
   };
 
+  // "파일로 초안" 진입 — 패널이 뜨자마자 파일 선택창을 연다(막히면 아래 첨부 버튼으로).
+  useEffect(() => {
+    if (draftSource === 'file') fileRef.current?.click();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const run = async (angle: string) => {
     const q = angle.trim();
-    if (!q || busy) return;
+    if ((!q && !(draftText && reference)) || busy) return; // 문단 초안은 파일만 있어도 OK
     setBusy(true);
     setError(null);
     try {
@@ -131,7 +141,7 @@ function RefineForm({ request, onApply }: { request: RefineRequest; onApply: (ch
       const payload =
         kind === 'section'
           ? { ...section, instruction: q, reference: reference || undefined }
-          : { text: target, instruction: q, rich, context, reference: reference || undefined };
+          : { text: target, instruction: q, rich, context, reference: reference || undefined, mode: draftText ? 'draft' : undefined };
       const res = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -152,7 +162,7 @@ function RefineForm({ request, onApply }: { request: RefineRequest; onApply: (ch
     }
   };
 
-  const scopeLabel = generate ? '새 섹션 생성' : scope === 'selection' ? '선택 구간' : scope === 'section' ? '이 섹션 전체' : '이 문단·필드';
+  const scopeLabel = generate ? (draftText ? '새 문단 초안' : '새 섹션 생성') : scope === 'selection' ? '선택 구간' : scope === 'section' ? '이 섹션 전체' : '이 문단·필드';
 
   return (
     <div className="space-y-2.5">
@@ -160,7 +170,7 @@ function RefineForm({ request, onApply }: { request: RefineRequest; onApply: (ch
         <span className={cn('rounded px-1.5 py-0.5', generate ? 'bg-green-100 text-green-700' : scope === 'selection' ? 'bg-amber-100 text-amber-700' : scope === 'section' ? 'bg-violet-100 text-violet-700' : 'bg-accent-50 text-accent')}>
           {scopeLabel}
         </span>
-        {generate ? section?.sectionLabel : '수정 대상'}
+        {generate ? (section?.sectionLabel ?? context) : '수정 대상'}
       </div>
       {!generate && (
         <div className="max-h-32 overflow-y-auto rounded-md bg-muted px-2.5 py-2 text-[12.5px] leading-relaxed text-ink/70 whitespace-pre-wrap break-keep">
@@ -169,7 +179,9 @@ function RefineForm({ request, onApply }: { request: RefineRequest; onApply: (ch
       )}
 
       <div>
-        <div className="mb-1.5 text-[11px] font-semibold text-ink/50">{generate ? '넣을 핵심 내용 · 방향 · 주의사항' : '수정 각도'}</div>
+        <div className="mb-1.5 text-[11px] font-semibold text-ink/50">
+          {generate ? (draftText ? '쓰고 싶은 내용 · 방향' : '넣을 핵심 내용 · 방향 · 주의사항') : '수정 각도'}
+        </div>
         {!generate && (
           <div className="mb-1.5 flex flex-wrap gap-1">
             {REFINE_PRESETS.map((p) => (
@@ -197,7 +209,13 @@ function RefineForm({ request, onApply }: { request: RefineRequest; onApply: (ch
               run(instruction);
             }
           }}
-          placeholder={generate ? '이 섹션에 넣을 핵심 내용·방향·주의사항을 적어주세요 (예: OO을 강조, XX는 빼고, 카드 3개로)' : '어떻게 고칠까요? (예: 더 구체적으로, 사례 하나 추가)'}
+          placeholder={
+            draftText
+              ? '이 문단에 쓰고 싶은 내용·방향을 적어주세요 (예: OO 경험 소개, 독자에게 XX 제안). 파일만 첨부하고 비워둬도 돼요'
+              : generate
+                ? '이 섹션에 넣을 핵심 내용·방향·주의사항을 적어주세요 (예: OO을 강조, XX는 빼고, 카드 3개로)'
+                : '어떻게 고칠까요? (예: 더 구체적으로, 사례 하나 추가)'
+          }
           rows={generate ? 4 : 3}
           className="w-full resize-none rounded-md border border-border px-2.5 py-1.5 text-[13px] outline-none focus:border-accent"
         />
@@ -227,8 +245,12 @@ function RefineForm({ request, onApply }: { request: RefineRequest; onApply: (ch
               </button>
             </span>
           ) : (
-            <button type="button" onClick={() => fileRef.current?.click()} className="inline-flex items-center gap-1 text-ink/50 hover:text-accent">
-              <Paperclip className="h-3 w-3" /> 참고자료 .md 첨부
+            <button
+              type="button"
+              onClick={() => fileRef.current?.click()}
+              className={cn('inline-flex items-center gap-1 hover:text-accent', draftText ? 'font-semibold text-accent' : 'text-ink/50')}
+            >
+              <Paperclip className="h-3 w-3" /> {draftText ? '파일 첨부 (.md·.txt) — 이 내용으로 초안' : '참고자료 .md 첨부'}
             </button>
           )}
         </div>
@@ -237,7 +259,7 @@ function RefineForm({ request, onApply }: { request: RefineRequest; onApply: (ch
           <span className="text-[11px] text-ink/35">⌘/Ctrl+Enter</span>
           <button
             type="button"
-            disabled={busy || !instruction.trim()}
+            disabled={busy || (!instruction.trim() && !(draftText && reference))}
             onClick={() => run(instruction)}
             className="inline-flex items-center gap-1 rounded-md bg-accent px-3 py-1 text-[12px] font-semibold text-white hover:bg-accent/90 disabled:opacity-40"
           >
@@ -318,6 +340,7 @@ export function RefinePanel({ className }: { className?: string }) {
           왼쪽 초안에서 고칠 곳을 고르고 <span className="inline-flex items-center gap-0.5 text-accent"><Sparkles className="h-3 w-3" /> AI 수정</span>을 누르세요.
           <br />
           문단 위 ✨ = 문단 하나, 일부 <b className="font-semibold text-ink/60">드래그</b> = 그 구간, 섹션 제목 옆 ✨ = 섹션 통째.
+          <br />빈 문단은 <b className="font-semibold text-ink/60">방향 적고 / 파일 넣고 AI 초안</b>으로 새로 쓸 수 있어요.
         </div>
       )}
     </div>

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useRef } from 'react';
-import { ArrowUpRight, Copy, Check, User, Bot, Plus, Trash2, Sparkles, ChevronUp, ChevronDown, AlignLeft, AlignCenter, AlignRight } from 'lucide-react';
+import { ArrowUpRight, Copy, Check, User, Bot, Plus, Trash2, Sparkles, ChevronUp, ChevronDown, AlignLeft, AlignCenter, AlignRight, PenLine, Paperclip } from 'lucide-react';
 import type { Block, ContentBody, JobTag, PainPoint, StepCard, TakingPoint } from '@/types/content';
 import { JOB_LABELS } from '@/types/content';
 import { Editable } from '@/components/admin/Editable';
@@ -187,9 +187,63 @@ function PreviewImage({ block, onChange }: { block: Extract<Block, { type: 'imag
   );
 }
 
+const TEXT_BLOCK_CLS = 'text-[16px] leading-[1.75] text-ink/85 my-4 whitespace-pre-wrap block';
+
+// 빈 문단 — 바로 ✨AI수정 대신 채우는 방법을 먼저 고르게 한다:
+// ✍ 직접 쓰기(즉시 편집 진입) / ✨ 방향 적고 AI 초안 / 📎 파일 넣고 AI 초안(우측 패널 generate·text 모드).
+function EmptyTextBlock({ block, onBlock }: { block: Extract<Block, { type: 'text' }>; onBlock: (nb: Block) => void }) {
+  const refine = useRefine();
+  const [writing, setWriting] = useState(false);
+
+  const openDraft = (source: 'direction' | 'file') => {
+    refine?.open({
+      target: '',
+      scope: 'field',
+      kind: 'text',
+      mode: 'generate',
+      draftSource: source,
+      rich: true,
+      context: '본문 문단',
+      apply: (chosen) => onBlock({ ...block, markdown: String(chosen) }),
+      onClose: () => {},
+    });
+  };
+
+  if (writing) {
+    // 아무것도 안 쓰고 나가면(blur 커밋 후에도 빈 값) 선택지 바로 복귀
+    return (
+      <div onBlur={() => setTimeout(() => setWriting(false), 120)}>
+        <Editable as="p" multiline rich autoEdit value={block.markdown} placeholder="문단 내용을 입력하세요" onCommit={(v) => onBlock({ ...block, markdown: v })} className={TEXT_BLOCK_CLS} />
+      </div>
+    );
+  }
+
+  const btn = 'inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[12px] font-medium transition-colors';
+  return (
+    <div className="my-4 flex flex-wrap items-center gap-2 rounded-lg border border-dashed border-border bg-muted/40 px-4 py-3">
+      <span className="text-[12px] text-ink/45">빈 문단 —</span>
+      <button type="button" onClick={() => setWriting(true)} className={cn(btn, 'border-border bg-white text-ink/70 hover:border-ink/30 hover:text-ink')}>
+        <PenLine className="h-3 w-3" /> 직접 쓰기
+      </button>
+      {refine && (
+        <>
+          <button type="button" onClick={() => openDraft('direction')} className={cn(btn, 'border-accent/40 bg-white text-accent hover:bg-accent-50')}>
+            <Sparkles className="h-3 w-3" /> 방향 적고 AI 초안
+          </button>
+          <button type="button" onClick={() => openDraft('file')} className={cn(btn, 'border-accent/40 bg-white text-accent hover:bg-accent-50')}>
+            <Paperclip className="h-3 w-3" /> 파일 넣고 AI 초안
+          </button>
+        </>
+      )}
+    </div>
+  );
+}
+
 function renderBlock(block: Block, key: string | number, onBlock?: (nb: Block) => void) {
   switch (block.type) {
     case 'text':
+      // 빈 문단(새로 추가 or 내용 지움)은 채우기 선택지부터 — 직접 쓰기 / AI 초안(방향·파일)
+      if (onBlock && !block.markdown.trim()) return <EmptyTextBlock key={key} block={block} onBlock={onBlock} />;
       return (
         <Editable
           key={key}
@@ -199,7 +253,7 @@ function renderBlock(block: Block, key: string | number, onBlock?: (nb: Block) =
           value={block.markdown}
           placeholder={onBlock ? '클릭해서 문단 내용을 입력하세요' : undefined}
           onCommit={onBlock && ((v) => onBlock({ ...block, markdown: v }))}
-          className="text-[16px] leading-[1.75] text-ink/85 my-4 whitespace-pre-wrap block"
+          className={TEXT_BLOCK_CLS}
         />
       );
     case 'heading':

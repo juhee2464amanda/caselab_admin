@@ -1,6 +1,6 @@
 'use client';
 
-import { createElement, useRef, useState, type HTMLAttributes } from 'react';
+import { createElement, useEffect, useRef, useState, type HTMLAttributes } from 'react';
 import { createPortal } from 'react-dom';
 import { Bold, Underline, Highlighter, Link2, RemoveFormatting, Sparkles } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -56,17 +56,35 @@ interface EditableProps extends Omit<HTMLAttributes<HTMLElement>, 'onChange' | '
   rich?: boolean;
   /** AI 수정 제안에 넘길 편집 위치 힌트(grounding). 예: "실전 케이스 · 문단" */
   refineContext?: string;
+  /** true면 마운트 직후 편집 모드로 시작(빈 문단 "직접 쓰기" 진입용) — 커서는 끝에. */
+  autoEdit?: boolean;
   placeholder?: string;
 }
 
-export function Editable({ value, onCommit, as = 'span', multiline, rich, refineContext, placeholder, className, ...rest }: EditableProps) {
-  const [editing, setEditing] = useState(false);
+export function Editable({ value, onCommit, as = 'span', multiline, rich, refineContext, autoEdit, placeholder, className, ...rest }: EditableProps) {
+  const [editing, setEditing] = useState(!!autoEdit);
   const [toolbar, setToolbar] = useState<{ top: number; left: number } | null>(null);
   const ref = useRef<HTMLElement | null>(null);
   const refiningRef = useRef(false); // 리파인 패널로 포커스가 옮겨간 동안 blur-커밋을 막는다(선택 구간 보존).
   const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const refine = useRefine();
   const canRefine = !!refine; // 프로바이더(우측 패널)가 있을 때만 ✨ 노출 — 섹션 수정 버튼·패널과 동일 기준
+
+  // autoEdit — 마운트하자마자 포커스 + 커서 끝(클릭 진입과 같은 상태로 시작)
+  useEffect(() => {
+    if (!autoEdit) return;
+    const el = ref.current;
+    if (!el) return;
+    el.focus();
+    const range = document.createRange();
+    range.selectNodeContents(el);
+    range.collapse(false);
+    const sel = window.getSelection();
+    sel?.removeAllRanges();
+    sel?.addRange(range);
+    if (rich || canRefine) setToolbar(anchorFor());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   if (!onCommit) {
     if (rich && value) {
