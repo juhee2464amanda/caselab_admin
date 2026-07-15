@@ -14,6 +14,8 @@ import type { JobTag } from '@/types/content';
 import { createSupabaseBrowserClient } from '@/lib/supabase/client';
 import { slugify, cn } from '@/lib/utils';
 import { ToolPreview } from '@/components/admin/ToolPreview';
+import { RichSectionsEditor } from '@/components/admin/section-editors/RichSectionsEditor';
+import type { RichSection } from '@/types/content';
 import { RefineProvider, RefinePanel } from '@/components/admin/RefinePanel';
 
 const CATEGORIES = ['tool', 'prompt', 'guide', 'context-card'] as const;
@@ -191,6 +193,22 @@ export function ToolForm({ initial, onSaved, startInPreview }: Props) {
     } catch (e) {
       setBodyError((e as Error).message);
     }
+  }
+
+  // 파싱 가능한 body(자유 섹션 GUI 편집용). JSON 오류면 null.
+  const parsedBody = useMemo(() => {
+    try {
+      return JSON.parse(bodyJson || '{}') as Record<string, unknown>;
+    } catch {
+      return null;
+    }
+  }, [bodyJson]);
+  const sections = (parsedBody?.sections as RichSection[] | undefined) ?? [];
+  function setSections(next: RichSection[]) {
+    const merged: Record<string, unknown> = { ...(parsedBody ?? {}) };
+    if (next.length) merged.sections = next;
+    else delete merged.sections;
+    syncBody(JSON.stringify(merged, null, 2));
   }
 
   function save(status: 'draft' | 'published' | 'archived') {
@@ -539,7 +557,25 @@ export function ToolForm({ initial, onSaved, startInPreview }: Props) {
               />
             )
           ) : (
-            // 구조 편집 = 본문 JSON 직접 편집 (인라인으로 안 되는 블록 구조·디버깅용)
+            <div className="space-y-6">
+            {/* 자유 리치 섹션 — 트렌드처럼 이미지·링크·갤러리·문단을 각 섹션에 자유 배치 */}
+            <section className="card p-5">
+              <header className="mb-3">
+                <h2 className="font-semibold">추가 섹션 <span className="text-xs font-normal text-ink/50">(이미지·링크·갤러리 등)</span></h2>
+                <p className="mt-0.5 text-xs text-ink/50 break-keep">
+                  소개·기능·가격 같은 고정 섹션 외에, 트렌드처럼 이미지·북마크(링크 카드)·갤러리·문단을 자유롭게 넣을 수 있어요. 여기서 만든 섹션은 상세페이지 맨 아래에 순서대로 노출됩니다.
+                </p>
+              </header>
+              {parsedBody ? (
+                <RichSectionsEditor value={sections} onChange={setSections} />
+              ) : (
+                <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-600">
+                  본문 JSON 오류로 섹션 편집을 열 수 없어요 — 아래 JSON을 먼저 고쳐 주세요.
+                </p>
+              )}
+            </section>
+
+            {/* 본문 JSON 직접 편집 (인라인으로 안 되는 블록 구조·디버깅용) */}
             <section className="card p-5">
               <header className="flex items-center justify-between mb-3">
                 <h2 className="font-semibold">본문 (JSON, 선택)</h2>
@@ -564,6 +600,7 @@ export function ToolForm({ initial, onSaved, startInPreview }: Props) {
                 텍스트는 &lsquo;초안 편집&rsquo;에서 더블클릭으로 바로 고칠 수 있어요.
               </p>
             </section>
+            </div>
           )}
         </div>
 

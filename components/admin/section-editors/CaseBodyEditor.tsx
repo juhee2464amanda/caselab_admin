@@ -9,6 +9,7 @@ import { StepCardsEditor } from './StepCardsEditor';
 import { TakingPointsEditor } from './TakingPointsEditor';
 import { FrameworkReferenceEditor } from './FrameworkReferenceEditor';
 import { FrameworkStepsEditor } from './FrameworkStepsEditor';
+import { RichSectionsEditor } from './RichSectionsEditor';
 
 /**
  * #6 Phase 3 — 실전 케이스 본문 GUI 에디터 (D70 7섹션).
@@ -75,6 +76,10 @@ export function CaseBodyEditor({
 
       <BodySection num="07" title="핵심 Taking point" hint="가져갈 핵심 + 바로 할 액션.">
         <TakingPointsEditor value={value.takingPoints ?? []} onChange={(takingPoints) => set({ takingPoints })} />
+      </BodySection>
+
+      <BodySection title="추가 섹션 (이미지·링크·갤러리 등)" hint="트렌드처럼 이미지·북마크·갤러리·문단을 자유롭게. 07 뒤에 순서대로 노출돼요.">
+        <RichSectionsEditor value={value.sections ?? []} onChange={(sections) => set({ sections })} />
       </BodySection>
 
       {/* 레거시 4섹션 — 접이식. 기존 콘텐츠 보존·편집용 (신규는 위 D70 사용 권장) */}

@@ -4,6 +4,8 @@ import { useRef, useState } from 'react';
 import { ArrowUpRight, Copy, Check, ExternalLink, Upload, Loader2, Trash2, Plus } from 'lucide-react';
 import { ToolBodySchema, type ToolBody } from '@/lib/tool-body';
 import { Editable } from '@/components/admin/Editable';
+import { renderBlocks } from '@/lib/content-render';
+import type { RichSection } from '@/types/content';
 import { ImageZoom } from '@/components/admin/ImageZoom';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
@@ -240,10 +242,10 @@ export interface ToolPreviewProps {
 const upd = <T,>(arr: T[], i: number, v: T): T[] => arr.map((x, idx) => (idx === i ? v : x));
 
 // 본가 ToolDetail의 Section — sec-label + h2 헤드라인 이중 구조
-function Section({ label, title, children }: { label: string; title?: React.ReactNode; children: React.ReactNode }) {
+function Section({ label, title, children }: { label?: React.ReactNode; title?: React.ReactNode; children: React.ReactNode }) {
   return (
     <section className="mb-12">
-      <div className="text-xs font-bold text-accent tracking-[0.06em] mb-1.5">{label}</div>
+      {label && <div className="text-xs font-bold text-accent tracking-[0.06em] mb-1.5">{label}</div>}
       {title && <h2 className="text-[22px] font-extrabold tracking-[-0.025em] mb-5 break-keep">{title}</h2>}
       {children}
     </section>
@@ -289,6 +291,19 @@ function ToolDetailPreview({
   onBody,
 }: Omit<ToolPreviewProps, 'category' | 'jobTags'> & { body: ToolBody }) {
   const set = onBody && ((patch: Partial<ToolBody>) => onBody({ ...body, ...patch } as Record<string, unknown>));
+  // 섹션 소제목·라벨 오버라이드 — 기본 문구를 클릭 편집으로 덮어씀(비우면 기본 복귀).
+  const h = (key: string, def: string) => body.headings?.[key]?.trim() || def;
+  const setH = (key: string) =>
+    set &&
+    ((v: string) => {
+      const headings = { ...(body.headings ?? {}) };
+      if (v.trim()) headings[key] = v;
+      else delete headings[key];
+      set({ headings });
+    });
+  // 편집 가능한 라벨/제목 노드 — onBody 없으면 일반 텍스트.
+  const hLabel = (key: string, def: string) =>
+    set ? <Editable value={h(key, def)} onCommit={setH(key)} /> : h(key, def);
   return (
     <div>
       {/* Hero — ToolDetail 정합: 썸네일 16:10(이미지→이모지 폴백) + 칩/태그/CTA */}
@@ -371,7 +386,7 @@ function ToolDetailPreview({
 
       {body.about && (
         <Section
-          label="어떤 서비스인가요"
+          label={hLabel('about.label', '어떤 서비스인가요')}
           title={
             body.about.heading !== undefined ? (
               <Editable value={body.about.heading} onCommit={set && ((v) => set({ about: { ...body.about!, heading: v } }))} />
@@ -415,7 +430,7 @@ function ToolDetailPreview({
       )}
 
       {body.whenToUse && body.whenToUse.length > 0 && (
-        <Section label="언제 쓰면 좋은가요" title="이런 일을 할 때 가장 빛납니다">
+        <Section label={hLabel('when.label', '언제 쓰면 좋은가요')} title={hLabel('when', '이런 일을 할 때 가장 빛납니다')}>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
             {body.whenToUse.map((w, i) => (
               <div key={i} className="p-4 border border-border rounded-[10px] bg-white">
@@ -461,7 +476,7 @@ function ToolDetailPreview({
       )}
 
       {body.features && body.features.length > 0 && (
-        <Section label="주요 기능" title="이 도구가 잘하는 것">
+        <Section label={hLabel('features.label', '주요 기능')} title={hLabel('features', '이 도구가 잘하는 것')}>
           <div className="border-t border-border">
             {body.features.map((f, i) => (
               <div key={i} className="flex gap-4 py-4 border-b border-border items-start">
@@ -523,7 +538,7 @@ function ToolDetailPreview({
       )}
 
       {body.pricing && body.pricing.length > 0 && (
-        <Section label="가격" title="요금 정보">
+        <Section label={hLabel('pricing.label', '가격')} title={hLabel('pricing', '요금 정보')}>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             {body.pricing.map((p, i) => (
               <div key={i} className="p-5 border border-border rounded-xl bg-white">
@@ -583,7 +598,7 @@ function ToolDetailPreview({
       )}
 
       {body.useCases && body.useCases.length > 0 && (
-        <Section label="실전 사용기 · 옵션" title="이 도구를 직접 써본 케이스">
+        <Section label={hLabel('useCases.label', '실전 사용기 · 옵션')} title={hLabel('useCases', '이 도구를 직접 써본 케이스')}>
           <div className="grid gap-3.5">
             {body.useCases.map((u, i) => (
               <div key={i} className="block p-4 border border-border rounded-xl">
@@ -622,6 +637,32 @@ function ToolDetailPreview({
           )}
         </div>
       )}
+
+      {/* 자유 리치 섹션 — 본가 ToolDetail 정합. 미리보기는 읽기 전용(편집은 '상세 필드'에서). */}
+      {body.sections?.map((s, i) =>
+        s.blocks?.length ? (
+          <Section key={i} label={s.label || undefined} title={s.heading || undefined}>
+            {renderBlocks(s.blocks, `tool-section-${i}`)}
+          </Section>
+        ) : null,
+      )}
+    </div>
+  );
+}
+
+// 자유 리치 섹션 미리보기(읽기 전용) — 프롬프트·가이드 상세 하단에 노출되는 섹션.
+// 편집은 '상세 필드'의 추가 섹션 에디터에서.
+function SectionsPreview({ body }: { body: Record<string, unknown> }) {
+  const raw = Array.isArray(body.sections) ? (body.sections as RichSection[]) : [];
+  const list = raw.filter((s) => s?.blocks?.length);
+  if (!list.length) return null;
+  return (
+    <div className="mt-8 space-y-8 text-left">
+      {list.map((s, i) => (
+        <Section key={i} label={s.label || undefined} title={s.heading || undefined}>
+          {renderBlocks(s.blocks, `preview-section-${i}`)}
+        </Section>
+      ))}
     </div>
   );
 }
@@ -674,6 +715,7 @@ function PromptCardPreview({
         <Editable value={example} multiline rich placeholder={set ? '클릭해서 입력' : ''} onCommit={set && ((v) => set({ example: v }))} />
       </p>
       <p className="text-[11px] text-ink/40">바로 복사 가능</p>
+      <SectionsPreview body={body} />
     </div>
   );
 }
@@ -683,8 +725,9 @@ function GuideCardPreview({
   description,
   url,
   jobTags,
+  body,
   onPatch,
-}: Pick<ToolPreviewProps, 'name' | 'description' | 'url' | 'jobTags' | 'onPatch'>) {
+}: Pick<ToolPreviewProps, 'name' | 'description' | 'url' | 'jobTags' | 'body' | 'onPatch'>) {
   const host = (() => {
     try {
       return url ? new URL(url).host : '';
@@ -723,6 +766,9 @@ function GuideCardPreview({
         </div>
       </div>
       <p className="mt-2 text-center text-[11px] text-ink/40">공식 가이드 목록 카드 미리보기</p>
+      <div className="mx-auto max-w-[640px]">
+        <SectionsPreview body={body} />
+      </div>
     </div>
   );
 }
@@ -760,7 +806,7 @@ export function ToolPreview(props: ToolPreviewProps) {
         ) : category === 'prompt' ? (
           <PromptCardPreview name={props.name} description={props.description} url={props.url} body={body} onPatch={props.onPatch} onBody={props.onBody} />
         ) : (
-          <GuideCardPreview name={props.name} description={props.description} url={props.url} jobTags={props.jobTags} onPatch={props.onPatch} />
+          <GuideCardPreview name={props.name} description={props.description} url={props.url} jobTags={props.jobTags} body={body} onPatch={props.onPatch} />
         )}
       </div>
     </div>
