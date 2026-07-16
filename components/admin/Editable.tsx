@@ -184,6 +184,26 @@ export function Editable({ value, onCommit, as = 'span', multiline, rich, refine
     sel.addRange(r);
   };
 
+  // 래퍼 요소를 벗기고(자식을 부모로 이동) 벗긴 내용을 다시 선택한다.
+  // 언랩 시 DOM 이동으로 선택(Range)이 붕괴하는데, 그대로 두면 이어지는 재적용
+  // (색 교체 등)이 "선택 없음"으로 조용히 무시된다(색이 안 먹히던 버그, 2026-07-16).
+  const unwrapAndReselect = (node: HTMLElement) => {
+    const parent = node.parentNode;
+    if (!parent) return;
+    const first = node.firstChild;
+    const last = node.lastChild;
+    while (node.firstChild) parent.insertBefore(node.firstChild, node);
+    parent.removeChild(node);
+    if (first && last) {
+      const r = document.createRange();
+      r.setStartBefore(first);
+      r.setEndAfter(last);
+      const sel = window.getSelection();
+      sel?.removeAllRanges();
+      sel?.addRange(r);
+    }
+  };
+
   // 선택 구간이 이미 형광펜(<mark>) 안이면 그 <mark>를 벗겨 강조를 지운다. 아니면 false.
   const clearHighlight = (): boolean => {
     const el = ref.current;
@@ -192,11 +212,7 @@ export function Editable({ value, onCommit, as = 'span', multiline, rich, refine
     let node: Node | null = sel.anchorNode;
     while (node && node !== el) {
       if (node instanceof HTMLElement && node.tagName === 'MARK') {
-        const parent = node.parentNode;
-        if (parent) {
-          while (node.firstChild) parent.insertBefore(node.firstChild, node);
-          parent.removeChild(node);
-        }
+        unwrapAndReselect(node);
         return true;
       }
       node = node.parentNode;
@@ -214,7 +230,7 @@ export function Editable({ value, onCommit, as = 'span', multiline, rich, refine
     }, 'mark');
   };
 
-  // 선택 구간이 색상 span({red|…} 마커) 안이면 그 span을 벗긴다. 아니면 false.
+  // 선택 구간이 색상 span({red|…} 마커) 안이면 그 span을 벗긴다(내용 재선택 포함). 아니면 false.
   const clearColor = (): boolean => {
     const el = ref.current;
     const sel = window.getSelection();
@@ -222,11 +238,7 @@ export function Editable({ value, onCommit, as = 'span', multiline, rich, refine
     let node: Node | null = sel.anchorNode;
     while (node && node !== el) {
       if (node instanceof HTMLElement && node.tagName === 'SPAN' && node.hasAttribute('data-color')) {
-        const parent = node.parentNode;
-        if (parent) {
-          while (node.firstChild) parent.insertBefore(node.firstChild, node);
-          parent.removeChild(node);
-        }
+        unwrapAndReselect(node);
         return true;
       }
       node = node.parentNode;
