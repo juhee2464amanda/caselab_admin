@@ -175,9 +175,11 @@ export function Editable({ value, onCommit, as = 'span', multiline, rich, refine
     const wrapper = makeWrapper();
     wrapper.appendChild(frag);
     range.insertNode(wrapper);
-    // 감싼 내용을 다시 선택 상태로(연속 서식 편하게)
+    // 적용 후 캐럿을 래퍼 뒤로(선택 해제) — 선택을 남겨두면 다음 드래그가 Safari에서
+    // '선택 텍스트 끌어 옮기기'로 발동해 서식 span이 깨진다(색 유실, 2026-07-16 프로드 피드백).
     const r = document.createRange();
-    r.selectNodeContents(wrapper);
+    r.setStartAfter(wrapper);
+    r.collapse(true);
     sel.removeAllRanges();
     sel.addRange(r);
   };
@@ -392,6 +394,11 @@ export function Editable({ value, onCommit, as = 'span', multiline, rich, refine
             });
           },
           onBlur: commit,
+          // 편집 중 선택 텍스트의 드래그 이동(drag-move) 차단 — 이동 드롭 과정에서 서식
+          // span·마커가 깨지고(색 유실), 드래그가 새 선택 대신 이동으로 발동해 혼란을 준다.
+          onDragStart: (e: React.DragEvent) => {
+            if (editing) e.preventDefault();
+          },
           onKeyDown: (e: React.KeyboardEvent) => {
             if (!editing) return;
             e.stopPropagation();
