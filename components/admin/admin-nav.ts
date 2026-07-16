@@ -4,6 +4,7 @@ import {
   FileText,
   Users,
   BookOpen,
+  Megaphone,
   Settings,
   type LucideIcon,
 } from 'lucide-react';
@@ -41,7 +42,6 @@ export const SECTIONS: Section[] = [
     tabs: [
       { href: '/admin', label: '개요', exact: true },
       { href: '/admin/analytics', label: '상세 분석' },
-      { href: '/admin/utm', label: '유입 (UTM)' },
       { href: '/admin/analytics/search', label: '검색 키워드' },
       { href: '/admin/tools', label: '프롬프트 순위', exact: true },
     ],
@@ -89,6 +89,18 @@ export const SECTIONS: Section[] = [
       { href: '/admin/ebooks', label: 'ebook 관리' },
       { href: '/admin/revenue', label: '판매 현황' },
       { href: '/admin/ebooks/customers', label: '구매자 관리' },
+    ],
+  },
+  {
+    // 유입 채널 운영 데스크 — ManyChat 숏링크 대장 + UTM 빌더 (구 대시보드 탭에서 이동).
+    // 향후 광고 집행·유입 분석 탭이 늘어날 자리.
+    key: 'marketing',
+    label: '마케팅',
+    icon: Megaphone,
+    href: '/admin/marketing',
+    tabs: [
+      { href: '/admin/marketing', label: '유입 링크', exact: true },
+      { href: '/admin/utm', label: 'UTM 빌더' },
     ],
   },
   {
