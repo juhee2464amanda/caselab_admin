@@ -17,7 +17,8 @@ type MarketingLink = {
   created_at: string;
 };
 
-const SITE = process.env.NEXT_PUBLIC_SITE_URL ?? 'http://localhost:3000';
+// 본가(공개 사이트) 도메인 — admin 자신의 NEXT_PUBLIC_SITE_URL과 구분 (숏링크는 본가에서 서빙)
+const SITE = process.env.NEXT_PUBLIC_MAIN_SITE_URL ?? 'https://caselab.kr';
 
 export default async function AdminMarketing() {
   if (!isSupabaseConfigured()) {
