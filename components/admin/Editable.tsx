@@ -1,10 +1,10 @@
 'use client';
 
-import { createElement, useEffect, useRef, useState, type HTMLAttributes } from 'react';
+import { createElement, useEffect, useMemo, useRef, useState, type HTMLAttributes } from 'react';
 import { createPortal } from 'react-dom';
-import { Bold, Underline, Highlighter, Link2, RemoveFormatting, Sparkles } from 'lucide-react';
+import { Bold, Underline, Highlighter, Link2, Palette, RemoveFormatting, Sparkles } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { inlineMdToHtml, htmlToInlineMd } from '@/lib/inline-md';
+import { inlineMdToHtml, htmlToInlineMd, INLINE_COLORS, type InlineColorName } from '@/lib/inline-md';
 import { useRefine } from '@/components/admin/RefinePanel';
 
 // 클릭 인라인 편집 — 라이브 미리보기(ContentPreview/ToolPreview)를 편집 표면으로 쓰기 위한 것.
@@ -64,6 +64,9 @@ interface EditableProps extends Omit<HTMLAttributes<HTMLElement>, 'onChange' | '
 export function Editable({ value, onCommit, as = 'span', multiline, rich, refineContext, autoEdit, placeholder, className, ...rest }: EditableProps) {
   const [editing, setEditing] = useState(!!autoEdit);
   const [toolbar, setToolbar] = useState<{ top: number; left: number } | null>(null);
+  const [colorOpen, setColorOpen] = useState(false); // 글자색 팔레트 드롭다운
+  const colorRange = useRef<Range | null>(null); // 팔레트 연 순간의 선택 구간 — 드롭다운 클릭으로 선택이 풀려도 복원용
+  const lastRange = useRef<Range | null>(null); // 편집 중 마지막 유효 드래그 구간 — 툴바로 가는 사이 선택이 풀리는 브라우저(Safari) 대비
   const ref = useRef<HTMLElement | null>(null);
   const refiningRef = useRef(false); // 리파인 패널로 포커스가 옮겨간 동안 blur-커밋을 막는다(선택 구간 보존).
   const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -86,23 +89,34 @@ export function Editable({ value, onCommit, as = 'span', multiline, rich, refine
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  if (!onCommit) {
-    if (rich && value) {
-      return createElement(as, { className, dangerouslySetInnerHTML: { __html: inlineMdToHtml(value) }, ...rest });
-    }
-    return createElement(as, { className, ...rest }, value || placeholder || '');
-  }
+  // 편집 중 선택 변화를 지켜보며 마지막 비어있지 않은(드래그) 구간을 저장한다.
+  // Safari는 툴바(팔레트)로 마우스가 가는 사이 선택을 풀어버려서, 적용 시점엔 이 스냅샷으로 복원한다.
+  useEffect(() => {
+    if (!editing) return;
+    lastRange.current = null;
+    const onSel = () => {
+      const el = ref.current;
+      const sel = window.getSelection();
+      // 시작·끝이 모두 이 필드 안일 때만 저장 — Safari가 툴바 클릭으로 선택을 밖으로 확장해버린 오염 구간은 무시
+      if (el && sel && !sel.isCollapsed && sel.rangeCount && el.contains(sel.anchorNode) && el.contains(sel.focusNode)) {
+        lastRange.current = sel.getRangeAt(0).cloneRange();
+      }
+    };
+    document.addEventListener('selectionchange', onSel);
+    return () => document.removeEventListener('selectionchange', onSel);
+  }, [editing]);
 
   const commit = () => {
     if (!editing) return;
     if (refiningRef.current) return; // 리파인 패널로 포커스가 이동 → 편집 상태 유지
     setEditing(false);
     setToolbar(null);
+    setColorOpen(false);
     const el = ref.current;
     if (!el) return;
     const raw = rich ? htmlToInlineMd(el) : (el.innerText ?? '').replace(/\n+$/, '');
     const next = multiline ? raw : raw.replace(/\s+/g, ' ').trim();
-    if (next !== value) onCommit(next);
+    if (next !== value) onCommit?.(next);
     else resetDom(); // 공백·서식 노이즈만 생긴 경우 원복
   };
 
@@ -117,6 +131,7 @@ export function Editable({ value, onCommit, as = 'span', multiline, rich, refine
     resetDom();
     setEditing(false);
     setToolbar(null);
+    setColorOpen(false);
   };
 
   const exec = (fn: () => void) => {
@@ -124,11 +139,47 @@ export function Editable({ value, onCommit, as = 'span', multiline, rich, refine
     fn();
   };
 
+  // 선택 구간을 순수 텍스트로 치환(내부 서식 제거) — 서식지우기 전용.
   const wrapSelection = (build: (text: string) => string) => {
     const sel = window.getSelection();
     if (!sel || sel.isCollapsed) return;
     const text = sel.toString();
-    document.execCommand('insertHTML', false, build(text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')));
+    const html = build(text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'));
+    if (!document.execCommand('insertHTML', false, html)) {
+      // execCommand 미지원/실패 폴백 — Range로 직접 치환
+      const range = sel.getRangeAt(0);
+      range.deleteContents();
+      const tpl = document.createElement('template');
+      tpl.innerHTML = html;
+      range.insertNode(tpl.content);
+      sel.removeAllRanges();
+    }
+  };
+
+  // 선택 구간을 래퍼 요소로 감싼다 — extractContents()로 내부 서식(<b>·<mark>·색상 span…)을
+  // 보존해 효과 중첩(볼드+색상 등)이 가능하게. dedupeSelector와 같은 종류가 조각 안에 있으면
+  // 먼저 벗겨서 같은 효과의 이중 중첩(마커 파싱 불가)을 막는다.
+  const wrapSelectionNode = (makeWrapper: () => HTMLElement, dedupeSelector?: string) => {
+    const sel = window.getSelection();
+    if (!sel || sel.isCollapsed || !sel.rangeCount) return;
+    const range = sel.getRangeAt(0);
+    const frag = range.extractContents();
+    if (dedupeSelector) {
+      frag.querySelectorAll(dedupeSelector).forEach((n) => {
+        const parent = n.parentNode;
+        if (!parent) return;
+        while (n.firstChild) parent.insertBefore(n.firstChild, n);
+        parent.removeChild(n);
+      });
+    }
+    const wrapper = makeWrapper();
+    wrapper.appendChild(frag);
+    range.insertNode(wrapper);
+    // 감싼 내용을 다시 선택 상태로(연속 서식 편하게)
+    const r = document.createRange();
+    r.selectNodeContents(wrapper);
+    sel.removeAllRanges();
+    sel.addRange(r);
   };
 
   // 선택 구간이 이미 형광펜(<mark>) 안이면 그 <mark>를 벗겨 강조를 지운다. 아니면 false.
@@ -151,10 +202,71 @@ export function Editable({ value, onCommit, as = 'span', multiline, rich, refine
     return false;
   };
 
-  // 형광펜 토글 — 강조 안이면 지우고, 아니면 선택 구간을 <mark>로 감싼다.
+  // 형광펜 토글 — 강조 안이면 지우고, 아니면 선택 구간을 <mark>로 감싼다(내부 서식 보존).
   const toggleHighlight = () => {
     if (clearHighlight()) return;
-    wrapSelection((t) => `<mark class="rounded-sm bg-amber-200/80 px-0.5">${t}</mark>`);
+    wrapSelectionNode(() => {
+      const m = document.createElement('mark');
+      m.className = 'rounded-sm bg-amber-200/80 px-0.5';
+      return m;
+    }, 'mark');
+  };
+
+  // 선택 구간이 색상 span({red|…} 마커) 안이면 그 span을 벗긴다. 아니면 false.
+  const clearColor = (): boolean => {
+    const el = ref.current;
+    const sel = window.getSelection();
+    if (!el || !sel || !sel.rangeCount) return false;
+    let node: Node | null = sel.anchorNode;
+    while (node && node !== el) {
+      if (node instanceof HTMLElement && node.tagName === 'SPAN' && node.hasAttribute('data-color')) {
+        const parent = node.parentNode;
+        if (parent) {
+          while (node.firstChild) parent.insertBefore(node.firstChild, node);
+          parent.removeChild(node);
+        }
+        return true;
+      }
+      node = node.parentNode;
+    }
+    return false;
+  };
+
+  // 팔레트 버튼 mousedown — 클릭(mouseup)이 선택을 망가뜨리기 전에 지금 선택 구간을 확정해 둔다.
+  // (Safari는 preventDefault해도 mouseup에서 기존 선택을 클릭 지점으로 확장해버림 → click 시점엔 이미 오염)
+  const captureColorRange = () => {
+    if (colorOpen) return;
+    const el = ref.current;
+    const sel = window.getSelection();
+    colorRange.current =
+      el && sel && !sel.isCollapsed && sel.rangeCount && el.contains(sel.anchorNode) && el.contains(sel.focusNode)
+        ? sel.getRangeAt(0).cloneRange()
+        : lastRange.current; // 이미 선택이 풀렸으면 편집 중 마지막 드래그 구간으로
+  };
+
+  // 글자색 적용 — 저장한 선택 구간을 복원한 뒤, 기존 색을 벗기고 새 색으로 감싼다. null이면 기본색(벗기기만).
+  const applyColor = (name: InlineColorName | null) => {
+    setColorOpen(false);
+    const el = ref.current;
+    if (!el) return;
+    el.focus();
+    const sel = window.getSelection();
+    if (sel && colorRange.current) {
+      sel.removeAllRanges();
+      sel.addRange(colorRange.current);
+    }
+    clearColor();
+    if (name) {
+      const c = INLINE_COLORS.find((x) => x.name === name);
+      if (c)
+        wrapSelectionNode(() => {
+          const s = document.createElement('span');
+          s.setAttribute('data-color', name);
+          s.className = c.cls;
+          return s;
+        }, 'span[data-color]');
+    }
+    colorRange.current = null;
   };
 
   // 필드 위쪽에 뜨는 컨트롤 바 앵커(hover·편집 공통).
@@ -182,7 +294,7 @@ export function Editable({ value, onCommit, as = 'span', multiline, rich, refine
     } else {
       setEditing(false);
       setToolbar(null);
-      if (chosen !== value) onCommit(chosen);
+      if (chosen !== value) onCommit?.(chosen);
     }
   };
 
@@ -236,16 +348,18 @@ export function Editable({ value, onCommit, as = 'span', multiline, rich, refine
   const showFormat = editing && rich; // 서식 버튼(B/형광펜/링크/서식지우기)
   const showBar = !!toolbar && (showFormat || canRefine);
 
-  const content: Record<string, unknown> = {};
-  if (rich) content.dangerouslySetInnerHTML = { __html: value ? inlineMdToHtml(value) : editing ? '' : `<span class="opacity-40">${placeholder ?? ''}</span>` };
-
-  return (
-    <>
-      {createElement(
-        as,
-        {
-          ref,
-          contentEditable: editing,
+  // 편집 표면 요소는 메모이즈 — 툴바 위치·팔레트 열림 같은 내부 상태 리렌더가
+  // contentEditable의 innerHTML을 같은 내용으로 다시 써서 브라우저 선택과 저장한 Range를
+  // 붕괴시키는 문제(팔레트 색 적용 실패의 원인, 2026-07-16 WebKit 재현)를 막는다.
+  // 아래 deps가 바뀔 때만 React가 이 DOM을 건드린다. toolbar/colorOpen은 의도적으로 제외.
+  const editableNode = useMemo(() => {
+    const content: Record<string, unknown> = {};
+    if (rich) content.dangerouslySetInnerHTML = { __html: value ? inlineMdToHtml(value) : editing ? '' : `<span class="opacity-40">${placeholder ?? ''}</span>` };
+    return createElement(
+      as,
+      {
+        ref,
+        contentEditable: editing,
           suppressContentEditableWarning: true,
           spellCheck: false,
           title: editing ? undefined : '클릭하면 바로 수정',
@@ -287,22 +401,41 @@ export function Editable({ value, onCommit, as = 'span', multiline, rich, refine
             } else if (e.key === 'Enter' && !multiline) {
               e.preventDefault();
               commit();
+            } else if (e.key === 'Enter' && multiline) {
+              // 기본 Enter는 <div> 블록을 만들어 기존 개행(\n, pre-wrap)과 줄 간격이 달라진다(제각각으로 보이는 원인).
+              // <br> 줄바꿈으로 통일 — htmlToInlineMd가 \n으로 저장하므로 읽기 모드와 같은 간격.
+              e.preventDefault();
+              if (!document.execCommand('insertLineBreak')) document.execCommand('insertText', false, '\n');
             }
           },
-          className: cn(
-            className,
-            'transition-colors',
-            // multiline은 개행(\n)을 문단으로 보여준다 — 호출부가 whitespace-*를 이미 지정했으면 건드리지 않음.
-            multiline && !/whitespace-/.test(className ?? '') && 'whitespace-pre-line',
-            editing
-              ? 'cursor-text rounded-sm bg-white outline outline-2 outline-accent/70 -outline-offset-1'
-              : 'cursor-text rounded-sm hover:bg-accent-50/60 hover:outline hover:outline-1 hover:outline-accent/30',
-          ),
-          ...content,
-          ...rest,
-        },
-        rich ? undefined : value || placeholder || '',
-      )}
+        className: cn(
+          className,
+          'transition-colors',
+          // multiline은 개행(\n)을 문단으로 보여준다 — 호출부가 whitespace-*를 이미 지정했으면 건드리지 않음.
+          multiline && !/whitespace-/.test(className ?? '') && 'whitespace-pre-line',
+          editing
+            ? 'cursor-text rounded-sm bg-white outline outline-2 outline-accent/70 -outline-offset-1'
+            : 'cursor-text rounded-sm hover:bg-accent-50/60 hover:outline hover:outline-1 hover:outline-accent/30',
+        ),
+        ...content,
+        ...rest,
+      },
+      rich ? undefined : value || placeholder || '',
+    );
+    // rest 스프레드·핸들러가 참조하는 값은 아래 deps로 충분(핸들러는 그 외에 ref·안정 setter만 사용).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [as, value, editing, multiline, rich, className, placeholder, canRefine, onCommit]);
+
+  if (!onCommit) {
+    if (rich && value) {
+      return createElement(as, { className, dangerouslySetInnerHTML: { __html: inlineMdToHtml(value) }, ...rest });
+    }
+    return createElement(as, { className, ...rest }, value || placeholder || '');
+  }
+
+  return (
+    <>
+      {editableNode}
 
       {showBar &&
         createPortal(
@@ -316,6 +449,7 @@ export function Editable({ value, onCommit, as = 'span', multiline, rich, refine
               if (!editing) setToolbar(null);
             }}
             onMouseDown={(e) => e.preventDefault() /* 포커스·선택 유지 */}
+            onMouseUp={(e) => e.preventDefault() /* Safari가 mouseup에서 선택을 확장하는 것 방지 */}
           >
             {showFormat && (
               <>
@@ -333,6 +467,43 @@ export function Editable({ value, onCommit, as = 'span', multiline, rich, refine
                 >
                   <Highlighter className="h-3.5 w-3.5 text-amber-600" />
                 </button>
+                <span className="relative">
+                  <button
+                    type="button"
+                    title="글자 색"
+                    className={cn('rounded p-1.5 hover:bg-muted', colorOpen && 'bg-muted')}
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      captureColorRange();
+                    }}
+                    onClick={() => setColorOpen((v) => !v)}
+                  >
+                    <Palette className="h-3.5 w-3.5 text-rose-500" />
+                  </button>
+                  {colorOpen && (
+                    <span className="absolute left-0 top-full z-10 mt-1.5 flex items-center gap-1.5 rounded-lg border border-border bg-white px-2 py-1.5 shadow-lg">
+                      {INLINE_COLORS.map((c) => (
+                        <button
+                          key={c.name}
+                          type="button"
+                          title={c.label}
+                          onClick={() => applyColor(c.name)}
+                          className={cn('h-4 w-4 rounded-full ring-offset-1 hover:ring-2 hover:ring-accent/50', c.dot)}
+                        />
+                      ))}
+                      <span className="h-4 w-px bg-border" />
+                      <button
+                        type="button"
+                        title="기본색으로 (색 지우기)"
+                        onClick={() => applyColor(null)}
+                        className="flex h-4 w-4 items-center justify-center rounded-full border border-border bg-white text-[9px] leading-none text-ink/50 hover:ring-2 hover:ring-accent/50 ring-offset-1"
+                      >
+                        ✕
+                      </button>
+                    </span>
+                  )}
+                </span>
                 <button
                   type="button"
                   title="링크"
@@ -341,7 +512,16 @@ export function Editable({ value, onCommit, as = 'span', multiline, rich, refine
                     const url = window.prompt('링크 URL:');
                     if (url && url.trim()) {
                       const safe = url.trim().replace(/["<>]/g, '');
-                      exec(() => wrapSelection((t) => `<a href="${safe}" target="_blank" rel="noopener noreferrer" class="text-accent underline underline-offset-2">${t}</a>`));
+                      exec(() =>
+                        wrapSelectionNode(() => {
+                          const a = document.createElement('a');
+                          a.href = safe;
+                          a.target = '_blank';
+                          a.rel = 'noopener noreferrer';
+                          a.className = 'text-accent underline underline-offset-2';
+                          return a;
+                        }, 'a'),
+                      );
                     }
                   }}
                 >
