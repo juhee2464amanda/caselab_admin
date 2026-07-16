@@ -30,15 +30,23 @@ export async function POST(req: NextRequest) {
     rich?: boolean;
     reference?: string;
     count?: number;
+    mode?: 'refine' | 'draft';
   };
   const text = body.text?.trim();
   const instruction = body.instruction?.trim();
-  if (!text || !instruction) return NextResponse.json({ error: 'text·instruction 필수' }, { status: 400 });
+  const mode = body.mode === 'draft' ? 'draft' : 'refine';
+  // draft(빈 문단 초안)는 text 없이 방향 또는 참고자료(파일) 중 하나면 된다.
+  if (mode === 'draft') {
+    if (!instruction && !body.reference?.trim()) return NextResponse.json({ error: '방향(instruction) 또는 참고자료(reference) 필요' }, { status: 400 });
+  } else if (!text || !instruction) {
+    return NextResponse.json({ error: 'text·instruction 필수' }, { status: 400 });
+  }
 
   try {
     const result = await refineText({
-      text,
-      instruction,
+      text: text ?? '',
+      instruction: instruction ?? '',
+      mode,
       context: body.context,
       rich: body.rich,
       reference: body.reference,

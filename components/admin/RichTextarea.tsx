@@ -1,11 +1,12 @@
 'use client';
 
-import { useRef } from 'react';
-import { Bold, Underline, Highlighter, Link2 } from 'lucide-react';
+import { useRef, useState } from 'react';
+import { Bold, Underline, Highlighter, Link2, Palette } from 'lucide-react';
 import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
+import { INLINE_COLORS, type InlineColorName } from '@/lib/inline-md';
 
-// 폼용 마커 기반 리치 텍스트 입력 — 선택 구간을 **굵게**·__밑줄__·==형광펜==·[링크](url) 마커로 감싼다.
+// 폼용 마커 기반 리치 텍스트 입력 — 선택 구간을 **굵게**·__밑줄__·==형광펜==·{red|글자색}·[링크](url) 마커로 감싼다.
 // 저장은 마커 문자열 그대로(lib/inline-md 규칙). 본가 renderInline이 같은 규칙으로 렌더한다.
 // contentEditable(Editable)이 아니라 controlled textarea라서 폼 제출 시 값 유실·경쟁이 없다.
 export function RichTextarea({
@@ -24,6 +25,7 @@ export function RichTextarea({
   mono?: boolean;
 }) {
   const ref = useRef<HTMLTextAreaElement>(null);
+  const [colorOpen, setColorOpen] = useState(false);
 
   // 선택 구간을 마커로 감싸고, 감싼 텍스트를 다시 선택 상태로 둔다(연속 서식 편하게).
   const wrap = (marker: string) => {
@@ -58,6 +60,21 @@ export function RichTextarea({
     requestAnimationFrame(() => el.focus());
   };
 
+  // 선택 구간을 {색이름|텍스트} 색상 마커로 감싼다.
+  const colorWrap = (name: InlineColorName) => {
+    const el = ref.current;
+    setColorOpen(false);
+    if (!el) return;
+    const { selectionStart: s, selectionEnd: e } = el;
+    if (s === e) {
+      el.focus();
+      return;
+    }
+    const sel = value.slice(s, e);
+    onChange(value.slice(0, s) + `{${name}|${sel}}` + value.slice(e));
+    requestAnimationFrame(() => el.focus());
+  };
+
   const btn = 'rounded p-1 text-ink/70 hover:bg-muted';
 
   return (
@@ -72,6 +89,24 @@ export function RichTextarea({
         <button type="button" title="형광펜" onClick={() => wrap('==')} className={btn}>
           <Highlighter className="h-3.5 w-3.5 text-amber-600" />
         </button>
+        <span className="relative">
+          <button type="button" title="글자 색" onClick={() => setColorOpen((v) => !v)} className={cn(btn, colorOpen && 'bg-muted')}>
+            <Palette className="h-3.5 w-3.5 text-rose-500" />
+          </button>
+          {colorOpen && (
+            <span className="absolute left-0 top-full z-10 mt-1 flex items-center gap-1.5 rounded-lg border border-border bg-white px-2 py-1.5 shadow-lg">
+              {INLINE_COLORS.map((c) => (
+                <button
+                  key={c.name}
+                  type="button"
+                  title={c.label}
+                  onClick={() => colorWrap(c.name)}
+                  className={cn('h-4 w-4 rounded-full ring-offset-1 hover:ring-2 hover:ring-accent/50', c.dot)}
+                />
+              ))}
+            </span>
+          )}
+        </span>
         <button type="button" title="링크" onClick={link} className={btn}>
           <Link2 className="h-3.5 w-3.5 text-accent" />
         </button>

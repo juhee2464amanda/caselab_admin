@@ -697,6 +697,8 @@ export interface RefineInput {
   reference?: string;
   /** 반환할 후보 수(기본 3, 1~4). */
   count?: number;
+  /** 'draft'면 빈 문단 초안 생성 — text 없이 방향(instruction)·참고자료(reference)로 새로 쓴다. 기본 'refine'. */
+  mode?: 'refine' | 'draft';
 }
 
 /**
@@ -711,16 +713,35 @@ export interface RefineCandidate<T = string> {
 }
 
 export async function refineText(input: RefineInput): Promise<{ candidates: RefineCandidate<string>[] }> {
+  const draft = input.mode === 'draft';
   const text = input.text?.trim();
   const instruction = input.instruction?.trim();
-  if (!text || !instruction) return { candidates: [] };
+  const reference = input.reference?.trim();
+  // refine: 대상 텍스트+각도 필수. draft: 방향 또는 참고자료 중 하나면 된다.
+  if (draft ? !instruction && !reference : !text || !instruction) return { candidates: [] };
   const count = Math.min(4, Math.max(1, input.count ?? 3));
 
   const markerRule = input.rich
-    ? '원문은 인라인 서식 마커를 쓸 수 있습니다: **굵게**, ==형광펜==, [텍스트](URL). 필요하면 후보에도 같은 마커를 쓰되, 새 URL은 지어내지 말고 원문에 있던 링크만 유지하세요.'
+    ? draft
+      ? '필요하면 인라인 서식 마커를 써도 됩니다: **굵게**, ==형광펜==. URL·링크는 참고자료에 있는 것만 쓰세요.'
+      : '원문은 인라인 서식 마커를 쓸 수 있습니다: **굵게**, ==형광펜==, [텍스트](URL). 필요하면 후보에도 같은 마커를 쓰되, 새 URL은 지어내지 말고 원문에 있던 링크만 유지하세요.'
     : '일반 텍스트로만 답하세요(마크다운 서식 기호 금지).';
 
-  const system = `당신은 케이스랩(Caselab)의 콘텐츠 에디터입니다. 운영자가 지정한 "대상 텍스트"를 "수정 각도"에 맞게 다시 쓴 후보를 제안합니다.
+  const system = draft
+    ? `당신은 케이스랩(Caselab)의 콘텐츠 에디터입니다. 운영자가 적은 "방향"과(또는) 첨부한 "참고자료"를 바탕으로 새 문단 초안 후보를 제안합니다.
+
+[규칙]
+- 방향·참고자료에 없는 사실·수치·이름·URL을 지어내지 마세요. 근거가 부족하면 일반론으로 채우지 말고 방향에 적힌 내용만 풀어 쓰세요.
+- 참고자료가 있으면 그 내용을 재료로 쓰되, 통째로 베끼지 말고 문단 흐름에 맞게 소화해서 쓰세요.
+- 한국어, 케이스랩의 담백한 1인칭 운영자 톤. 본문에 이모지를 넣지 마세요.
+- 방향이 분량을 명시하지 않으면 한 문단(2~5문장)으로 쓰세요.
+- 서로 뚜렷이 다른 방향의 후보 ${count}개를 만드세요(같은 문장 재탕 금지).
+- 각 후보에 그 방향을 요약한 짧은 label을 붙이세요(8자 내외, 예: "핵심 요약형", "경험 도입형", "질문 도입형"). 후보끼리 서로 다르게.
+- ${markerRule}
+
+응답은 아래 JSON 객체 하나만 반환하세요(설명 없이):
+{ "candidates": [ { "label": "핵심 요약형", "value": "새 문단 초안" }, ... ] }`
+    : `당신은 케이스랩(Caselab)의 콘텐츠 에디터입니다. 운영자가 지정한 "대상 텍스트"를 "수정 각도"에 맞게 다시 쓴 후보를 제안합니다.
 
 [규칙]
 - 대상 텍스트의 핵심 의미·사실은 보존하고, 수정 각도가 요구하는 변화만 반영하세요.
@@ -735,8 +756,12 @@ export async function refineText(input: RefineInput): Promise<{ candidates: Refi
 { "candidates": [ { "label": "간결 강조형", "value": "다시 쓴 텍스트" }, ... ] }`;
 
   const ctx = input.context?.trim() ? `[편집 위치] ${input.context.trim()}\n` : '';
-  const ref = input.reference?.trim() ? `\n\n[추가 참고자료 — 이 정보를 반영해 각도를 잡으세요]\n${input.reference.trim().slice(0, 8000)}` : '';
-  const userPrompt = `${ctx}[수정 각도] ${instruction}${ref}\n\n[대상 텍스트]\n${text.slice(0, 8000)}\n\n위 대상 텍스트를 수정 각도대로 다시 쓴 후보 ${count}개를 JSON으로 반환하세요(각 후보에 label 포함).`;
+  const ref = reference
+    ? `\n\n[${draft ? '참고자료 — 이 내용을 재료로 초안을 쓰세요' : '추가 참고자료 — 이 정보를 반영해 각도를 잡으세요'}]\n${reference.slice(0, 8000)}`
+    : '';
+  const userPrompt = draft
+    ? `${ctx}[방향] ${instruction || '(방향 없음 — 참고자료의 핵심을 한 문단으로 소화해 쓰세요)'}${ref}\n\n위 방향·참고자료로 새 문단 초안 후보 ${count}개를 JSON으로 반환하세요(각 후보에 label 포함).`
+    : `${ctx}[수정 각도] ${instruction}${ref}\n\n[대상 텍스트]\n${text!.slice(0, 8000)}\n\n위 대상 텍스트를 수정 각도대로 다시 쓴 후보 ${count}개를 JSON으로 반환하세요(각 후보에 label 포함).`;
 
   const raw = await callModel(system, userPrompt, { allowedTools: [], model: 'sonnet', timeoutMs: 60_000 });
   const parsed = (parseModelJson(raw) ?? {}) as Record<string, unknown>;
