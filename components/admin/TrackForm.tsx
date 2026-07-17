@@ -93,6 +93,24 @@ export function TrackForm({ initial, onSaved, startInPreview }: Props) {
     return () => clearTimeout(t);
   }, [initial?.id, track, title, slug, summary, readMin, applyMin, authorQuote, thumbnailUrl, jobTags, personas, body]);
 
+  // 재로그인 복구 — 세션 만료로 /login에 다녀온 뒤 돌아오면 임시 저장분을 복구.
+  // (Google OAuth는 페이지를 완전히 떠나므로 폼 상태가 사라진다)
+  useEffect(() => {
+    const key = `recover-${initial?.id ?? 'new'}`;
+    const raw = localStorage.getItem(key);
+    if (!raw) return;
+    localStorage.removeItem(key);
+    try {
+      const d = JSON.parse(raw);
+      if (!confirm('로그인 전에 작성하던 내용이 있어요. 복구할까요?')) return;
+      setTrack(d.track); setTitle(d.title); setSlug(d.slug); setSummary(d.summary);
+      setReadMin(d.readMin); setApplyMin(d.applyMin); setAuthorQuote(d.authorQuote);
+      setThumbnailUrl(d.thumbnailUrl); setJobTags(d.jobTags); setPersonas(d.personas);
+      updateBody(d.body);
+    } catch { /* 손상된 스냅샷은 무시 */ }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // body 정본 = body 상태. GUI 편집 시 호출 → JSON도 동기화.
   function updateBody(next: ContentBody) {
     setBody(next);
@@ -150,6 +168,31 @@ export function TrackForm({ initial, onSaved, startInPreview }: Props) {
   // 발행 게이트 = 자동 lint(차단 항목)만. 수동 확인 체크는 폐지(솔로 운영 마찰 제거).
   const canPublish = lint.passed;
 
+  // 저장/발행 write 실패 처리 — 세션 만료면 재로그인 유도, 아니면 원인 노출.
+  // 반환값 true = 처리 종료(호출부에서 return), 이후 페이지 이동을 막는다.
+  async function handleWriteError(error: { message: string }, verb: string): Promise<boolean> {
+    const { data } = await supabase.auth.getUser();
+    if (!data.user) {
+      // 유효한 세션 없음 = 만료/로그아웃. 작성분 임시 저장 후 재로그인.
+      const key = `recover-${initial?.id ?? 'new'}`;
+      localStorage.setItem(
+        key,
+        JSON.stringify({ track, title, slug, summary, readMin, applyMin, authorQuote, thumbnailUrl, jobTags, personas, body })
+      );
+      const goLogin = confirm(
+        `${verb} 실패: 로그인 세션이 만료된 것 같아요.\n작성 중인 내용을 임시 저장했어요. 다시 로그인할까요?`
+      );
+      if (goLogin) {
+        const next = window.location.pathname + window.location.search;
+        window.location.href = `/login?next=${encodeURIComponent(next)}`;
+      }
+      return true;
+    }
+    // 세션은 유효한데 거부됨 = 권한/데이터 문제. 원인 그대로 노출.
+    alert(`${verb} 실패: ${error.message}`);
+    return true;
+  }
+
   function save(status: 'draft' | 'published') {
     if (bodyError) return alert('본문 JSON 오류: ' + bodyError);
     if (status === 'published' && !canPublish) return alert('발행 게이트 통과 필요');
@@ -169,21 +212,35 @@ export function TrackForm({ initial, onSaved, startInPreview }: Props) {
         status,
         published_at: status === 'published' ? new Date().toISOString() : null,
       };
+      const verb = status === 'published' ? '발행' : '초안 저장';
       let id = initial?.id;
       if (id) {
-        await supabase.from('contents').update(payload).eq('id', id);
+        const { error } = await supabase.from('contents').update(payload).eq('id', id);
+        if (error) return void (await handleWriteError(error, verb));
       } else {
-        const { data } = await supabase.from('contents').insert(payload).select('id').single();
+        const { data, error } = await supabase.from('contents').insert(payload).select('id').single();
+        if (error) return void (await handleWriteError(error, verb));
         id = data?.id;
+        if (!id) return alert(`${verb} 실패: 저장된 콘텐츠 ID를 받지 못했습니다.`);
       }
       if (id && status === 'published') {
-        await fetch('/api/revalidate', {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ id, track }),
-        });
+        try {
+          const res = await fetch('/api/revalidate', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ id, track }),
+          });
+          if (!res.ok) throw new Error(`revalidate ${res.status}`);
+        } catch (e) {
+          // 저장은 성공했으나 캐시 갱신 실패 — 발행 자체는 유효하므로 경고만.
+          alert(`발행은 저장됐지만 본가 캐시 갱신에 실패했습니다. 잠시 후 반영될 수 있습니다.\n(${(e as Error).message})`);
+        }
         // HERMES 씨앗에서 생성된 콘텐츠면 씨앗도 발행됨으로 닫기(연결 없으면 no-op)
-        await supabase.from('content_seeds').update({ status: 'published' }).eq('content_id', id);
+        const { error: seedError } = await supabase
+          .from('content_seeds')
+          .update({ status: 'published' })
+          .eq('content_id', id);
+        if (seedError) alert(`씨앗 상태 갱신 실패(발행은 완료됨): ${seedError.message}`);
       }
       // 스튜디오 임베드: 페이지 이동 없이 콜백으로 다음 단계(홈배치) 진행.
       if (onSaved) {
