@@ -12,14 +12,24 @@ export default async function StudioPage() {
 
   const since = new Date(Date.now() - WINDOW_HOURS * 3600 * 1000).toISOString();
 
-  const [curRes, pendingRes] = await Promise.all([
+  const cols =
+    'id, title, raw_text, source_url, lane, source_type, status, note, created_at, bucket, score, score_reason, suggested_angle, essence';
+
+  const [curRes, adoptedRes, pendingRes] = await Promise.all([
     supabase
       .from('content_seeds')
-      .select('id, title, raw_text, source_url, lane, source_type, status, note, created_at, bucket, score, score_reason, suggested_angle, essence')
+      .select(cols)
       .gte('created_at', since)
       .not('scored_at', 'is', null)
       .in('status', ['raw', 'adopted'])
       .order('score', { ascending: false, nullsFirst: false })
+      .limit(120),
+    // 채택한 씨앗은 손으로 고른 작업 대상 → 기간·점수·채점 여부와 무관하게 항상 노출.
+    supabase
+      .from('content_seeds')
+      .select(cols)
+      .eq('status', 'adopted')
+      .order('created_at', { ascending: false })
       .limit(120),
     supabase
       .from('content_seeds')
@@ -28,7 +38,10 @@ export default async function StudioPage() {
       .or('scored_at.is.null,essence.is.null'),
   ]);
 
-  const seeds = (curRes.data ?? []) as CurSeed[];
+  // 두 쿼리 합집합(채택 씨앗이 최근 창에도 걸릴 수 있어 id로 중복 제거).
+  const byId = new Map<string, CurSeed>();
+  for (const s of [...(curRes.data ?? []), ...(adoptedRes.data ?? [])] as CurSeed[]) byId.set(s.id, s);
+  const seeds = [...byId.values()];
   const pending = pendingRes.count ?? 0;
 
   return <Studio seeds={seeds} pending={pending} />;

@@ -82,3 +82,13 @@ export function bucketProfile(key: string | null | undefined): BucketProfile | u
 export function isSeedBucket(v: unknown): v is SeedBucket {
   return v === 'trend' || v === 'service' || v === 'painpoint' || v === 'etc';
 }
+
+/**
+ * 출처(source_type) → 추천 버킷(soft prior). 각 버킷의 sources 매핑을 역참조.
+ * 채점 전(bucket=null) 씨앗을 카테고리에 배치할 때의 fallback으로 쓴다.
+ * (채점된 bucket 값이 있으면 그걸 우선 — LLM이 'etc'로 거른 것 등은 존중.)
+ */
+export function bucketFromSource(sourceType: string | null | undefined): SeedBucket | undefined {
+  if (!sourceType) return undefined;
+  return BUCKETS.find((b) => (b.sources as string[]).includes(sourceType))?.key;
+}

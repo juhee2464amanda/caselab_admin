@@ -1,9 +1,9 @@
 import Link from 'next/link';
 import { createSupabaseServerClient, isSupabaseConfigured } from '@/lib/supabase/server';
-import { sourceProfile } from '@/lib/seed-sources';
-import { bucketProfile, isSeedBucket, RETENTION_DAYS, MAX_UNUSED_SEEDS } from '@/lib/seed-curation';
-import { formatDate, cn } from '@/lib/utils';
+import { BUCKETS, isSeedBucket, bucketFromSource, RETENTION_DAYS, MAX_UNUSED_SEEDS } from '@/lib/seed-curation';
+import { cn } from '@/lib/utils';
 import { SeedPurgeButton } from '@/components/admin/SeedPurgeButton';
+import { SeedArchiveRow, type ArchiveSeed } from '@/components/admin/SeedArchiveRow';
 
 // /admin/studio/archive — 씨앗 아카이브. 유입된 모든 씨앗의 상태·출처·이력 관리 뷰.
 export const dynamic = 'force-dynamic';
@@ -25,32 +25,37 @@ const STATUS_CLS: Record<string, string> = {
   rejected: 'bg-gray-100 text-gray-500',
 };
 
-type SeedRow = {
-  id: string;
-  title: string;
-  source_url: string | null;
-  source_type: string | null;
-  origin: string | null;
-  status: string;
-  created_at: string;
-  bucket: string | null;
-  score: number | null;
-};
-
-export default async function SeedArchive({ searchParams }: { searchParams: Promise<{ status?: string }> }) {
+export default async function SeedArchive({ searchParams }: { searchParams: Promise<{ status?: string; bucket?: string }> }) {
   if (!isSupabaseConfigured()) return <div className="p-4 sm:p-8 text-sm">Supabase 연결 필요</div>;
-  const { status } = await searchParams;
+  const { status, bucket } = await searchParams;
   const active = status && STATUSES.some((s) => s.key === status) ? status : 'all';
+  const activeBucket = bucket && isSeedBucket(bucket) ? bucket : 'all';
+
+  // 상태·버킷 필터를 함께 유지하는 링크 헬퍼(둘 중 하나만 바꿔도 나머지는 보존).
+  const hrefWith = (next: { status?: string; bucket?: string }) => {
+    const s = next.status ?? active;
+    const b = next.bucket ?? activeBucket;
+    const params = new URLSearchParams();
+    if (s !== 'all') params.set('status', s);
+    if (b !== 'all') params.set('bucket', b);
+    const qs = params.toString();
+    return qs ? `/admin/studio/archive?${qs}` : '/admin/studio/archive';
+  };
+
+  // 유효 버킷 — 채점된 bucket 우선, 없으면 출처(source_type)로 추정. 미채점 씨앗도 출처대로 분류.
+  const effBucket = (r: { bucket: string | null; source_type: string | null }) =>
+    (r.bucket && isSeedBucket(r.bucket) ? r.bucket : bucketFromSource(r.source_type)) ?? null;
 
   const supabase = await createSupabaseServerClient();
   let q = supabase
     .from('content_seeds')
-    .select('id, title, source_url, source_type, origin, status, created_at, bucket, score')
+    .select('id, title, source_url, source_type, origin, status, created_at, bucket, score, raw_text, score_reason, suggested_angle, essence, note')
     .order('created_at', { ascending: false })
     .limit(300);
   if (active !== 'all') q = q.eq('status', active);
   const { data } = await q;
-  const rows = (data ?? []) as SeedRow[];
+  let rows = (data ?? []) as ArchiveSeed[];
+  if (activeBucket !== 'all') rows = rows.filter((r) => effBucket(r) === activeBucket);
 
   return (
     <div className="p-4 sm:p-8 space-y-5">
@@ -66,11 +71,12 @@ export default async function SeedArchive({ searchParams }: { searchParams: Prom
       </header>
 
       {/* 상태 필터 */}
-      <div className="flex flex-wrap gap-1.5">
+      <div className="flex flex-wrap items-center gap-1.5">
+        <span className="text-[11px] font-medium text-ink/40 mr-1">상태</span>
         {STATUSES.map((s) => (
           <Link
             key={s.key}
-            href={s.key === 'all' ? '/admin/studio/archive' : `/admin/studio/archive?status=${s.key}`}
+            href={hrefWith({ status: s.key })}
             className={cn(
               'rounded-full border px-3 py-1 text-xs',
               active === s.key ? 'border-accent bg-accent text-white' : 'border-border bg-white text-ink/60 hover:bg-muted',
@@ -81,33 +87,43 @@ export default async function SeedArchive({ searchParams }: { searchParams: Prom
         ))}
       </div>
 
+      {/* 카테고리(버킷) 필터 — painpoint 등 콘텐츠 특징별로 분리해서 보기 */}
+      <div className="flex flex-wrap items-center gap-1.5">
+        <span className="text-[11px] font-medium text-ink/40 mr-1">분류</span>
+        <Link
+          href={hrefWith({ bucket: 'all' })}
+          className={cn(
+            'rounded-full border px-3 py-1 text-xs',
+            activeBucket === 'all' ? 'border-accent bg-accent text-white' : 'border-border bg-white text-ink/60 hover:bg-muted',
+          )}
+        >
+          전체
+        </Link>
+        {BUCKETS.map((b) => (
+          <Link
+            key={b.key}
+            href={hrefWith({ bucket: b.key })}
+            className={cn(
+              'rounded-full border px-3 py-1 text-xs',
+              activeBucket === b.key ? 'border-accent bg-accent text-white' : 'border-border bg-white text-ink/60 hover:bg-muted',
+            )}
+          >
+            {b.emoji} {b.label}
+          </Link>
+        ))}
+      </div>
+
       {rows.length === 0 ? (
         <p className="py-10 text-center text-sm text-ink/40">씨앗이 없어요.</p>
       ) : (
         <div className="card divide-y divide-border">
           {rows.map((s) => (
-            <div key={s.id} className="flex items-center gap-3 px-4 py-2.5 text-sm">
-              <span className={cn('rounded px-1.5 py-0.5 text-[11px] font-medium shrink-0', STATUS_CLS[s.status] ?? 'bg-muted text-ink/50')}>
-                {STATUSES.find((x) => x.key === s.status)?.label ?? s.status}
-              </span>
-              <div className="min-w-0 flex-1">
-                <p className="truncate font-medium">{s.title}</p>
-                <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-ink/40">
-                  {sourceProfile(s.source_type) && <span>{sourceProfile(s.source_type)!.badge}</span>}
-                  {s.bucket && isSeedBucket(s.bucket) && bucketProfile(s.bucket) && (
-                    <span>{bucketProfile(s.bucket)!.emoji} {bucketProfile(s.bucket)!.label}</span>
-                  )}
-                  {s.score != null && <span>· {s.score}점</span>}
-                  {s.origin && <span>· {s.origin}</span>}
-                  <span>· {formatDate(s.created_at)}</span>
-                </div>
-              </div>
-              {s.source_url && (
-                <a href={s.source_url} target="_blank" rel="noreferrer" className="shrink-0 text-xs text-accent hover:underline">
-                  원문
-                </a>
-              )}
-            </div>
+            <SeedArchiveRow
+              key={s.id}
+              seed={s}
+              statusLabel={STATUSES.find((x) => x.key === s.status)?.label ?? s.status}
+              statusCls={STATUS_CLS[s.status] ?? 'bg-muted text-ink/50'}
+            />
           ))}
         </div>
       )}
