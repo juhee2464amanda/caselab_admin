@@ -12,7 +12,7 @@ import { sectionSpec, isEmptySection } from '@/lib/content-sections';
 // 초안 단계에선 가장 안전한 두 블록만 쓰게 강제(운영자가 폼에서 다른 블록 추가).
 const BLOCK_RULE = `[중요] "블록 배열" 필드는 각 원소가 아래 두 종류 중 하나여야 합니다(반드시 "type" 포함):
 - {"type":"text","markdown":"문단 텍스트(마크다운 허용, 여러 문장 가능)"}
-- {"type":"heading","level":2,"text":"소제목"}   // level은 2 또는 3만`;
+- {"type":"heading","level":2,"text":"소제목"}   // level은 2·3·4 (대/중/소)`;
 
 // 모든 생성 트랙 공통 리서치 규칙 — 지어내기 방지, 실제 확인된 것만.
 const RESEARCH_RULE = `[리서치 규칙] 이름·수치·날짜·URL은 WebSearch/WebFetch로 실제 확인한 것만 쓰세요. 확인 못 한 통계·인용·출처는 지어내지 말고 생략하세요. 출처/URL 필드에는 실제로 열어본 URL만 넣고, 확실하지 않으면 빈 문자열/생략하세요.`;

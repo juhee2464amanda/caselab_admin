@@ -7,6 +7,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
 import type { Block } from '@/types/content';
+import { HEADING_LEVELS, toHeadingLevel } from '@/types/content';
 import { ImageZoom } from '@/components/admin/ImageZoom';
 import { uploadImageFile, uploadImageFromUrl, extractDroppedImage, extractDroppedImages } from '@/lib/image-upload';
 
@@ -129,9 +130,10 @@ function BlockFields({ block, onChange }: { block: Block; onChange: (b: Block) =
     return (
       <div className="flex gap-2">
         <select className="h-10 rounded-md border border-border bg-white px-2 text-sm shrink-0"
-          value={block.level} onChange={(e) => onChange({ ...block, level: Number(e.target.value) === 3 ? 3 : 2 })}>
-          <option value={2}>H2</option>
-          <option value={3}>H3</option>
+          value={block.level} onChange={(e) => onChange({ ...block, level: toHeadingLevel(e.target.value) })}>
+          {HEADING_LEVELS.map((h) => (
+            <option key={h.level} value={h.level}>{h.label}</option>
+          ))}
         </select>
         <Input value={block.text} placeholder="소제목" onChange={(e) => onChange({ ...block, text: e.target.value })} />
       </div>
