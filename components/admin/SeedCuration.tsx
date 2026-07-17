@@ -6,7 +6,7 @@ import { ExternalLink, ChevronDown, ChevronUp, Sparkles, Loader2, RefreshCw, X, 
 import { Button } from '@/components/ui/button';
 import { createSupabaseBrowserClient } from '@/lib/supabase/client';
 import { formatDate, cn } from '@/lib/utils';
-import { BUCKETS, SCORE_CUT, WINDOW_HOURS, BUCKET_CAP, VISIBLE_BUCKETS, bucketProfile, bucketFromSource, type SeedBucket } from '@/lib/seed-curation';
+import { BUCKETS, SCORE_CUT, WINDOW_HOURS, BUCKET_CAP, VISIBLE_BUCKETS, bucketProfile, bucketFromSource, stripSeedTitleTag, type SeedBucket } from '@/lib/seed-curation';
 import { SEED_TRACKS, type SeedTrack } from '@/lib/seed-tracks';
 import { SOURCES, sourceProfile } from '@/lib/seed-sources';
 import { ESSENCE_LABELS, essenceRows } from '@/lib/seed-essence';
@@ -656,7 +656,7 @@ function SeedCuratedCard({
             )}
             <span className="text-[11px] text-ink/40">{formatDate(seed.created_at)}</span>
           </div>
-          <p className="text-sm font-medium leading-snug break-words">{seed.essence?.headline || seed.title}</p>
+          <p className="text-sm font-medium leading-snug break-words">{seed.essence?.headline || stripSeedTitleTag(seed.title)}</p>
           {seed.score_reason && <p className="mt-0.5 text-[11px] text-ink/50 leading-snug">{seed.score_reason}</p>}
         </div>
         <button onClick={() => setOpen((v) => !v)} className="shrink-0 text-ink/40 hover:text-ink" aria-label="펼치기">

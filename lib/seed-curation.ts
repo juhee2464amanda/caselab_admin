@@ -92,3 +92,12 @@ export function bucketFromSource(sourceType: string | null | undefined): SeedBuc
   if (!sourceType) return undefined;
   return BUCKETS.find((b) => (b.sources as string[]).includes(sourceType))?.key;
 }
+
+/**
+ * 씨앗 제목 맨 앞의 [출처/레인] 태그 제거(예: "[ai-briefing] 제목" → "제목").
+ * 출처는 이미 source_type·bucket으로 분류되므로 제목엔 태그를 노출하지 않는다.
+ * 적재 이전 데이터에도 대응하도록 표시·초안 제목에서 방어적으로 벗겨낸다.
+ */
+export function stripSeedTitleTag(title: string): string {
+  return title.replace(/^\s*\[[^\]]*\]\s*/, '');
+}

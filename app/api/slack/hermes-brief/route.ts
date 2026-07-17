@@ -172,7 +172,8 @@ export async function POST(req: NextRequest) {
     const rows = items.map((item, i) => {
       const firstLine = item.split('\n').find((l) => l.trim()) ?? item;
       return {
-        title: `[${laneLabel}] ${firstLine}`.slice(0, 300),
+        // 출처 태그는 제목에 붙이지 않음 — source_type·lane 컬럼으로 이미 분류됨.
+        title: firstLine.slice(0, 300),
         raw_text: item,
         source_url: extractItemUrl(item) ?? permalink,
         origin: 'hermes-slack',
