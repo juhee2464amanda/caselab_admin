@@ -9,6 +9,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { RichTextarea } from '@/components/admin/RichTextarea';
 import { GalleryField } from '@/components/admin/BlockListEditor';
+import { ThumbnailField } from '@/components/admin/ThumbnailField';
 import { createSupabaseBrowserClient } from '@/lib/supabase/client';
 
 type GuideImage = { url: string; caption?: string };
@@ -48,6 +49,7 @@ export type Guide = {
     source?: string;
     sourceType?: string;
     thumbLabel?: string;
+    thumbImage?: string;
     thumbBg?: string;
     thumbColor?: string;
     linkLabel?: string;
@@ -64,7 +66,7 @@ function asCategory(v: unknown): GuideCategory {
   return typeof v === 'string' && (GUIDE_CATEGORIES as readonly string[]).includes(v) ? (v as GuideCategory) : 'prompt';
 }
 
-const EMPTY = { name: '', url: '', description: '', source: '', guideCategory: 'prompt' as GuideCategory, sourceType: 'default' as SourceType, bodyRich: '', images: [] as GuideImage[] };
+const EMPTY = { name: '', url: '', description: '', source: '', guideCategory: 'prompt' as GuideCategory, sourceType: 'default' as SourceType, thumbImage: '', thumbLabel: '', bodyRich: '', images: [] as GuideImage[] };
 
 export function GuideManager({ initial }: { initial: Guide[] }) {
   const router = useRouter();
@@ -85,6 +87,8 @@ export function GuideManager({ initial }: { initial: Guide[] }) {
       source: b.source ?? g.job_tags?.[0] ?? '',
       guideCategory: asCategory(b.guideCategory),
       sourceType: (SOURCE_TYPES as readonly string[]).includes(b.sourceType ?? '') ? (b.sourceType as SourceType) : 'default',
+      thumbImage: b.thumbImage ?? '',
+      thumbLabel: b.thumbLabel ?? '',
       bodyRich: b.bodyRich ?? '',
       images: b.images ?? [],
     });
@@ -109,6 +113,8 @@ export function GuideManager({ initial }: { initial: Guide[] }) {
         guideCategory: f.guideCategory,
         source: source || undefined,
         sourceType: f.sourceType,
+        thumbImage: f.thumbImage.trim() || undefined,
+        thumbLabel: f.thumbLabel.trim() || undefined,
         bodyRich: f.bodyRich.trim() || undefined,
         images: f.images.length ? f.images : undefined,
       },
@@ -178,6 +184,13 @@ export function GuideManager({ initial }: { initial: Guide[] }) {
         </div>
         <div><Label className="text-xs">링크 (URL) *</Label><Input className="mt-1" value={f.url} onChange={(e) => setF((p) => ({ ...p, url: e.target.value }))} placeholder="https://platform.openai.com/docs/..." /></div>
         <div><Label className="text-xs">설명 <span className="text-ink/40">(목록 카드 요약 · 짧게. 서식 없이 표시돼요)</span></Label><Textarea className="mt-1" rows={2} value={f.description} onChange={(e) => setF((p) => ({ ...p, description: e.target.value }))} /></div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <ThumbnailField value={f.thumbImage} onChange={(url) => setF((p) => ({ ...p, thumbImage: url }))} />
+          <div>
+            <Label className="text-xs">썸네일 텍스트 <span className="text-ink/40">(이미지 없을 때 목록 썸네일에 표시 · 예: 브랜드명)</span></Label>
+            <Input className="mt-1" value={f.thumbLabel} onChange={(e) => setF((p) => ({ ...p, thumbLabel: e.target.value }))} placeholder="Anthropic / GitHub …" />
+          </div>
+        </div>
         <div>
           <Label className="text-xs">상세 본문 <span className="text-ink/40">(선택 · 채우면 본가에 내부 상세페이지가 생기고 카드가 그리로 연결돼요. 비우면 카드가 원문 링크로 직행 · 텍스트 선택 후 서식)</span></Label>
           <RichTextarea className="mt-1" rows={6} value={f.bodyRich} onChange={(v) => setF((p) => ({ ...p, bodyRich: v }))} placeholder={'이 가이드를 왜/어떻게 보면 좋은지, 핵심 요약, 우리 맥락에서의 포인트 등.\n비워두면 예전처럼 카드가 바로 원문으로 연결돼요.'} />
