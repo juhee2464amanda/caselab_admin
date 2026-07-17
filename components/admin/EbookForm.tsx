@@ -45,6 +45,7 @@ export function EbookForm({ initial }: { initial?: ProductRow }) {
     description: initial?.description ?? '',
     thumbnail_url: initial?.thumbnail_url ?? '',
     status: (initial?.status ?? 'active') as 'active' | 'archived',
+    comingSoon: initialBody.comingSoon === true,
   });
   const [slugTouched, setSlugTouched] = useState(isEdit);
   // 상세페이지 본문(toc/intro/stats 등)은 raw JSON으로 보존 편집. read_minutes는 위 친숙 필드가 덮어씀.
@@ -91,8 +92,8 @@ export function EbookForm({ initial }: { initial?: ProductRow }) {
       thumbnail_url: f.thumbnail_url.trim() || null,
       type: 'ebook',
       status: f.status,
-      // 기존 body 유지 + read_minutes 친숙필드로 덮어쓰기
-      body: { ...parsedBody, read_minutes: Number(f.read_minutes) || 0 },
+      // 기존 body 유지 + read_minutes 친숙필드로 덮어쓰기 + 판매 준비중 토글
+      body: { ...parsedBody, read_minutes: Number(f.read_minutes) || 0, comingSoon: f.comingSoon },
     };
 
     if (isEdit) {
@@ -157,6 +158,20 @@ export function EbookForm({ initial }: { initial?: ProductRow }) {
           </Select>
         </div>
       </div>
+      <label className="flex items-start gap-2 rounded-md border border-border px-3 py-2 cursor-pointer">
+        <input
+          type="checkbox"
+          className="mt-0.5 h-4 w-4"
+          checked={f.comingSoon}
+          onChange={(e) => setF((p) => ({ ...p, comingSoon: e.target.checked }))}
+        />
+        <span className="text-xs">
+          <span className="font-medium">판매 준비 중 (구매 버튼 비활성화)</span>
+          <span className="block text-ink/50 mt-0.5">
+            켜면 상세 페이지는 그대로 보이되 구매 버튼이 &quot;판매 준비 중&quot;으로 바뀌고 주문 페이지 접근이 막혀요. 완성되면 체크를 풀어 다시 판매를 시작하세요.
+          </span>
+        </span>
+      </label>
       <div>
         <Label className="text-xs">설명</Label>
         <Textarea className="mt-1" rows={3} value={f.description} onChange={(e) => setF((p) => ({ ...p, description: e.target.value }))} />
