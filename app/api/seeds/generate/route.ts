@@ -3,6 +3,7 @@ import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { createSupabaseAdminClient } from '@/lib/supabase/admin';
 import { generateDraft, generateToolDraft, generatePromptDraft, generateGuideDraft } from '@/lib/ai-draft';
 import { isSeedTrack, type SeedTrack } from '@/lib/seed-tracks';
+import { stripSeedTitleTag } from '@/lib/seed-curation';
 import { slugify } from '@/lib/utils';
 
 export const runtime = 'nodejs';
@@ -61,8 +62,10 @@ export async function POST(req: NextRequest) {
 
   const primary = seeds[0];
   // 여러 씨앗 → 1개 콘텐츠: 제목/원문을 병합. 대표 출처·분류는 primary 기준.
-  const mergedTitle = seeds.length === 1 ? primary.title : `${primary.title} 외 ${seeds.length - 1}건`;
-  const mergedSummary = seeds.map((s) => `# ${s.title}\n${s.raw_text ?? ''}`).join('\n\n---\n\n');
+  // 제목의 [출처] 태그는 벗겨서 초안·프롬프트에 새지 않게 함(구 데이터 방어).
+  const primaryTitle = stripSeedTitleTag(primary.title);
+  const mergedTitle = seeds.length === 1 ? primaryTitle : `${primaryTitle} 외 ${seeds.length - 1}건`;
+  const mergedSummary = seeds.map((s) => `# ${stripSeedTitleTag(s.title)}\n${s.raw_text ?? ''}`).join('\n\n---\n\n');
   const sourceType = primary.source_type ?? undefined;
   const bucket = primary.bucket ?? undefined;
 
@@ -70,7 +73,7 @@ export async function POST(req: NextRequest) {
   await admin.from('content_seeds').update({ status: 'generating' }).in('id', ids);
 
   try {
-    const slugBase = `${slugify(primary.title)}-${primary.id.slice(0, 8)}`;
+    const slugBase = `${slugify(primaryTitle)}-${primary.id.slice(0, 8)}`;
 
     // 자료실 트랙(tool/prompt/guide) → tools 테이블. 셋 다 content_seeds.tool_id로 역추적.
     if (track === 'tool' || track === 'prompt') {

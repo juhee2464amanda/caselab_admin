@@ -57,7 +57,6 @@ export async function POST(req: NextRequest) {
   // 출처 결정: source_type 직접 지정 > lane 매핑(LANE_SOURCE) > slack-brief 폴백.
   const lane = body.lane?.trim() || null;
   const sourceType = isSeedSource(body.source_type) ? body.source_type : sourceFromLane(lane);
-  const laneLabel = lane ?? sourceType;
 
   const rows = [];
   for (const item of items) {
@@ -71,7 +70,8 @@ export async function POST(req: NextRequest) {
     const firstLine = rawText.split('\n').find((l) => l.trim()) ?? rawText;
     const title = (item.title?.trim() || firstLine).slice(0, 280);
     rows.push({
-      title: `[${laneLabel}] ${title}`.slice(0, 300),
+      // 출처 태그는 제목에 붙이지 않음 — source_type·lane 컬럼으로 이미 분류됨.
+      title,
       raw_text: rawText,
       source_url: item.source_url?.trim() || null,
       origin: 'hermes-direct',

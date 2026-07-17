@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { ChevronDown, ChevronUp, ExternalLink } from 'lucide-react';
 import { sourceProfile } from '@/lib/seed-sources';
-import { bucketProfile, isSeedBucket, bucketFromSource } from '@/lib/seed-curation';
+import { bucketProfile, isSeedBucket, bucketFromSource, stripSeedTitleTag } from '@/lib/seed-curation';
 import { ESSENCE_LABELS, essenceRows } from '@/lib/seed-essence';
 import { formatDate, cn } from '@/lib/utils';
 import { SeedAdoptButton } from '@/components/admin/SeedAdoptButton';
@@ -41,7 +41,7 @@ export function SeedArchiveRow({ seed, statusLabel, statusCls }: { seed: Archive
       <div className="flex items-center gap-3 px-4 py-2.5">
         <span className={cn('rounded px-1.5 py-0.5 text-[11px] font-medium shrink-0', statusCls)}>{statusLabel}</span>
         <button onClick={() => setOpen((v) => !v)} className="min-w-0 flex-1 text-left" aria-expanded={open}>
-          <p className="truncate font-medium">{seed.essence?.headline || seed.title}</p>
+          <p className="truncate font-medium">{seed.essence?.headline || stripSeedTitleTag(seed.title)}</p>
           <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-ink/40">
             {sourceProfile(seed.source_type) && <span>{sourceProfile(seed.source_type)!.badge}</span>}
             {eb && bucketProfile(eb) && (
