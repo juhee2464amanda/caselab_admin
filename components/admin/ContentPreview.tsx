@@ -3,7 +3,7 @@
 import { useState, useRef } from 'react';
 import { ArrowUpRight, Copy, Check, User, Bot, Plus, Trash2, Sparkles, ChevronUp, ChevronDown, AlignLeft, AlignCenter, AlignRight, PenLine, Paperclip } from 'lucide-react';
 import type { Block, ContentBody, JobTag, PainPoint, StepCard, TakingPoint } from '@/types/content';
-import { JOB_LABELS, HEADING_TAG, HEADING_CLASS } from '@/types/content';
+import { JOB_LABELS, HEADING_TAG, HEADING_CLASS, HEADING_LEVELS } from '@/types/content';
 import { Editable } from '@/components/admin/Editable';
 import { useRefine, sectionToLines } from '@/components/admin/RefinePanel';
 import { sectionSpecs, isEmptySection, type SectionSpec } from '@/lib/content-sections';
@@ -187,6 +187,38 @@ function PreviewImage({ block, onChange }: { block: Extract<Block, { type: 'imag
   );
 }
 
+// 미리보기 인라인 소제목 — 실제 크기로 렌더 + 대/중/소(H2/H3/H4) 레벨 선택 툴바.
+// BlockListEditor의 드롭다운과 동일한 HEADING_LEVELS를 공유. 항상 보이되(발견성) hover 시 진해짐.
+function PreviewHeading({ block, onChange }: { block: Extract<Block, { type: 'heading' }>; onChange: (b: Block) => void }) {
+  return (
+    <div className="group/hd relative">
+      <div className="absolute -top-3 left-0 z-10 flex items-center gap-0.5 rounded-full border border-border bg-white/95 px-1 py-0.5 shadow-sm opacity-70 transition-opacity group-hover/hd:opacity-100">
+        {HEADING_LEVELS.map((hd) => (
+          <button
+            key={hd.level}
+            type="button"
+            onClick={() => onChange({ ...block, level: hd.level })}
+            title={`소제목 ${hd.label} (H${hd.level})`}
+            className={cn(
+              'rounded px-1.5 py-0.5 text-[11px] leading-none',
+              block.level === hd.level ? 'bg-accent text-white' : 'text-ink/60 hover:bg-muted',
+            )}
+          >
+            {hd.label}
+          </button>
+        ))}
+      </div>
+      <Editable
+        as={HEADING_TAG[block.level]}
+        value={block.text}
+        placeholder="소제목을 입력하세요"
+        onCommit={(v) => onChange({ ...block, text: v })}
+        className={`${HEADING_CLASS[block.level]} block`}
+      />
+    </div>
+  );
+}
+
 const TEXT_BLOCK_CLS = 'text-[16px] leading-[1.75] text-ink/85 my-4 whitespace-pre-wrap block';
 
 // 빈 문단 — 바로 ✨AI수정 대신 채우는 방법을 먼저 고르게 한다:
@@ -257,13 +289,13 @@ function renderBlock(block: Block, key: string | number, onBlock?: (nb: Block) =
         />
       );
     case 'heading':
+      // 편집: 대/중/소 레벨 선택 툴바 + 인라인 텍스트 편집. 읽기: 해당 레벨 태그로만 렌더.
+      if (onBlock) return <PreviewHeading key={key} block={block} onChange={onBlock} />;
       return (
         <Editable
           key={key}
           as={HEADING_TAG[block.level]}
           value={block.text}
-          placeholder={onBlock ? '소제목을 입력하세요' : undefined}
-          onCommit={onBlock && ((v) => onBlock({ ...block, text: v }))}
           className={`${HEADING_CLASS[block.level]} block`}
         />
       );
