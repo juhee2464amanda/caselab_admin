@@ -76,3 +76,17 @@ await supabase.from('products').update({ pdf_path: path }).eq('id', productId);
 ## 범위 밖 (이번에 하지 말 것)
 - send-ebook Edge Function 수정(본사이트 소유).
 - 결제/가격 로직 변경(무료 전자책 그대로).
+
+---
+
+## 추가 (2026-07-16): 웹뷰어 도입에 따른 PDF 등록 요구사항
+
+본사이트에 구매자용 웹뷰어(`/read/<purchaseId>`, 마이페이지 → 읽기)가 도입됨.
+등록하는 PDF가 뷰어에서 제대로 작동하려면:
+
+1. **PDF 내보내기 시 북마크(목차/outline) 포함** — 뷰어의 목차 클릭 이동이 PDF 내장 outline을 읽는다.
+   outline이 없으면 `products.body.toc` 제목만 표시되고 이동은 불가(안내 문구 노출).
+   - 확인법: macOS 미리보기에서 열었을 때 사이드바 > 목차가 보이면 포함된 것.
+2. **PDF 미연결 상품은 뷰어에서 열리지 않음** — 판매 전 목록의 "연결됨" 배지 확인.
+3. **텍스트 기반 PDF 권장** — 스캔 이미지형은 용량 증가로 뷰어 로딩 저하.
+4. 뷰어 관련 상세 기획: 본사이트 `docs/08_ebook_viewer_plan.md` 참고.

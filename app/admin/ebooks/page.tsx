@@ -45,6 +45,16 @@ export default async function AdminEbooks() {
         </div>
       </header>
 
+      {/* 웹뷰어 요구사항 메모 — 구매자 마이페이지 뷰어(/read)가 정상 작동하려면 등록 시 지켜야 할 것들 */}
+      <div className="mb-4 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-ink/70">
+        <p className="font-medium text-ink/80 mb-1">📖 웹뷰어 메모 — 구매자가 마이페이지에서 바로 읽는 뷰어가 붙어 있어요</p>
+        <ul className="list-disc pl-4 space-y-0.5">
+          <li><b>PDF 내보내기 시 북마크(목차/outline)를 반드시 포함</b>하세요. 포함해야 뷰어의 목차 클릭 이동이 작동합니다. 없으면 상세 본문의 toc 제목만 표시되고 이동은 안 돼요.</li>
+          <li>PDF 미연결 상품은 마이페이지 &quot;읽기&quot;에서 열리지 않습니다. 판매 전 반드시 연결 상태 확인.</li>
+          <li>텍스트 기반 PDF 권장 — 스캔 이미지형 PDF는 용량이 커져 뷰어 로딩이 느려집니다.</li>
+        </ul>
+      </div>
+
       <div className="card overflow-x-auto">
         <table className="w-full min-w-[720px] text-sm">
           <thead className="bg-muted text-left text-xs uppercase tracking-wider text-ink/50">
