@@ -241,6 +241,13 @@ export function TrackForm({ initial, onSaved, startInPreview }: Props) {
           .update({ status: 'published' })
           .eq('content_id', id);
         if (seedError) alert(`씨앗 상태 갱신 실패(발행은 완료됨): ${seedError.message}`);
+        // 카드프레스: 발행 즉시 인스타 캐러셀·캡션·스레드 3종 세트 생성 시작 (auto_draft).
+        // AI 재작성이 수 분 걸리므로 기다리지 않는다 — 결과는 스튜디오 '카드뉴스' 탭에서 검수.
+        fetch('/api/cardpress/generate', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ sourceType: 'content', sourceId: id }),
+        }).catch(() => {});
       }
       // 스튜디오 임베드: 페이지 이동 없이 콜백으로 다음 단계(홈배치) 진행.
       if (onSaved) {

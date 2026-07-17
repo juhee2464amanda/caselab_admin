@@ -55,23 +55,31 @@ export async function POST(req: NextRequest) {
 
     if (body.dryRun) return NextResponse.json({ dryRun: true, draft });
 
-    const { data: card, error: upsertError } = await admin
+    const row = {
+      source_type: 'content',
+      source_id: content.id,
+      slides: draft.slides,
+      accent: draft.accent,
+      extracted_images: draft.extractedImages,
+      ig_caption: draft.igCaption,
+      threads_text: draft.threadsText,
+      metaphor_queries: draft.metaphorQueries,
+      status: 'auto_draft',
+    };
+    let { data: card, error: upsertError } = await admin
       .from('content_cards')
-      .upsert(
-        {
-          source_type: 'content',
-          source_id: content.id,
-          slides: draft.slides,
-          accent: draft.accent,
-          extracted_images: draft.extractedImages,
-          ig_caption: draft.igCaption,
-          threads_text: draft.threadsText,
-          status: 'auto_draft',
-        },
-        { onConflict: 'source_type,source_id' }
-      )
+      .upsert(row, { onConflict: 'source_type,source_id' })
       .select()
       .single();
+    // 1021(metaphor_queries) 미적용 DB 호환 — 컬럼 없으면 그 필드만 빼고 재시도
+    if (upsertError?.message.includes('metaphor_queries')) {
+      const { metaphor_queries: _omit, ...withoutMetaphor } = row;
+      ({ data: card, error: upsertError } = await admin
+        .from('content_cards')
+        .upsert(withoutMetaphor, { onConflict: 'source_type,source_id' })
+        .select()
+        .single());
+    }
     if (upsertError) return NextResponse.json({ error: upsertError.message }, { status: 500 });
 
     return NextResponse.json({ card, metaphorQueries: draft.metaphorQueries });

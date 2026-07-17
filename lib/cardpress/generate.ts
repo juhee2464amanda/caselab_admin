@@ -262,6 +262,71 @@ function finalizeSlides(slides: ParsedSlide[], plan: SlidePlan): CardSlide[] {
   });
 }
 
+/** 단일 슬라이드 재작성 — 검수 UI의 템플릿 교체(B2↔B7 등)·"AI로 다시 쓰기"용.
+ *  재료는 저장하지 않으므로 소스 콘텐츠에서 매핑 계획을 다시 만들어 찾는다. */
+export async function rewriteSlide(
+  row: ContentRowLite,
+  sourceSection: string,
+  targetTemplate: CardTemplateId,
+  instruction?: string
+): Promise<{ template: CardTemplateId; props: Record<string, unknown> }> {
+  const plan = buildSlidePlan(row);
+  const item = plan.slides.find((s) => s.sourceSection === sourceSection);
+  if (!item) throw new Error(`sourceSection "${sourceSection}"에 해당하는 재료가 없어요`);
+
+  const base = `[콘텐츠] ${row.track === 'case' ? '실전 케이스' : 'AI 트렌드'} · ${row.title}
+
+[슬라이드 1장만 작성]
+template=${targetTemplate} · sourceSection=${sourceSection}
+재료:
+${item.material}${instruction ? `\n\n[운영자 요청] ${instruction}` : ''}
+
+[출력 — JSON 하나만] {"template":"${targetTemplate}","props":{...}}`;
+
+  let lastIssues: string[] = [];
+  let lastJson: unknown = null;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const prompt =
+      attempt === 0 || lastJson == null
+        ? base
+        : `${base}\n\n[이전 시도]\n${JSON.stringify(lastJson)}\n\n[규격 위반 — 더 짧게 압축해 다시]\n${lastIssues.map((i) => `- ${i}`).join('\n')}`;
+    let raw: string;
+    try {
+      raw = await callModel(SYSTEM, prompt, {
+        allowedTools: [],
+        model: 'sonnet',
+        timeoutMs: 480_000,
+      });
+    } catch (e) {
+      lastIssues = [`모델 호출 실패: ${(e as Error).message}`];
+      lastJson = null;
+      continue;
+    }
+    let json: { template?: string; props?: Record<string, unknown> };
+    try {
+      json = JSON.parse(extractJson(raw));
+    } catch {
+      lastIssues = ['응답이 JSON이 아님'];
+      lastJson = null;
+      continue;
+    }
+    lastJson = json;
+    const check = RenderSlideSchema.safeParse({
+      template: targetTemplate,
+      accent: plan.accent,
+      props: json.props,
+    });
+    if (!check.success) {
+      lastIssues = check.error.issues.map((e) => `${e.path.join('.')}: ${e.message}`);
+      continue;
+    }
+    lastIssues = lintSlide(targetTemplate, json.props ?? {});
+    if (lastIssues.length === 0 || attempt === 2)
+      return { template: targetTemplate, props: json.props ?? {} };
+  }
+  throw new Error(`슬라이드 재작성 실패: ${lastIssues.slice(0, 3).join(' / ')}`);
+}
+
 export async function generateCardSet(row: ContentRowLite): Promise<CardSetDraft> {
   const plan = buildSlidePlan(row);
   const userPrompt = planPrompt(row, plan);
@@ -283,11 +348,20 @@ ${JSON.stringify(lastRaw)}
 [규격 위반 — 아래 항목만 더 짧게 압축해서, 전체 JSON을 다시 출력하세요]
 ${lastIssues.map((i) => `- ${i}`).join('\n')}`;
 
-    const raw = await callModel(SYSTEM, prompt, {
-      allowedTools: [],
-      model: 'sonnet',
-      timeoutMs: 300_000, // 구독 CLI는 세션 기동이 느려 넉넉히 (150s에서 실측 타임아웃)
-    });
+    let raw: string;
+    try {
+      raw = await callModel(SYSTEM, prompt, {
+        allowedTools: [],
+        model: 'sonnet',
+        // 구독 CLI는 기동·큐 지연 편차가 큼 (150s·300s 실측 타임아웃) — 로컬 한정이라 넉넉히.
+        // prod(Vercel)는 AI_PROVIDER=apikey 경로라 이 값에 안 걸린다.
+        timeoutMs: 480_000,
+      });
+    } catch (e) {
+      lastIssues = [`모델 호출 실패: ${(e as Error).message}`];
+      lastRaw = null;
+      continue;
+    }
     let json: unknown;
     try {
       json = JSON.parse(extractJson(raw));
