@@ -219,7 +219,125 @@ function PreviewHeading({ block, onChange }: { block: Extract<Block, { type: 'he
   );
 }
 
-const TEXT_BLOCK_CLS = 'text-[16px] leading-[1.75] text-ink/85 my-4 whitespace-pre-wrap block';
+const TEXT_BASE_CLS = 'text-[16px] text-ink/85 my-4 whitespace-pre-wrap block';
+// 줄간격 · 여백 높이 · 구분선 굵기/색 · 콜아웃 배경 — 본가 content-render.tsx와 같은 값으로 유지.
+const TEXT_LEADING: Record<string, string> = { tight: 'leading-[1.5]', normal: 'leading-[1.75]', loose: 'leading-[2.1]' };
+const TEXT_SPACING_OPTS = [['tight', '좁게'], ['normal', '보통'], ['loose', '넓게']] as const;
+const TEXT_BLOCK_CLS = cn(TEXT_BASE_CLS, TEXT_LEADING.normal);
+const SPACER_H: Record<string, string> = { sm: 'h-6', md: 'h-12', lg: 'h-20' };
+const SPACER_OPTS = [['sm', '좁게'], ['md', '보통'], ['lg', '넓게']] as const;
+const DIVIDER_THICK: Record<string, string> = { thin: 'border-t', medium: 'border-t-2', thick: 'border-t-4' };
+const DIVIDER_THICK_OPTS = [['thin', '가늘게'], ['medium', '보통'], ['thick', '굵게']] as const;
+const DIVIDER_COLOR: Record<string, string> = { gray: 'border-border', black: 'border-ink', accent: 'border-accent' };
+const DIVIDER_COLOR_OPTS = [['gray', '회색'], ['black', '검정'], ['accent', '포인트']] as const;
+const CALLOUT_BOX: Record<string, string> = {
+  yellow: 'bg-amber-50 border-amber-200',
+  blue: 'bg-blue-50 border-blue-200',
+  green: 'bg-green-50 border-green-200',
+  red: 'bg-red-50 border-red-200',
+  gray: 'bg-muted border-border',
+};
+const CALLOUT_DOT: Record<string, string> = { yellow: 'bg-amber-300', blue: 'bg-blue-300', green: 'bg-green-300', red: 'bg-red-300', gray: 'bg-ink/25' };
+const CALLOUT_COLOR_ORDER = ['yellow', 'blue', 'green', 'red', 'gray'] as const;
+
+// 작은 세그먼트 토글 — hover 툴바 안 옵션(줄간격·굵기·색 등) 공통.
+function SegToggle<T extends string>({ options, value, onPick }: { options: readonly (readonly [T, string])[]; value: T; onPick: (v: T) => void }) {
+  return (
+    <>
+      {options.map(([v, l]) => (
+        <button
+          key={v}
+          type="button"
+          onClick={() => onPick(v)}
+          className={cn('rounded px-1.5 py-0.5 text-[11px] leading-none', value === v ? 'bg-accent text-white' : 'text-ink/60 hover:bg-muted')}
+        >
+          {l}
+        </button>
+      ))}
+    </>
+  );
+}
+
+// 미리보기 인라인 문단 — 실제 크기로 렌더 + 줄간격(좁게/보통/넓게) hover 툴바.
+function PreviewText({ block, onBlock }: { block: Extract<Block, { type: 'text' }>; onBlock: (b: Block) => void }) {
+  return (
+    <div className="group/txt relative">
+      <div className="absolute -top-3 right-0 z-10 flex items-center gap-0.5 rounded-full border border-border bg-white/95 px-1.5 py-0.5 shadow-sm opacity-0 transition-opacity group-hover/txt:opacity-100">
+        <span className="mr-0.5 text-[10px] text-ink/40">줄간격</span>
+        <SegToggle options={TEXT_SPACING_OPTS} value={block.spacing ?? 'normal'} onPick={(v) => onBlock({ ...block, spacing: v })} />
+      </div>
+      <Editable
+        as="p"
+        multiline
+        rich
+        value={block.markdown}
+        placeholder="클릭해서 문단 내용을 입력하세요"
+        onCommit={(v) => onBlock({ ...block, markdown: v })}
+        className={cn(TEXT_BASE_CLS, TEXT_LEADING[block.spacing ?? 'normal'])}
+      />
+    </div>
+  );
+}
+
+// 미리보기 인라인 여백 — 편집 시 점선 자리표시 + 높이(좁게/보통/넓게) 툴바. 읽기: 순수 빈 공간.
+function PreviewSpacer({ block, onChange }: { block: Extract<Block, { type: 'spacer' }>; onChange: (b: Block) => void }) {
+  return (
+    <div className={cn('group/sp relative my-1 flex items-center justify-center rounded-md border border-dashed border-accent/25 bg-accent/[0.03]', SPACER_H[block.size ?? 'md'])}>
+      <div className="flex items-center gap-0.5 rounded-full border border-border bg-white/95 px-1.5 py-0.5 shadow-sm opacity-70 transition-opacity group-hover/sp:opacity-100">
+        <span className="mr-0.5 text-[10px] text-ink/40">여백</span>
+        <SegToggle options={SPACER_OPTS} value={block.size ?? 'md'} onPick={(v) => onChange({ ...block, size: v })} />
+      </div>
+    </div>
+  );
+}
+
+// 미리보기 인라인 구분선 — 실제 실선 렌더 + 굵기·색 hover 툴바.
+function PreviewDivider({ block, onChange }: { block: Extract<Block, { type: 'divider' }>; onChange: (b: Block) => void }) {
+  return (
+    <div className="group/dv relative my-6">
+      <hr className={cn(DIVIDER_THICK[block.thickness ?? 'medium'], DIVIDER_COLOR[block.color ?? 'gray'])} />
+      <div className="absolute -top-3 left-1/2 z-10 flex -translate-x-1/2 items-center gap-0.5 rounded-full border border-border bg-white/95 px-1.5 py-0.5 shadow-sm opacity-0 transition-opacity group-hover/dv:opacity-100">
+        <SegToggle options={DIVIDER_THICK_OPTS} value={block.thickness ?? 'medium'} onPick={(v) => onChange({ ...block, thickness: v })} />
+        <span className="mx-0.5 h-3.5 w-px bg-border" />
+        <SegToggle options={DIVIDER_COLOR_OPTS} value={block.color ?? 'gray'} onPick={(v) => onChange({ ...block, color: v })} />
+      </div>
+    </div>
+  );
+}
+
+// 미리보기 인라인 강조 박스 — 실제 배경색 박스 + 아이콘(클릭 편집)·본문(rich) 인라인 편집 + 색상 hover 팔레트.
+function PreviewCallout({ block, onChange }: { block: Extract<Block, { type: 'callout' }>; onChange: (b: Block) => void }) {
+  return (
+    <div className={cn('group/co relative my-4 flex gap-3 rounded-lg border p-4', CALLOUT_BOX[block.color ?? 'yellow'])}>
+      <Editable
+        value={block.icon ?? '💡'}
+        onCommit={(v) => onChange({ ...block, icon: v.trim() || undefined })}
+        className="shrink-0 text-lg leading-[1.6]"
+        title="클릭해서 아이콘(이모지) 변경"
+      />
+      <Editable
+        as="div"
+        multiline
+        rich
+        value={block.markdown}
+        placeholder="강조할 내용을 입력하세요"
+        onCommit={(v) => onChange({ ...block, markdown: v })}
+        className="min-w-0 flex-1 text-[15px] leading-[1.7] text-ink/85 whitespace-pre-wrap block"
+      />
+      <div className="absolute -top-3 left-3 z-10 flex items-center gap-1 rounded-full border border-border bg-white/95 px-2 py-1 shadow-sm opacity-0 transition-opacity group-hover/co:opacity-100">
+        {CALLOUT_COLOR_ORDER.map((c) => (
+          <button
+            key={c}
+            type="button"
+            title={c}
+            onClick={() => onChange({ ...block, color: c })}
+            className={cn('h-4 w-4 rounded-full ring-offset-1 hover:ring-2 hover:ring-accent/50', CALLOUT_DOT[c], (block.color ?? 'yellow') === c && 'ring-2 ring-accent/60')}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
 
 // 빈 문단 — 바로 ✨AI수정 대신 채우는 방법을 먼저 고르게 한다:
 // ✍ 직접 쓰기(즉시 편집 진입) / ✨ 방향 적고 AI 초안 / 📎 파일 넣고 AI 초안(우측 패널 generate·text 모드).
@@ -276,6 +394,8 @@ function renderBlock(block: Block, key: string | number, onBlock?: (nb: Block) =
     case 'text':
       // 빈 문단(새로 추가 or 내용 지움)은 채우기 선택지부터 — 직접 쓰기 / AI 초안(방향·파일)
       if (onBlock && !block.markdown.trim()) return <EmptyTextBlock key={key} block={block} onBlock={onBlock} />;
+      // 편집: 줄간격 툴바 + 인라인 편집. 읽기: 저장된 줄간격으로 렌더.
+      if (onBlock) return <PreviewText key={key} block={block} onBlock={onBlock} />;
       return (
         <Editable
           key={key}
@@ -283,9 +403,7 @@ function renderBlock(block: Block, key: string | number, onBlock?: (nb: Block) =
           multiline
           rich
           value={block.markdown}
-          placeholder={onBlock ? '클릭해서 문단 내용을 입력하세요' : undefined}
-          onCommit={onBlock && ((v) => onBlock({ ...block, markdown: v }))}
-          className={TEXT_BLOCK_CLS}
+          className={cn(TEXT_BASE_CLS, TEXT_LEADING[block.spacing ?? 'normal'])}
         />
       );
     case 'heading':
@@ -423,6 +541,20 @@ function renderBlock(block: Block, key: string | number, onBlock?: (nb: Block) =
           )}
         </a>
       );
+    case 'spacer':
+      if (onBlock) return <PreviewSpacer key={key} block={block} onChange={onBlock} />;
+      return <div key={key} aria-hidden className={SPACER_H[block.size ?? 'md']} />;
+    case 'divider':
+      if (onBlock) return <PreviewDivider key={key} block={block} onChange={onBlock} />;
+      return <hr key={key} className={cn('my-6', DIVIDER_THICK[block.thickness ?? 'medium'], DIVIDER_COLOR[block.color ?? 'gray'])} />;
+    case 'callout':
+      if (onBlock) return <PreviewCallout key={key} block={block} onChange={onBlock} />;
+      return (
+        <div key={key} className={cn('my-4 flex gap-3 rounded-lg border p-4', CALLOUT_BOX[block.color ?? 'yellow'])}>
+          <span className="shrink-0 text-lg leading-[1.6]">{block.icon || '💡'}</span>
+          <Editable as="div" rich value={block.markdown} className="min-w-0 flex-1 text-[15px] leading-[1.7] text-ink/85 whitespace-pre-wrap block" />
+        </div>
+      );
     default:
       return (
         <p key={key} className="my-3 rounded-md border border-dashed border-border px-3 py-2 text-xs text-ink/40">
@@ -439,6 +571,9 @@ const INSERT_ITEMS: { type: AddType; label: string }[] = [
   { type: 'bookmark', label: '🔖  북마크' },
   { type: 'text', label: '¶  문단' },
   { type: 'heading', label: 'H  소제목' },
+  { type: 'callout', label: '💡  강조 박스' },
+  { type: 'divider', label: '―  구분선' },
+  { type: 'spacer', label: '↕  여백' },
   { type: 'prompt', label: '</>  프롬프트' },
   { type: 'checklist', label: '☑  체크리스트' },
 ];

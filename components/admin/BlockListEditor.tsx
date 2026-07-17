@@ -20,7 +20,7 @@ import { uploadImageFile, uploadImageFromUrl, extractDroppedImage, extractDroppe
  * 컨트롤드: value(Block[]) + onChange. 저장 검증은 호출측(TrackForm)에서.
  */
 
-export type AddType = 'text' | 'heading' | 'prompt' | 'checklist' | 'image' | 'gallery' | 'bookmark';
+export type AddType = 'text' | 'heading' | 'prompt' | 'checklist' | 'image' | 'gallery' | 'bookmark' | 'spacer' | 'divider' | 'callout';
 
 const ADD_BUTTONS: { type: AddType; label: string }[] = [
   { type: 'text', label: '문단' },
@@ -30,6 +30,9 @@ const ADD_BUTTONS: { type: AddType; label: string }[] = [
   { type: 'image', label: '이미지' },
   { type: 'gallery', label: '갤러리' },
   { type: 'bookmark', label: '북마크' },
+  { type: 'callout', label: '강조 박스' },
+  { type: 'divider', label: '구분선' },
+  { type: 'spacer', label: '여백' },
 ];
 
 // 미리보기 삽입 메뉴(ContentPreview)에서도 재사용.
@@ -42,10 +45,13 @@ export function newBlock(type: AddType): Block {
     case 'image': return { type: 'image', url: '', alt: '', caption: '' };
     case 'gallery': return { type: 'gallery', images: [] };
     case 'bookmark': return { type: 'bookmark', url: '' };
+    case 'spacer': return { type: 'spacer', size: 'md' };
+    case 'divider': return { type: 'divider', thickness: 'medium', color: 'gray' };
+    case 'callout': return { type: 'callout', color: 'yellow', icon: '💡', markdown: '' };
   }
 }
 
-const EDITABLE = new Set(['text', 'heading', 'prompt', 'checklist', 'image', 'gallery', 'bookmark']);
+const EDITABLE = new Set(['text', 'heading', 'prompt', 'checklist', 'image', 'gallery', 'bookmark', 'spacer', 'divider', 'callout']);
 
 export function BlockListEditor({
   value,
@@ -107,7 +113,32 @@ export function BlockListEditor({
 
 const BLOCK_LABEL: Record<string, string> = {
   text: '문단', heading: '소제목', prompt: '프롬프트', checklist: '체크리스트', image: '이미지', gallery: '갤러리', bookmark: '북마크',
+  spacer: '여백', divider: '구분선', callout: '강조 박스',
 };
+
+// 구분선·콜아웃·여백 옵션 — ContentPreview 인라인 편집과 같은 라벨/값.
+const SPACER_SIZE_OPTS = [['sm', '좁게'], ['md', '보통'], ['lg', '넓게']] as const;
+const DIVIDER_THICK_OPTS = [['thin', '가늘게'], ['medium', '보통'], ['thick', '굵게']] as const;
+const DIVIDER_COLOR_OPTS = [['gray', '회색'], ['black', '검정'], ['accent', '포인트']] as const;
+const CALLOUT_COLOR_OPTS = [['yellow', '노랑'], ['blue', '파랑'], ['green', '초록'], ['red', '빨강'], ['gray', '회색']] as const;
+
+function OptionRow<T extends string>({ label, options, value, onPick }: { label: string; options: readonly (readonly [T, string])[]; value: T; onPick: (v: T) => void }) {
+  return (
+    <div className="flex items-center gap-1 text-xs">
+      <span className="mr-1 text-ink/40">{label}</span>
+      {options.map(([v, l]) => (
+        <button
+          key={v}
+          type="button"
+          onClick={() => onPick(v)}
+          className={cn('rounded border px-2 py-0.5', value === v ? 'border-accent bg-accent/10 text-accent' : 'border-border text-ink/60 hover:bg-muted')}
+        >
+          {l}
+        </button>
+      ))}
+    </div>
+  );
+}
 
 function BlockFields({ block, onChange }: { block: Block; onChange: (b: Block) => void }) {
   if (!EDITABLE.has(block.type)) {
@@ -121,8 +152,40 @@ function BlockFields({ block, onChange }: { block: Block; onChange: (b: Block) =
 
   if (block.type === 'text') {
     return (
-      <Textarea rows={3} value={block.markdown} placeholder="문단 내용 (markdown)"
-        onChange={(e) => onChange({ ...block, markdown: e.target.value })} />
+      <div className="space-y-2">
+        <Textarea rows={3} value={block.markdown} placeholder="문단 내용 (markdown)"
+          onChange={(e) => onChange({ ...block, markdown: e.target.value })} />
+        <OptionRow label="줄간격" options={[['tight', '좁게'], ['normal', '보통'], ['loose', '넓게']] as const}
+          value={block.spacing ?? 'normal'} onPick={(v) => onChange({ ...block, spacing: v })} />
+      </div>
+    );
+  }
+
+  if (block.type === 'spacer') {
+    return (
+      <OptionRow label="높이" options={SPACER_SIZE_OPTS} value={block.size ?? 'md'} onPick={(v) => onChange({ ...block, size: v })} />
+    );
+  }
+
+  if (block.type === 'divider') {
+    return (
+      <div className="space-y-2">
+        <OptionRow label="굵기" options={DIVIDER_THICK_OPTS} value={block.thickness ?? 'medium'} onPick={(v) => onChange({ ...block, thickness: v })} />
+        <OptionRow label="색상" options={DIVIDER_COLOR_OPTS} value={block.color ?? 'gray'} onPick={(v) => onChange({ ...block, color: v })} />
+      </div>
+    );
+  }
+
+  if (block.type === 'callout') {
+    return (
+      <div className="space-y-2">
+        <div className="flex gap-2">
+          <Input value={block.icon ?? ''} placeholder="💡" onChange={(e) => onChange({ ...block, icon: e.target.value || undefined })} className="w-16 text-center" />
+          <Textarea rows={3} value={block.markdown} placeholder="강조할 내용 (markdown)" className="flex-1"
+            onChange={(e) => onChange({ ...block, markdown: e.target.value })} />
+        </div>
+        <OptionRow label="배경" options={CALLOUT_COLOR_OPTS} value={block.color ?? 'yellow'} onPick={(v) => onChange({ ...block, color: v })} />
+      </div>
     );
   }
 

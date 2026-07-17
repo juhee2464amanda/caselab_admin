@@ -35,6 +35,9 @@ function extractText(b: Block): string {
     case 'image': return `${b.caption ?? ''} ${b.alt ?? ''}`; // url은 스캔 제외(광고 링크 오탐 방지)
     case 'gallery': return b.images.map((im) => im.caption ?? '').join(' '); // 이미지 url 스캔 제외
     case 'bookmark': return `${b.title ?? ''} ${b.description ?? ''}`; // 링크 url은 카드 성격이라 스캔 제외
+    case 'callout': return b.markdown;
+    case 'spacer': return ''; // 텍스트 없음
+    case 'divider': return ''; // 텍스트 없음
     case 'failure': return `${b.title} ${b.blocks.map(extractText).join(' ')}`;
   }
 }
