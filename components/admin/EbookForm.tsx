@@ -181,6 +181,15 @@ export function EbookForm({ initial }: { initial?: ProductRow }) {
               : <p className="text-xs text-ink/40 mt-1">구매자에게 자동 발송될 PDF. 지금 안 올려도 목록에서 나중에 첨부할 수 있어요. (최대 50MB)</p>}
           </>
         )}
+        {/* 웹뷰어(구매자 마이페이지 /read) 정상 작동 조건 — 목록 페이지 상단 메모와 동일 내용 */}
+        <div className="mt-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-ink/70">
+          <p className="font-medium text-ink/80 mb-0.5">📖 웹뷰어 체크리스트</p>
+          <ul className="list-disc pl-4 space-y-0.5">
+            <li><b>PDF에 북마크(목차/outline) 포함해서 내보내기</b> — 뷰어 목차 이동의 필수 조건. 없으면 위 상세 본문 JSON의 <code className="font-mono">toc</code> 제목만 표시(이동 불가).</li>
+            <li>PDF 미첨부면 구매자 마이페이지 &quot;읽기&quot;에서 열리지 않아요.</li>
+            <li>텍스트 기반 PDF 권장 — 스캔 이미지형은 뷰어 로딩이 느려요.</li>
+          </ul>
+        </div>
       </div>
 
       {error && <p className="text-sm text-red-600">{error}</p>}
