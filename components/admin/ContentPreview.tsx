@@ -3,7 +3,7 @@
 import { useState, useRef } from 'react';
 import { ArrowUpRight, Copy, Check, User, Bot, Plus, Trash2, Sparkles, ChevronUp, ChevronDown, AlignLeft, AlignCenter, AlignRight, PenLine, Paperclip } from 'lucide-react';
 import type { Block, ContentBody, JobTag, PainPoint, StepCard, TakingPoint } from '@/types/content';
-import { JOB_LABELS } from '@/types/content';
+import { JOB_LABELS, HEADING_TAG, HEADING_CLASS } from '@/types/content';
 import { Editable } from '@/components/admin/Editable';
 import { useRefine, sectionToLines } from '@/components/admin/RefinePanel';
 import { sectionSpecs, isEmptySection, type SectionSpec } from '@/lib/content-sections';
@@ -260,13 +260,11 @@ function renderBlock(block: Block, key: string | number, onBlock?: (nb: Block) =
       return (
         <Editable
           key={key}
-          as={block.level === 2 ? 'h2' : 'h3'}
+          as={HEADING_TAG[block.level]}
           value={block.text}
           placeholder={onBlock ? '소제목을 입력하세요' : undefined}
           onCommit={onBlock && ((v) => onBlock({ ...block, text: v }))}
-          className={
-            block.level === 2 ? 'font-serif text-2xl font-semibold mt-10 mb-3 block' : 'font-serif text-xl font-semibold mt-8 mb-2 block'
-          }
+          className={`${HEADING_CLASS[block.level]} block`}
         />
       );
     case 'prompt':

@@ -1,5 +1,6 @@
 import type * as React from 'react';
 import type { Block } from '@/types/content';
+import { HEADING_TAG, HEADING_CLASS } from '@/types/content';
 import { IntentBox } from '@/components/content/IntentBox';
 import { EvaluationBox } from '@/components/content/EvaluationBox';
 import { RebuttalBox } from '@/components/content/RebuttalBox';
@@ -19,16 +20,14 @@ export function renderBlock(block: Block, key: string | number): React.ReactElem
           {block.markdown}
         </p>
       );
-    case 'heading':
-      return block.level === 2 ? (
-        <h2 key={key} className="font-serif text-2xl font-semibold mt-10 mb-3">
+    case 'heading': {
+      const Tag = HEADING_TAG[block.level];
+      return (
+        <Tag key={key} className={HEADING_CLASS[block.level]}>
           {block.text}
-        </h2>
-      ) : (
-        <h3 key={key} className="font-serif text-xl font-semibold mt-8 mb-2">
-          {block.text}
-        </h3>
+        </Tag>
       );
+    }
     case 'prompt':
       return <PromptBlock key={key} label={block.label} prompt={block.prompt} />;
     case 'result-compare':

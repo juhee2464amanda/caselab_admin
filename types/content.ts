@@ -23,9 +23,28 @@ export const TextBlockSchema = z.object({
 
 export const HeadingBlockSchema = z.object({
   type: z.literal('heading'),
-  level: z.union([z.literal(2), z.literal(3)]),
+  level: z.union([z.literal(2), z.literal(3), z.literal(4)]),
   text: z.string().min(1),
 });
+
+// 소제목 대/중/소 = level 2/3/4 (h2/h3/h4). 기존 데이터(level 2·3)와 호환 —
+// 대·중은 그대로, 소(4)만 신규. 편집 드롭다운과 두 렌더러(ContentPreview·content-render)가 공유.
+export type HeadingLevel = 2 | 3 | 4;
+export const HEADING_LEVELS: { level: HeadingLevel; label: string }[] = [
+  { level: 2, label: '대' },
+  { level: 3, label: '중' },
+  { level: 4, label: '소' },
+];
+export const HEADING_TAG: Record<HeadingLevel, 'h2' | 'h3' | 'h4'> = { 2: 'h2', 3: 'h3', 4: 'h4' };
+export const HEADING_CLASS: Record<HeadingLevel, string> = {
+  2: 'font-serif text-2xl font-semibold mt-10 mb-3',
+  3: 'font-serif text-xl font-semibold mt-8 mb-2',
+  4: 'font-serif text-lg font-semibold mt-6 mb-2',
+};
+export function toHeadingLevel(v: unknown): HeadingLevel {
+  const n = Number(v);
+  return n === 3 ? 3 : n === 4 ? 4 : 2;
+}
 
 export const PromptBlockSchema = z.object({
   type: z.literal('prompt'),
