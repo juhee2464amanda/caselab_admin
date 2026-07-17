@@ -489,14 +489,777 @@ function O1({ accent, props }: Extract<RenderSlideInput, { template: 'O1' }>) {
   );
 }
 
+const DARK_BG = '#12151C';
+const DARK_KW = '#8EB0FF'; // card--dark .kw
+
+// 다크 카드용 필 배지 (C2·C3·C4 우상단)
+function pillStyle(): CSSProperties {
+  return {
+    display: 'flex',
+    alignItems: 'center',
+    background: 'rgba(255,255,255,0.12)',
+    border: '1.5px solid rgba(255,255,255,0.28)',
+    borderRadius: 999,
+    padding: '8px 18px',
+    fontSize: 22,
+    fontWeight: 600,
+    color: '#fff',
+  };
+}
+
+function hexToRgba(hex: string, alpha: number): string {
+  const n = parseInt(hex.slice(1), 16);
+  return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${alpha})`;
+}
+
+// ---------- C2 · 문장형 다크 커버 ----------
+function C2({ accent, props }: Extract<RenderSlideInput, { template: 'C2' }>) {
+  const color = ACCENTS[accent];
+  return (
+    <div style={{ ...cardBase, background: DARK_BG, color: '#fff', padding: '80px 72px' }}>
+      <Topbar color="#fff" right={props.pill ?? `⚡ ${DEFAULT_TAGS[accent]}`} rightStyle={pillStyle()} />
+      <div
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          marginTop: 'auto',
+          marginBottom: 'auto',
+        }}
+      >
+        {props.eyebrow ? (
+          <div
+            style={{
+              display: 'flex',
+              fontSize: 26,
+              fontWeight: 600,
+              color: 'rgba(255,255,255,0.7)',
+              marginBottom: 24,
+            }}
+          >
+            {props.eyebrow}
+          </div>
+        ) : null}
+        <div
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            fontSize: 66,
+            fontWeight: 800,
+            letterSpacing: '-0.035em',
+          }}
+        >
+          {highlightLines(
+            props.title,
+            props.hl,
+            { minHeight: 82 },
+            { background: color, color: '#fff', padding: '2px 16px', borderRadius: 8 }
+          )}
+        </div>
+      </div>
+      {props.sub ? (
+        <div style={{ display: 'flex', fontSize: 32, lineHeight: 1.6, color: 'rgba(255,255,255,0.6)' }}>
+          {props.sub}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+// ---------- C3 · 툴/뉴스 커버 (로고 배지 중앙) ----------
+function C3({ accent, props }: Extract<RenderSlideInput, { template: 'C3' }>) {
+  const color = ACCENTS[accent];
+  return (
+    <div style={{ ...cardBase, background: DARK_BG, color: '#fff', padding: '80px 72px' }}>
+      <Topbar color="#fff" right={props.pill ?? `🔧 ${DEFAULT_TAGS[accent]}`} rightStyle={pillStyle()} />
+      <div
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          marginTop: 'auto',
+          marginBottom: 'auto',
+        }}
+      >
+        {props.logoText ? (
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              width: 180,
+              height: 180,
+              borderRadius: 40,
+              background: 'rgba(255,255,255,0.08)',
+              border: '1.5px solid rgba(255,255,255,0.18)',
+              fontSize: 64,
+              fontWeight: 800,
+              marginBottom: 44,
+            }}
+          >
+            {props.logoText}
+          </div>
+        ) : null}
+        <div
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            fontSize: 66,
+            fontWeight: 800,
+            letterSpacing: '-0.035em',
+            textAlign: 'center',
+          }}
+        >
+          {highlightLines(
+            props.title,
+            props.hl,
+            { minHeight: 82, justifyContent: 'center' },
+            { background: color, color: '#fff', padding: '2px 16px', borderRadius: 8 }
+          )}
+        </div>
+      </div>
+      {props.sub ? (
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'center',
+            fontSize: 32,
+            lineHeight: 1.6,
+            color: 'rgba(255,255,255,0.6)',
+          }}
+        >
+          {props.sub}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+// ---------- C4 · VS 비교 커버 ----------
+function C4({ accent, props }: Extract<RenderSlideInput, { template: 'C4' }>) {
+  const color = ACCENTS[accent];
+  const vsBox: CSSProperties = {
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    flexGrow: 1,
+    flexBasis: 0,
+    background: 'rgba(255,255,255,0.06)',
+    border: '1.5px solid rgba(255,255,255,0.16)',
+    borderRadius: 28,
+    padding: '48px 40px',
+    textAlign: 'center',
+  };
+  return (
+    <div style={{ ...cardBase, background: DARK_BG, color: '#fff', padding: '80px 72px' }}>
+      <Topbar color="#fff" right={props.pill ?? '🔧 도구 비교'} rightStyle={pillStyle()} />
+      <div
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          marginTop: 'auto',
+          marginBottom: 'auto',
+        }}
+      >
+        {props.eyebrow ? (
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'center',
+              fontSize: 26,
+              fontWeight: 600,
+              color: 'rgba(255,255,255,0.7)',
+              marginBottom: 40,
+            }}
+          >
+            {props.eyebrow}
+          </div>
+        ) : null}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 36 }}>
+          {[props.vsA, null, props.vsB].map((side, i) =>
+            side === null ? (
+              <span key={i} style={{ fontSize: 48, fontWeight: 800, color }}>
+                VS
+              </span>
+            ) : (
+              <div key={i} style={vsBox}>
+                <div
+                  style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    fontSize: 52,
+                    fontWeight: 800,
+                    letterSpacing: '-0.02em',
+                    textAlign: 'center',
+                  }}
+                >
+                  {side.name.split('\n').map((l, li) => (
+                    <span key={li}>{l}</span>
+                  ))}
+                </div>
+                {side.by ? (
+                  <div style={{ fontSize: 26, color: 'rgba(255,255,255,0.6)', marginTop: 10 }}>
+                    {side.by}
+                  </div>
+                ) : null}
+              </div>
+            )
+          )}
+        </div>
+      </div>
+      {props.sub ? (
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'center',
+            fontSize: 32,
+            lineHeight: 1.6,
+            color: 'rgba(255,255,255,0.6)',
+          }}
+        >
+          {props.sub}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+// ---------- B1 · 개요·타임라인 리스트 ----------
+function B1({ accent, props }: Extract<RenderSlideInput, { template: 'B1' }>) {
+  const color = ACCENTS[accent];
+  return (
+    <div style={{ ...cardBase, background: '#fff', color: INK, padding: '80px 72px' }}>
+      <Topbar color={INK} right={props.page} />
+      {props.lead ? (
+        <div
+          style={{
+            display: 'flex',
+            flexWrap: 'wrap',
+            marginTop: 56,
+            fontSize: 30,
+            lineHeight: 1.6,
+            color: MUTED,
+          }}
+        >
+          {em(props.lead, INK)}
+        </div>
+      ) : null}
+      <div
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          marginTop: 36,
+          fontSize: 60,
+          fontWeight: 800,
+          letterSpacing: '-0.035em',
+        }}
+      >
+        {highlightLines(
+          props.heading,
+          props.hl,
+          { minHeight: 75 },
+          { background: color, color: '#fff', padding: '2px 16px', borderRadius: 8 }
+        )}
+      </div>
+      <div
+        style={{ position: 'relative', display: 'flex', flexDirection: 'column', marginTop: 44 }}
+      >
+        <div
+          style={{
+            position: 'absolute',
+            left: 19,
+            top: 18,
+            bottom: 18,
+            width: 3,
+            background: `linear-gradient(180deg,${color},rgba(0,0,0,0.08))`,
+            borderRadius: 2,
+            display: 'flex',
+          }}
+        />
+        {props.rows.map((r, i) => (
+          <div
+            key={i}
+            style={{ display: 'flex', alignItems: 'center', gap: 28, padding: '20px 0' }}
+          >
+            <div
+              style={{
+                display: 'flex',
+                width: 40,
+                height: 40,
+                borderRadius: 20,
+                background: color,
+                boxShadow: `0 0 0 8px ${hexToRgba(color, 0.16)}`,
+                flexShrink: 0,
+              }}
+            />
+            <span style={{ fontSize: 38, fontWeight: 800 }}>{r.term}</span>
+            {r.desc ? <span style={{ fontSize: 28, color: MUTED }}>{r.desc}</span> : null}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ---------- B3 · 용어·정의 카드 ----------
+function B3({ accent, props }: Extract<RenderSlideInput, { template: 'B3' }>) {
+  const color = ACCENTS[accent];
+  return (
+    <div style={{ ...cardBase, background: '#fff', color: INK, padding: '80px 72px' }}>
+      <Topbar color={INK} right={props.page} />
+      <div
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          marginTop: 'auto',
+          marginBottom: 'auto',
+        }}
+      >
+        <div style={{ display: 'flex' }}>
+          <span
+            style={{
+              background: color,
+              color: '#fff',
+              fontSize: 24,
+              fontWeight: 800,
+              letterSpacing: '0.06em',
+              padding: '10px 22px',
+              borderRadius: 999,
+            }}
+          >
+            {props.badge ?? '30초 개념'}
+          </span>
+        </div>
+        <div
+          style={{
+            display: 'flex',
+            fontSize: 96,
+            fontWeight: 800,
+            letterSpacing: '-0.04em',
+            lineHeight: 1.05,
+            color,
+            marginTop: 36,
+          }}
+        >
+          {props.term}
+        </div>
+        {props.termEn ? (
+          <div style={{ display: 'flex', fontSize: 34, color: MUTED, marginTop: 12 }}>
+            {props.termEn}
+          </div>
+        ) : null}
+        <div
+          style={{
+            display: 'flex',
+            width: 120,
+            height: 6,
+            background: color,
+            borderRadius: 3,
+            marginTop: 44,
+            marginBottom: 44,
+          }}
+        />
+        <div
+          style={{
+            display: 'flex',
+            fontSize: 44,
+            fontWeight: 800,
+            lineHeight: 1.35,
+            letterSpacing: '-0.02em',
+          }}
+        >
+          {props.lead}
+        </div>
+        {props.body ? (
+          <div
+            style={{
+              display: 'flex',
+              flexWrap: 'wrap',
+              marginTop: 28,
+              fontSize: 32,
+              lineHeight: 1.6,
+              color: MUTED,
+            }}
+          >
+            {em(props.body, color)}
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+// ---------- B4 · 인용/선언 카드 (사진 위 한 문장) ----------
+function B4({ accent, props }: Extract<RenderSlideInput, { template: 'B4' }>) {
+  const color = ACCENTS[accent];
+  return (
+    <div style={{ ...cardBase, background: '#1c2740', color: '#fff' }}>
+      <div
+        style={{
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          width: CARD_W,
+          height: CARD_H,
+          display: 'flex',
+          backgroundImage: props.coverImage
+            ? `url(${props.coverImage})`
+            : 'linear-gradient(135deg,#1c2740,#0c0f18)',
+          backgroundSize: `${CARD_W}px ${CARD_H}px`,
+        }}
+      />
+      <div
+        style={{
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          width: CARD_W,
+          height: CARD_H,
+          display: 'flex',
+          background: 'linear-gradient(180deg,rgba(0,0,0,0.5),rgba(0,0,0,0.5))',
+        }}
+      />
+      <div
+        style={{
+          position: 'relative',
+          flexGrow: 1,
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: 72,
+        }}
+      >
+        <div
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            fontSize: 60,
+            fontWeight: 800,
+            lineHeight: 1.22,
+            letterSpacing: '-0.035em',
+            textAlign: 'center',
+            textShadow: '0 2px 24px rgba(0,0,0,0.4)',
+          }}
+        >
+          {highlightLines(
+            props.title,
+            props.hl,
+            { minHeight: 75, justifyContent: 'center' },
+            { background: color, color: '#fff', padding: '2px 16px', borderRadius: 8, textShadow: 'none' }
+          )}
+        </div>
+        {props.attribution ? (
+          <div style={{ display: 'flex', fontSize: 30, fontWeight: 600, opacity: 0.75, marginTop: 36 }}>
+            {props.attribution}
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+// ---------- B6 · 스텝 프로세스 ----------
+function B6({ accent, props }: Extract<RenderSlideInput, { template: 'B6' }>) {
+  const color = ACCENTS[accent];
+  return (
+    <div style={{ ...cardBase, background: '#fff', color: INK, padding: '80px 72px' }}>
+      <Topbar color={INK} right={props.page} />
+      <div
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          marginTop: 44,
+          fontSize: 54,
+          fontWeight: 800,
+          letterSpacing: '-0.035em',
+        }}
+      >
+        {highlightLines(
+          props.heading,
+          props.hl,
+          { minHeight: 68 },
+          { background: color, color: '#fff', padding: '2px 16px', borderRadius: 8 }
+        )}
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 22, marginTop: 44 }}>
+        {props.steps.map((s, i) => (
+          <div
+            key={i}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 26,
+              background: '#F5F7FB',
+              borderRadius: 18,
+              padding: '30px 34px',
+            }}
+          >
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                width: 70,
+                height: 70,
+                borderRadius: 18,
+                background: color,
+                color: '#fff',
+                fontSize: 34,
+                fontWeight: 800,
+                flexShrink: 0,
+              }}
+            >
+              {i + 1}
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column' }}>
+              <span style={{ fontSize: 36, fontWeight: 800 }}>{s.title}</span>
+              {s.desc ? (
+                <span style={{ fontSize: 26, color: MUTED, marginTop: 6 }}>{s.desc}</span>
+              ) : null}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ---------- B7 · 숫자 하이라이트 (다크) ----------
+function B7({ props }: Extract<RenderSlideInput, { template: 'B7' }>) {
+  return (
+    <div style={{ ...cardBase, background: DARK_BG, color: '#fff', padding: '80px 72px' }}>
+      <Topbar color="#fff" right={props.page} rightStyle={{ color: 'rgba(255,255,255,0.6)' }} />
+      <div
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          marginTop: 'auto',
+          marginBottom: 'auto',
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'baseline' }}>
+          <span
+            style={{ fontSize: 220, fontWeight: 800, lineHeight: 1, letterSpacing: '-0.05em', color: DARK_KW }}
+          >
+            {props.big}
+          </span>
+          {props.unit ? (
+            <span style={{ fontSize: 90, fontWeight: 800, color: DARK_KW }}>{props.unit}</span>
+          ) : null}
+        </div>
+        <div
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            marginTop: 20,
+            fontSize: 44,
+            fontWeight: 800,
+            letterSpacing: '-0.02em',
+            lineHeight: 1.35,
+          }}
+        >
+          {props.cap.split('\n').map((line, i) => (
+            <div key={i} style={{ display: 'flex', flexWrap: 'wrap' }}>
+              {em(line, DARK_KW)}
+            </div>
+          ))}
+        </div>
+        {props.sub ? (
+          <div
+            style={{
+              display: 'flex',
+              marginTop: 16,
+              fontSize: 30,
+              lineHeight: 1.6,
+              color: 'rgba(255,255,255,0.72)',
+            }}
+          >
+            {props.sub}
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+// ---------- B8 · 프롬프트 블록 ----------
+// [변수]는 초록, '#' 시작 줄은 주석색. 모노스페이스 폰트는 미벤더링 — Pretendard로 렌더.
+function promptLine(line: string): ReactNode[] {
+  if (line.trimStart().startsWith('#')) {
+    return [
+      <span key="c" style={{ color: '#5E7BB5', whiteSpace: 'pre-wrap' }}>
+        {line}
+      </span>,
+    ];
+  }
+  return line.split(/(\[[^\]]+\])/g).map((seg, i) => (
+    <span
+      key={i}
+      style={{ color: seg.startsWith('[') ? '#7CE1B0' : '#D7E0F5', whiteSpace: 'pre-wrap' }}
+    >
+      {seg}
+    </span>
+  ));
+}
+
+function B8({ accent, props }: Extract<RenderSlideInput, { template: 'B8' }>) {
+  const color = ACCENTS[accent];
+  return (
+    <div style={{ ...cardBase, background: '#fff', color: INK, padding: '80px 72px' }}>
+      <Topbar color={INK} right={props.page} />
+      <div
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          marginTop: 44,
+          fontSize: 52,
+          fontWeight: 800,
+          letterSpacing: '-0.035em',
+        }}
+      >
+        {highlightLines(
+          props.heading ?? '복사해서 쓰는 프롬프트',
+          props.hl ?? '프롬프트',
+          { minHeight: 65 },
+          { background: color, color: '#fff', padding: '2px 16px', borderRadius: 8 }
+        )}
+      </div>
+      <div
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          marginTop: 44,
+          background: '#0F1320',
+          borderRadius: 20,
+          padding: '44px 46px',
+          fontSize: 28,
+          lineHeight: 1.7,
+        }}
+      >
+        {props.lines.map((line, i) => (
+          <div key={i} style={{ display: 'flex', flexWrap: 'wrap' }}>
+            {promptLine(line)}
+          </div>
+        ))}
+      </div>
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 14,
+          marginTop: 26,
+          fontSize: 26,
+          fontWeight: 600,
+          color,
+        }}
+      >
+        {props.tip ?? '📌 저장해두고 그대로 붙여넣기'}
+      </div>
+    </div>
+  );
+}
+
+// ---------- B9 · 스크린샷 스포트라이트 ----------
+const CALLOUT_POS: Record<'tl' | 'tr' | 'bl' | 'br', CSSProperties> = {
+  tl: { top: 60, left: 60 },
+  tr: { top: 60, right: 60 },
+  bl: { bottom: 60, left: 60 },
+  br: { bottom: 60, right: 60 },
+};
+
+function B9({ accent, props }: Extract<RenderSlideInput, { template: 'B9' }>) {
+  const color = ACCENTS[accent];
+  return (
+    <div style={{ ...cardBase, background: '#fff', color: INK, padding: '80px 72px' }}>
+      <Topbar color={INK} right={props.page} />
+      {props.lead ? (
+        <div
+          style={{
+            display: 'flex',
+            flexWrap: 'wrap',
+            marginTop: 44,
+            fontSize: 30,
+            lineHeight: 1.6,
+            color: MUTED,
+          }}
+        >
+          {em(props.lead, INK)}
+        </div>
+      ) : null}
+      <div
+        style={{
+          position: 'relative',
+          display: 'flex',
+          marginTop: 36,
+          width: '100%',
+          height: 720,
+          borderRadius: 22,
+          overflow: 'hidden',
+          background: '#E9EDF4',
+        }}
+      >
+        <img
+          src={props.shot}
+          alt=""
+          width={CARD_W - 144}
+          height={720}
+          style={{ objectFit: 'cover', width: '100%', height: '100%' }}
+        />
+        {(props.callouts ?? []).map((c, i) => (
+          <div
+            key={i}
+            style={{
+              position: 'absolute',
+              ...CALLOUT_POS[c.pos],
+              display: 'flex',
+              background: color,
+              color: '#fff',
+              fontSize: 26,
+              fontWeight: 700,
+              padding: '14px 22px',
+              borderRadius: 14,
+              boxShadow: '0 12px 30px rgba(0,0,0,0.25)',
+            }}
+          >
+            {c.text}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export function renderSlide(input: RenderSlideInput): ReactNode {
   switch (input.template) {
     case 'C1':
       return <C1 {...input} />;
+    case 'C2':
+      return <C2 {...input} />;
+    case 'C3':
+      return <C3 {...input} />;
+    case 'C4':
+      return <C4 {...input} />;
+    case 'B1':
+      return <B1 {...input} />;
     case 'B2':
       return <B2 {...input} />;
+    case 'B3':
+      return <B3 {...input} />;
+    case 'B4':
+      return <B4 {...input} />;
     case 'B5':
       return <B5 {...input} />;
+    case 'B6':
+      return <B6 {...input} />;
+    case 'B7':
+      return <B7 {...input} />;
+    case 'B8':
+      return <B8 {...input} />;
+    case 'B9':
+      return <B9 {...input} />;
     case 'O1':
       return <O1 {...input} />;
   }

@@ -173,8 +173,9 @@ interface CallOpts {
   timeoutMs?: number;
 }
 
-/** 시스템+유저 프롬프트로 모델을 호출해 응답 텍스트를 반환. 프로바이더에 따라 구독 CLI / API키 분기. */
-async function callModel(system: string, userPrompt: string, opts: CallOpts = {}): Promise<string> {
+/** 시스템+유저 프롬프트로 모델을 호출해 응답 텍스트를 반환. 프로바이더에 따라 구독 CLI / API키 분기.
+ *  (cardpress 등 다른 생성 모듈도 재사용) */
+export async function callModel(system: string, userPrompt: string, opts: CallOpts = {}): Promise<string> {
   if (provider() === 'subscription') {
     return runClaudeSubscription({ system, prompt: userPrompt, ...opts });
   }
