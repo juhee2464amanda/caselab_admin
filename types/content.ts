@@ -19,6 +19,29 @@ export const PersonaCoverageSchema = z.array(PersonaSchema).min(1);
 export const TextBlockSchema = z.object({
   type: z.literal('text'),
   markdown: z.string().min(1),
+  // 줄간격 — tight(좁게)·normal(보통, 기본)·loose(넓게). 없으면 normal. 본가와 동일.
+  spacing: z.enum(['tight', 'normal', 'loose']).optional(),
+});
+
+// 여백(스페이서) — 영역 사이 빈 공간. sm≈24·md≈48·lg≈80px. 기본 md. 본가와 동일.
+export const SpacerBlockSchema = z.object({
+  type: z.literal('spacer'),
+  size: z.enum(['sm', 'md', 'lg']).optional(),
+});
+
+// 구분선 — 실선. 굵기 thin/medium(기본)/thick, 색 gray(기본)/black/accent. 본가와 동일.
+export const DividerBlockSchema = z.object({
+  type: z.literal('divider'),
+  thickness: z.enum(['thin', 'medium', 'thick']).optional(),
+  color: z.enum(['gray', 'black', 'accent']).optional(),
+});
+
+// 색상 강조 박스(콜아웃) — 옅은 배경 박스 + 아이콘 + 본문(인라인 마크업). 기본 노랑·💡. 본가와 동일.
+export const CalloutBlockSchema = z.object({
+  type: z.literal('callout'),
+  color: z.enum(['yellow', 'blue', 'green', 'red', 'gray']).optional(),
+  icon: z.string().optional(),
+  markdown: z.string().min(1),
 });
 
 export const HeadingBlockSchema = z.object({
@@ -149,6 +172,9 @@ export type Block =
   | z.infer<typeof ImageBlockSchema>
   | z.infer<typeof GalleryBlockSchema>
   | z.infer<typeof BookmarkBlockSchema>
+  | z.infer<typeof SpacerBlockSchema>
+  | z.infer<typeof DividerBlockSchema>
+  | z.infer<typeof CalloutBlockSchema>
   | { type: 'failure'; title: string; blocks: Block[] };
 
 export const BlockSchema: z.ZodType<Block> = z.lazy(() =>
@@ -167,6 +193,9 @@ export const BlockSchema: z.ZodType<Block> = z.lazy(() =>
     ImageBlockSchema,
     GalleryBlockSchema,
     BookmarkBlockSchema,
+    SpacerBlockSchema,
+    DividerBlockSchema,
+    CalloutBlockSchema,
     z.object({
       type: z.literal('failure'),
       title: z.string().min(1),

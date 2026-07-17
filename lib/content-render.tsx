@@ -12,11 +12,27 @@ import { RoleCard } from '@/components/content/RoleCard';
 import { FrameworkRef } from '@/components/content/FrameworkRef';
 import { ContentGallery } from '@/components/admin/ContentGallery';
 
+// 텍스트 줄간격 · 여백 높이 · 구분선 굵기/색 · 콜아웃 배경 — 본가·ContentPreview와 같은 값으로 유지.
+const TEXT_LEADING: Record<string, string> = { tight: 'leading-[1.5]', normal: 'leading-[1.75]', loose: 'leading-[2.1]' };
+const SPACER_H: Record<string, string> = { sm: 'h-6', md: 'h-12', lg: 'h-20' };
+const DIVIDER_THICK: Record<string, string> = { thin: 'border-t', medium: 'border-t-2', thick: 'border-t-4' };
+const DIVIDER_COLOR: Record<string, string> = { gray: 'border-border', black: 'border-ink', accent: 'border-accent' };
+const CALLOUT_BOX: Record<string, string> = {
+  yellow: 'bg-amber-50 border-amber-200',
+  blue: 'bg-blue-50 border-blue-200',
+  green: 'bg-green-50 border-green-200',
+  red: 'bg-red-50 border-red-200',
+  gray: 'bg-muted border-border',
+};
+
 export function renderBlock(block: Block, key: string | number): React.ReactElement {
   switch (block.type) {
     case 'text':
       return (
-        <p key={key} className="text-[16px] leading-[1.75] text-ink/85 my-4 whitespace-pre-wrap">
+        <p
+          key={key}
+          className={`text-[16px] ${TEXT_LEADING[block.spacing ?? 'normal']} text-ink/85 my-4 whitespace-pre-wrap`}
+        >
           {block.markdown}
         </p>
       );
@@ -125,6 +141,19 @@ export function renderBlock(block: Block, key: string | number): React.ReactElem
         <FailureSection key={key} title={block.title}>
           {block.blocks.map((b, i) => renderBlock(b, `${key}-${i}`))}
         </FailureSection>
+      );
+    case 'spacer':
+      return <div key={key} aria-hidden className={SPACER_H[block.size ?? 'md']} />;
+    case 'divider':
+      return (
+        <hr key={key} className={`my-6 ${DIVIDER_THICK[block.thickness ?? 'medium']} ${DIVIDER_COLOR[block.color ?? 'gray']}`} />
+      );
+    case 'callout':
+      return (
+        <div key={key} className={`my-4 flex gap-3 rounded-lg border p-4 ${CALLOUT_BOX[block.color ?? 'yellow']}`}>
+          <span className="shrink-0 text-lg leading-[1.6]">{block.icon || '💡'}</span>
+          <div className="min-w-0 flex-1 text-[15px] leading-[1.7] text-ink/85 whitespace-pre-wrap">{block.markdown}</div>
+        </div>
       );
     default: {
       const _exhaustive: never = block;
