@@ -6,9 +6,10 @@ import { ExternalLink, ChevronDown, ChevronUp, Sparkles, Loader2, RefreshCw, X, 
 import { Button } from '@/components/ui/button';
 import { createSupabaseBrowserClient } from '@/lib/supabase/client';
 import { formatDate, cn } from '@/lib/utils';
-import { BUCKETS, SCORE_CUT, WINDOW_HOURS, BUCKET_CAP, bucketProfile, type SeedBucket } from '@/lib/seed-curation';
+import { BUCKETS, SCORE_CUT, WINDOW_HOURS, BUCKET_CAP, VISIBLE_BUCKETS, bucketProfile, bucketFromSource, type SeedBucket } from '@/lib/seed-curation';
 import { SEED_TRACKS, type SeedTrack } from '@/lib/seed-tracks';
 import { SOURCES, sourceProfile } from '@/lib/seed-sources';
+import { ESSENCE_LABELS, essenceRows } from '@/lib/seed-essence';
 import { CollectRequestButton } from '@/components/admin/CollectRequestButton';
 
 export type CurSeed = {
@@ -37,25 +38,9 @@ function scoreCls(score: number) {
   return 'bg-orange-100 text-orange-700';
 }
 
-// essence 상세 키 라벨(버킷별). headline은 카드 제목으로 이미 노출되므로 제외.
-const ESSENCE_LABELS: Record<string, string> = {
-  // service
-  what: '무엇',
-  feature: '기능',
-  category: '카테고리',
-  useCase: '누가·효율',
-  // trend
-  whyNow: '왜 지금',
-  implication: 'AI 흐름·시사',
-  // painpoint
-  who: '대상',
-  pain: '페인',
-  suggest: '제안 콘텐츠',
-};
-
-function essenceRows(essence: Record<string, string> | null): [string, string][] {
-  if (!essence) return [];
-  return Object.entries(essence).filter(([k, v]) => k !== 'headline' && v && ESSENCE_LABELS[k]);
+// 배치용 유효 버킷 — 채점된 bucket 우선, 없으면 출처(source_type)로 추정. 둘 다 없으면 null(미분류).
+function effectiveBucket(s: CurSeed): SeedBucket | null {
+  return s.bucket ?? bucketFromSource(s.source_type) ?? null;
 }
 
 export function SeedCuration({
@@ -108,7 +93,8 @@ export function SeedCuration({
   const passesBase = useMemo(() => {
     const q = query.trim().toLowerCase();
     return (s: CurSeed) => {
-      if (!showAll && (s.score == null || s.score < SCORE_CUT)) return false;
+      // 채택 씨앗은 손으로 고른 작업 대상 → 점수컷 무시하고 자기 카테고리에 항상 노출.
+      if (!showAll && s.status !== 'adopted' && (s.score == null || s.score < SCORE_CUT)) return false;
       if (q && !s.title.toLowerCase().includes(q)) return false;
       return true;
     };
@@ -130,10 +116,25 @@ export function SeedCuration({
     for (const s of seeds) {
       if (!passesBase(s)) continue;
       if (sourceFilter && (s.source_type ?? 'slack-brief') !== sourceFilter) continue;
-      if (s.bucket) m.set(s.bucket, (m.get(s.bucket) ?? 0) + 1);
+      const eb = effectiveBucket(s);
+      if (eb) m.set(eb, (m.get(eb) ?? 0) + 1);
     }
     return m;
   }, [seeds, passesBase, sourceFilter]);
+
+  // 채택한 씨앗 — 자기 카테고리(버킷) 섹션 안에 노출된다(아래 렌더에서 버킷별 상단 정렬).
+  const adoptedSeeds = useMemo(() => seeds.filter((s) => s.status === 'adopted'), [seeds]);
+  // 미채점 등으로 버킷이 없는(또는 숨김 버킷 'etc') 채택 씨앗 — 갈 카테고리가 없어 안전망 섹션에 모음.
+  const adoptedUnbucketed = useMemo(
+    () =>
+      adoptedSeeds
+        .filter((s) => {
+          const eb = effectiveBucket(s);
+          return !eb || !VISIBLE_BUCKETS.includes(eb);
+        })
+        .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()),
+    [adoptedSeeds],
+  );
 
   // 필터 + 신선도 가중 정렬(최근×점수). 0h:가중1.0 → 72h:0.5(하한 0.3) → '지금 뜨는' 것이 위로.
   const filtered = useMemo(() => {
@@ -147,7 +148,7 @@ export function SeedCuration({
     return seeds
       .filter((s) => {
         if (sourceFilter && (s.source_type ?? 'slack-brief') !== sourceFilter) return false;
-        if (bucketFilter && s.bucket !== bucketFilter) return false;
+        if (bucketFilter && effectiveBucket(s) !== bucketFilter) return false;
         return passesBase(s);
       })
       .sort((a, b) => weight(b) - weight(a));
@@ -271,7 +272,8 @@ export function SeedCuration({
       {/* 헤더 액션 */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="text-sm text-ink/60">
-          최근 72시간 · 채점된 씨앗 {seeds.length}건.
+          최근 72시간 · 채점된 씨앗 {seeds.length - adoptedSeeds.length}건
+          {adoptedSeeds.length > 0 && <span className="text-amber-600"> · 채택 {adoptedSeeds.length}건</span>}.
         </p>
         <div className="flex items-center gap-2">
           <CollectRequestButton />
@@ -330,7 +332,8 @@ export function SeedCuration({
 
       {error && <p className="text-xs text-red-600">{error}</p>}
 
-      {/* 카테고리(버킷)별 나열 + 버킷당 상한(균형). 초과분은 '더 보기'. */}
+      {/* 카테고리(버킷)별 나열 + 버킷당 상한(균형). 초과분은 '더 보기'.
+          채택 씨앗은 자기 카테고리 안에서 항상 맨 위에 노출(상한에 밀려 숨지 않도록). */}
       {filtered.length === 0 && (
         <p className="text-sm text-ink/30 py-6 text-center">
           조건에 맞는 씨앗이 없어요.{!showAll && ' 점수컷을 낮추거나 필터를 풀어 보세요.'}
@@ -338,7 +341,9 @@ export function SeedCuration({
       )}
       <div className="space-y-6">
         {BUCKETS.filter((b) => !bucketFilter || b.key === bucketFilter).map((b) => {
-          const list = filtered.filter((s) => s.bucket === b.key);
+          const inBucket = filtered.filter((s) => effectiveBucket(s) === b.key);
+          // 채택 씨앗 우선(각 그룹 내부는 기존 신선도 정렬 유지) → 상한 슬라이스에서 항상 보임.
+          const list = [...inBucket.filter((s) => s.status === 'adopted'), ...inBucket.filter((s) => s.status !== 'adopted')];
           const expanded = expandedBuckets.has(b.key) || !!bucketFilter;
           const shown = expanded ? list : list.slice(0, BUCKET_CAP);
           const overflow = list.length - BUCKET_CAP;
@@ -365,6 +370,22 @@ export function SeedCuration({
             </section>
           );
         })}
+
+        {/* 안전망 — 버킷이 없는(미채점 등) 채택 씨앗은 갈 카테고리가 없어 여기 모아 항상 노출. */}
+        {!bucketFilter && !sourceFilter && adoptedUnbucketed.length > 0 && (
+          <section className="space-y-2 rounded-xl border border-amber-200 bg-amber-50/40 p-3">
+            <div className="flex items-center gap-2 border-b border-amber-200 pb-1">
+              <h2 className="font-serif text-base font-semibold">⭐ 채택 · 미분류</h2>
+              <span className="text-xs text-amber-700/70">카테고리 없음(재분석하면 분류됨)</span>
+              <span className="text-xs text-ink/40 tabular-nums">{adoptedUnbucketed.length}</span>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+              {adoptedUnbucketed.map((s) => (
+                <SeedCuratedCard key={s.id} seed={s} selected={selected.has(s.id)} onToggle={() => toggle(s.id)} />
+              ))}
+            </div>
+          </section>
+        )}
       </div>
 
       {/* 선택 → 타입 선택 → 기획방향(필수) → 생성 */}
@@ -577,6 +598,14 @@ function SeedCuratedCard({
     router.refresh();
   };
 
+  // 채택 해제 — 고정 그룹에서 빼고 일반 인박스(raw)로 되돌림.
+  const unadopt = async () => {
+    setPending(true);
+    await supabase.from('content_seeds').update({ status: 'raw' }).eq('id', seed.id);
+    setPending(false);
+    router.refresh();
+  };
+
   // 이 씨앗 강제 재채점(essence·헤드라인 갱신). 로컬 전용.
   const reanalyze = async () => {
     setReanalyzing(true);
@@ -593,11 +622,23 @@ function SeedCuratedCard({
   };
 
   return (
-    <div className={cn('rounded-lg border bg-white p-3', selected ? 'border-accent ring-1 ring-accent' : 'border-border')}>
+    <div
+      className={cn(
+        'rounded-lg border p-3',
+        selected
+          ? 'border-accent bg-white ring-1 ring-accent'
+          : seed.status === 'adopted'
+            ? 'border-amber-300 bg-amber-50/40'
+            : 'border-border bg-white',
+      )}
+    >
       <div className="flex items-start gap-2">
         <input type="checkbox" checked={selected} onChange={onToggle} className="mt-1 h-4 w-4 shrink-0 accent-accent" />
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1.5 mb-1">
+            {seed.status === 'adopted' && (
+              <span className="rounded bg-amber-200 px-1.5 py-0.5 text-[11px] font-semibold text-amber-800">채택</span>
+            )}
             {seed.score != null && (
               <span className={cn('rounded px-1.5 py-0.5 text-[11px] font-semibold tabular-nums', scoreCls(seed.score))}>
                 {seed.score}
@@ -653,6 +694,11 @@ function SeedCuratedCard({
               {LOCAL_AI && (
                 <Button size="sm" variant="ghost" disabled={reanalyzing} onClick={reanalyze}>
                   {reanalyzing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />} 재분석
+                </Button>
+              )}
+              {seed.status === 'adopted' && (
+                <Button size="sm" variant="ghost" disabled={pending} onClick={unadopt}>
+                  채택 해제
                 </Button>
               )}
               <Button size="sm" variant="ghost" disabled={pending} onClick={hide}>

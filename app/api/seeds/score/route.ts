@@ -44,8 +44,9 @@ export async function POST(req: NextRequest) {
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   if (!seeds?.length) return NextResponse.json({ scored: 0, remaining: 0 });
 
-  // 웹툴 없는 가벼운 채점이라 동시 3개까지 병렬(속도↑). 과도한 CLI 동시실행은 피함.
-  const CONCURRENCY = 3;
+  // 웹툴 없는 가벼운 채점(씨앗당 수십 초)이라 동시 실행으로 배치 벽시간을 줄인다.
+  // 6이면 12건 배치가 4→2라운드로 절반. 로컬 CLI 부하 상한이라 그 이상은 올리지 않음.
+  const CONCURRENCY = 6;
   const scoreOne = async (seed: { id: string; title: string; raw_text: string; source_type: string | null }) => {
     try {
       const s = await scoreSeed({ title: seed.title, rawText: seed.raw_text, sourceType: seed.source_type ?? undefined });
