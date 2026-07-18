@@ -540,8 +540,7 @@ function O1({ accent, props }: Extract<RenderSlideInput, { template: 'O1' }>) {
         style={{
           display: 'flex',
           flexDirection: 'column',
-          marginTop: 'auto',
-          marginBottom: 'auto',
+          marginTop: 48, // 본문 눈높이 통일
         }}
       >
         <div style={{ fontSize: 26, fontWeight: 600, color: 'rgba(255,255,255,0.85)' }}>
@@ -578,7 +577,7 @@ function O1({ accent, props }: Extract<RenderSlideInput, { template: 'O1' }>) {
           </div>
         ) : null}
       </div>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 22 }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 22, marginTop: 'auto' }}>
         {actions.map((a, i) => (
           <div
             key={i}
@@ -938,8 +937,7 @@ function B3({ accent, props }: Extract<RenderSlideInput, { template: 'B3' }>) {
         style={{
           display: 'flex',
           flexDirection: 'column',
-          marginTop: 'auto',
-          marginBottom: 'auto',
+          marginTop: 48, // 본문 눈높이 통일 — B2·B8과 같은 상단 시작
         }}
       >
         <div style={{ display: 'flex' }}>
@@ -1138,8 +1136,7 @@ function B7({ props }: Extract<RenderSlideInput, { template: 'B7' }>) {
         style={{
           display: 'flex',
           flexDirection: 'column',
-          marginTop: 'auto',
-          marginBottom: 'auto',
+          marginTop: 48, // 본문 눈높이 통일
         }}
       >
         <div style={{ display: 'flex', alignItems: 'baseline' }}>

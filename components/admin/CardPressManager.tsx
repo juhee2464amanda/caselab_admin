@@ -152,7 +152,7 @@ const FIELDS: Record<CardTemplateId, FieldDef[]> = {
     { key: 'when', label: '어떤 상황에서', kind: 'input', hint: '≤22자' },
     { key: 'lines', label: '맛보기 (줄마다 1줄, 3~4줄)', kind: 'lines', hint: '[변수]는 초록, # 시작 줄은 주석' },
     { key: 'effect', label: '기대 효과', kind: 'input', hint: '≤20자' },
-    { key: 'ctaLine', label: 'CTA 문구', kind: 'input', hint: '재생성 시 CTA 유형에 맞게 자동 주입' },
+    { key: 'ctaLine', label: 'CTA 문구', kind: 'input', hint: 'CTA는 캡션 전담 — 이미지에 꼭 넣고 싶을 때만' },
   ],
   B9: [
     { key: 'lead', label: '도입', kind: 'input' },

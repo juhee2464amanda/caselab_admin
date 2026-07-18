@@ -212,7 +212,7 @@ const TEMPLATE_SPECS = `[템플릿별 props 규격 — 줄바꿈은 문자열 �
 - B5 잘된것/별로였던것: {"good":["≤55자"] 1~2개,"bad":["≤55자"] 1~2개} — 솔직하게, 실패를 뭉개지 말 것
 - B6 스텝: {"heading":"≤13자","hl":"핵심 구","steps":[{"title":"≤12자","desc":"≤18자"}] 2~4개}
 - B7 숫자: {"big":"숫자만 ≤4자","unit":"%·배 등(선택)","cap":"1~2줄, 줄당 ≤16자, **강조** 1개","sub":"≤38자(선택)"} — 재료에 실제로 있는 숫자만
-- B8 프롬프트 패턴: {"badge":"'패턴 03' 등 ≤8자(선택)","patternName":"≤12자 패턴명","when":"≤22자 — 어떤 상황에서 쓰는지 (따옴표 없이)","lines":["≤22자/줄"] 3~4줄 핵심 맛보기 — 전문이 아니라 구조가 보이는 핵심만, 변수는 [대괄호],"effect":"≤20자 기대 효과 (실측·구체적으로)"} — 인스타에선 복사 불가이므로 '복사' 언급 금지. 이 슬라이드의 목표는 "나도 써보고 싶다". ctaLine은 시스템이 넣으니 생성하지 말 것
+- B8 프롬프트 패턴: {"badge":"'패턴 03' 등 ≤8자(선택)","patternName":"≤12자 패턴명","when":"≤22자 — 어떤 상황에서 쓰는지 (따옴표 없이)","lines":["≤22자/줄"] 3~4줄 핵심 맛보기 — 전문이 아니라 구조가 보이는 핵심만, 변수는 [대괄호],"effect":"≤20자 기대 효과 (실측·구체적으로)"} — 인스타에선 복사 불가이므로 '복사' 언급 금지. 이 슬라이드의 목표는 "나도 써보고 싶다". CTA(댓글 유도 등)는 캡션이 전담 — 슬라이드에 ctaLine 생성 금지
 - O1 마무리: {"eyebrow":"기본 '오늘의 정리'(생략 가능)","title":"2줄, 줄당 ≤11자 핵심 요약","hl":"핵심 단어","body":"≤58자"} — actions/handle은 생성하지 말 것(시스템 기본값 사용)`;
 
 const SYSTEM = `당신은 케이스랩(caselab)의 SNS 콘텐츠 에디터입니다. 발행된 웹 콘텐츠를 인스타그램 캐러셀 슬라이드 규격으로 압축 재작성합니다.
@@ -400,35 +400,21 @@ function validateSlides(
   return { issues, parsed };
 }
 
-/** page 자동 기입 + 계획 이미지 배치 + CTA 유형별 문구(B8 ctaLine·O1 actions) 시스템 주입 */
-function finalizeSlides(
-  slides: ParsedSlide[],
-  plan: SlidePlan,
-  ctaType: CardCtaType,
-  ctaKeyword: string
-): CardSlide[] {
+/** page 자동 기입 + 계획 이미지 배치.
+ *  CTA(댓글→DM 등)는 캡션·스레드가 전담 — 캐러셀 이미지에는 넣지 않는다(운영자 결정 2026-07-18). */
+function finalizeSlides(slides: ParsedSlide[], plan: SlidePlan): CardSlide[] {
   const total = slides.length;
   const PAGED: CardTemplateId[] = ['B1', 'B2', 'B3', 'B5', 'B6', 'B7', 'B8', 'B9', 'O1'];
-  const b8Cta =
-    ctaType === 'comment_dm'
-      ? `💬 댓글에 "${ctaKeyword}" 남기면 전문을 DM으로`
-      : '🔗 전문은 프로필 링크에서';
   return slides.map(({ planIndex, ...s }, i) => {
     const props = { ...s.props };
     if (PAGED.includes(s.template)) props.page = `${i + 1} / ${total}`;
     if (s.template === 'B8') {
-      props.ctaLine = b8Cta;
+      delete props.ctaLine; // CTA는 캡션 전담
       delete props.tip; // 구 '복사' 문법 제거
     }
     // 커버 이미지 배치: C5는 텍스처로 깔리므로 허용
     if (s.template === 'C5' && planIndex === 0 && plan.slides[0]?.image && !props.coverImage)
       props.coverImage = plan.slides[0].image;
-    if (s.template === 'O1' && ctaType === 'comment_dm' && !props.actions) {
-      props.actions = [
-        { icon: '💬', text: `댓글에 "${ctaKeyword}" — 전문을 DM으로 보내드려요` },
-        { icon: '🔖', text: '저장해두고 필요할 때 다시 보기' },
-      ];
-    }
     const planned = plan.slides[planIndex];
     if (planned?.image) {
       // C2·C3는 사진 없는 다크 커버 — coverImage는 사진형(C1·B4)에만
@@ -656,7 +642,7 @@ ${lastIssues.map((i) => `- ${i}`).join('\n')}`;
 
   return {
     accent: plan.accent,
-    slides: finalizeSlides(slides, plan, ctaType, ctaKeyword),
+    slides: finalizeSlides(slides, plan),
     extractedImages: plan.images,
     igCaption: `${lastRaw.igCaption.trim()}\n\n${tags.join(' ')}`,
     threadsText: threads,
