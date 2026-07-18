@@ -109,12 +109,19 @@ export const B7PropsSchema = z.object({
   sub: z.string().optional(),
 });
 
+// B8 — "복사" 문법(웹)이 아니라 인스타 문법: 패턴을 팔고, 전문은 CTA(댓글→DM/본가)로.
 export const B8PropsSchema = z.object({
   page: z.string().optional(),
-  heading: z.string().optional(),    // 기본 '복사해서 쓰는 프롬프트'
-  hl: z.string().optional(),         // 기본 '프롬프트'
-  lines: z.array(z.string()).min(1).max(8), // '#'로 시작=주석색, [변수]=초록
-  tip: z.string().optional(),        // 기본 '📌 저장해두고 그대로 붙여넣기'
+  badge: z.string().optional(),      // "패턴 03" 등 작은 배지 (기본 '프롬프트 패턴')
+  patternName: z.string().optional(),// 패턴명 (크게) — 있으면 신레이아웃으로 렌더
+  when: z.string().optional(),       // 어떤 상황에서 쓰는지 한 줄
+  lines: z.array(z.string()).min(1).max(8), // 핵심 3~4줄 맛보기 ('#'주석색, [변수]=초록)
+  effect: z.string().optional(),     // 기대 효과 한 줄 ("방향 잡는 시간 ⅓")
+  ctaLine: z.string().optional(),    // 시스템 주입 — cta_type에 따라 댓글→DM / 프로필 링크
+  // legacy (구 레이아웃 저장분 렌더 호환)
+  heading: z.string().optional(),
+  hl: z.string().optional(),
+  tip: z.string().optional(),
 });
 
 export const B9PropsSchema = z.object({

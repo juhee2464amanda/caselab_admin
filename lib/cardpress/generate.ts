@@ -19,6 +19,10 @@ import {
 // 슬라이드 규격(줄수·글자수)에 맞게 압축하고, 캡션·스레드 글·커버 메타포 검색어까지 한 번에.
 // 규격 위반 시 위반 목록을 피드백으로 재압축 루프(최대 2회 추가 호출).
 
+export type CardCtaType = 'info_save' | 'comment_dm';
+
+export type CoverCandidate = { thumb: string; full: string; credit: string; creditLink: string };
+
 export type CardSetDraft = {
   accent: CardAccent;
   slides: CardSlide[];
@@ -28,6 +32,12 @@ export type CardSetDraft = {
   metaphorQueries: string[];
   /** AI가 정의한(또는 운영자가 지정한) 이 콘텐츠의 엣지 한 줄 — 검수 UI에서 수정·재생성 축 */
   edge: string;
+  /** CTA 유형 — comment_dm(댓글→DM, ManyChat) | info_save(저장+프로필 링크) */
+  ctaType: CardCtaType;
+  /** comment_dm일 때 댓글 트리거 키워드 */
+  ctaKeyword: string;
+  /** 메타포 검색어로 Unsplash에서 자동 수급한 커버 후보 (키 없으면 빈 배열) */
+  coverCandidates: CoverCandidate[];
 };
 
 const FIXED_TAGS = ['#케이스랩', '#AI활용', '#일잘러', '#업무효율', '#AI실험'];
@@ -39,6 +49,7 @@ const CATEGORY_TAGS: Record<CardAccent, string[]> = {
 
 const GenOutputSchema = z.object({
   edge: z.string().min(1),
+  ctaKeyword: z.string().optional(), // comment_dm일 때 댓글 트리거 키워드 제안 (≤6자)
   slides: z.array(
     z.union([
       z.object({ skip: z.literal(true), sourceSection: z.string().optional() }),
@@ -139,6 +150,10 @@ function lintSlide(template: CardTemplateId, props: Record<string, unknown>): st
       push(lintLen('sub', p.sub, 40));
       break;
     case 'B8':
+      push(lintLen('patternName', p.patternName, 12));
+      push(lintLen('when', p.when, 24));
+      push(lintLen('effect', p.effect, 22));
+      if ((p.lines ?? []).length > 4) push([`lines ${p.lines!.length}줄 (맛보기 최대 4줄)`]);
       for (const l of p.lines ?? []) push(lintLen('line', l, 24));
       break;
     default:
@@ -158,7 +173,7 @@ const TEMPLATE_SPECS = `[템플릿별 props 규격 — 줄바꿈은 문자열 �
 - B5 잘된것/별로였던것: {"good":["≤55자"] 1~2개,"bad":["≤55자"] 1~2개} — 솔직하게, 실패를 뭉개지 말 것
 - B6 스텝: {"heading":"≤13자","hl":"핵심 구","steps":[{"title":"≤12자","desc":"≤18자"}] 2~4개}
 - B7 숫자: {"big":"숫자만 ≤4자","unit":"%·배 등(선택)","cap":"1~2줄, 줄당 ≤16자, **강조** 1개","sub":"≤38자(선택)"} — 재료에 실제로 있는 숫자만
-- B8 프롬프트: {"lines":["≤22자/줄"] 3~8줄, 변수는 [대괄호], 첫 줄 '# 제목' 주석 권장} — 원문 프롬프트를 압축, 의미 왜곡 금지
+- B8 프롬프트 패턴: {"badge":"'패턴 03' 등 ≤8자(선택)","patternName":"≤12자 패턴명","when":"≤22자 — 어떤 상황에서 쓰는지 (따옴표 없이)","lines":["≤22자/줄"] 3~4줄 핵심 맛보기 — 전문이 아니라 구조가 보이는 핵심만, 변수는 [대괄호],"effect":"≤20자 기대 효과 (실측·구체적으로)"} — 인스타에선 복사 불가이므로 '복사' 언급 금지. 이 슬라이드의 목표는 "나도 써보고 싶다". ctaLine은 시스템이 넣으니 생성하지 말 것
 - O1 마무리: {"eyebrow":"기본 '오늘의 정리'(생략 가능)","title":"2줄, 줄당 ≤11자 핵심 요약","hl":"핵심 단어","body":"≤58자"} — actions/handle은 생성하지 말 것(시스템 기본값 사용)`;
 
 const SYSTEM = `당신은 케이스랩(caselab)의 SNS 콘텐츠 에디터입니다. 발행된 웹 콘텐츠를 인스타그램 캐러셀 슬라이드 규격으로 압축 재작성합니다.
@@ -188,16 +203,25 @@ const SYSTEM = `당신은 케이스랩(caselab)의 SNS 콘텐츠 에디터입니
 
 ${TEMPLATE_SPECS}
 
+[CTA 유형 — 캡션·스레드·마무리의 문법을 결정]
+- comment_dm: 댓글 참여형. 캡션 마지막은 '댓글에 "키워드"를 남기면 DM으로 전문/자료를 보내드려요' 문구. ctaKeyword 필드로 짧은 한글 키워드(≤6자, 예: "프롬프트")를 제안하세요. 캡션에 프롬프트 전문을 넣지 말 것(DM 유인이 죽음) — 대신 맛보기와 효과로 욕망을 만들 것.
+- info_save: 정보 제공형. 캡션에 대표 프롬프트 1개 전문 포함(따옴표 블록) + "나머지는 프로필 링크에서".
+
 [함께 생성]
-- igCaption: 인스타 캡션 — 첫 줄 후킹 → 3~5문장(요약+핵심 시사점) → 대표 프롬프트 1개 전문을 복사 가능하게 포함(따옴표 블록) → "나머지는 프로필 링크에서". 해시태그는 쓰지 말 것(시스템이 붙임). 이모지는 절제.
+- igCaption: 인스타 캡션 — 첫 줄 후킹 → 3~5문장(요약+핵심 시사점) → CTA 유형에 맞는 마무리. 해시태그는 쓰지 말 것(시스템이 붙임). 이모지는 절제.
 - threadsText: 스레드 네이티브 톤으로 재작성한 글 300~450자 — 대화하듯, 핵심 발견 1~2개 + 솔직 후기 한 줄. 링크는 쓰지 말 것(시스템이 붙임).
-- metaphorQueries: 커버 배경 이미지 검색어 3개 — 제목·후킹 문장 속 "구체적 사물/장면"을 영어로 (주제어 말고 명사. 예: "airplane cabin aisle interior", "colored pencils macro"). 구체 명사가 없으면 개념을 사물로 치환(집중→과녁, 선택→갈림길).
+- metaphorQueries: 커버 배경 이미지 검색어 3개 — 제목·후킹 문장 속 "구체적 사물/장면"을 영어로 (주제어 말고 명사. 예: "airplane cabin aisle interior", "colored pencils macro"). 구체 명사가 없으면 개념을 사물로 치환(집중→과녁, 선택→갈림길). 어둡고 대비 강한 톤 선호("dark", "moody", "silhouette" 등 톤 단어 1개 포함), 알아볼 수 있는 얼굴은 피할 것(뒷모습·손·오브젝트 위주).
 
 [출력 — JSON 하나만, 설명 없이]
-{"edge":"이 콘텐츠의 엣지 한 줄","slides":[{"template":"C1","sourceSection":"계획의 sourceSection 그대로","props":{...}} 또는 {"skip":true,"sourceSection":"..."}, ...],"igCaption":"...","threadsText":"...","metaphorQueries":["...","...","..."]}
+{"edge":"이 콘텐츠의 엣지 한 줄","ctaKeyword":"댓글 키워드(comment_dm일 때)","slides":[{"template":"C1","sourceSection":"계획의 sourceSection 그대로","props":{...}} 또는 {"skip":true,"sourceSection":"..."}, ...],"igCaption":"...","threadsText":"...","metaphorQueries":["...","...","..."]}
 슬라이드 배열의 순서·개수는 계획과 1:1 동일해야 합니다(선정 제외는 skip 객체로 자리를 지킬 것).`;
 
-function planPrompt(row: ContentRowLite, plan: SlidePlan, operatorEdge?: string): string {
+function planPrompt(
+  row: ContentRowLite,
+  plan: SlidePlan,
+  operatorEdge?: string,
+  ctaType: CardCtaType = 'comment_dm'
+): string {
   const slideLines = plan.slides
     .map(
       (s, i) =>
@@ -212,10 +236,46 @@ function planPrompt(row: ContentRowLite, plan: SlidePlan, operatorEdge?: string)
   return `[콘텐츠]
 트랙: ${row.track === 'case' ? '실전 케이스' : 'AI 트렌드'}
 제목: ${row.title}
-요약: ${row.summary ?? '(없음)'}${operatorEdge ? `\n\n[운영자 지정 엣지 — 최우선] ${operatorEdge}` : ''}
+요약: ${row.summary ?? '(없음)'}
+CTA 유형: ${ctaType}${operatorEdge ? `\n\n[운영자 지정 엣지 — 최우선] ${operatorEdge}` : ''}
 
 [슬라이드 계획 — ${plan.slides.length}장]${selectLine}
 ${slideLines}`;
+}
+
+// ── 커버 후보 자동 수급 — 메타포 검색어 → Unsplash (IMAGE-SOURCES.md: portrait·다크 톤 우선) ──
+async function fetchCoverCandidates(queries: string[]): Promise<CoverCandidate[]> {
+  const key = process.env.UNSPLASH_ACCESS_KEY;
+  if (!key || queries.length === 0) return [];
+  const results = await Promise.all(
+    queries.slice(0, 3).map(async (q) => {
+      try {
+        const res = await fetch(
+          `https://api.unsplash.com/search/photos?query=${encodeURIComponent(q)}&per_page=3&orientation=portrait`,
+          { headers: { Authorization: `Client-ID ${key}` } }
+        );
+        if (!res.ok) return [];
+        const data = (await res.json()) as {
+          results: Array<{
+            urls: { raw: string; small: string };
+            user: { name: string; links: { html: string } };
+          }>;
+        };
+        return data.results.map((r) => ({
+          thumb: r.urls.small,
+          full: `${r.urls.raw}&w=1080&h=1350&fit=crop&fm=jpg&q=80`,
+          credit: r.user.name,
+          creditLink: r.user.links.html,
+        }));
+      } catch {
+        return [];
+      }
+    })
+  );
+  // 검색어별 상위를 교차 배치 (같은 검색어 결과가 몰리지 않게)
+  const flat: CoverCandidate[] = [];
+  for (let i = 0; i < 3; i++) for (const r of results) if (r[i]) flat.push(r[i]);
+  return flat.slice(0, 9);
 }
 
 // ── 생성 본체 ──────────────────────────────────────────────
@@ -271,13 +331,32 @@ function validateSlides(
   return { issues, parsed };
 }
 
-/** page 지원 템플릿에 "n / total" 자동 기입 + 계획된 이미지 자동 배치 */
-function finalizeSlides(slides: ParsedSlide[], plan: SlidePlan): CardSlide[] {
+/** page 자동 기입 + 계획 이미지 배치 + CTA 유형별 문구(B8 ctaLine·O1 actions) 시스템 주입 */
+function finalizeSlides(
+  slides: ParsedSlide[],
+  plan: SlidePlan,
+  ctaType: CardCtaType,
+  ctaKeyword: string
+): CardSlide[] {
   const total = slides.length;
   const PAGED: CardTemplateId[] = ['B1', 'B2', 'B3', 'B5', 'B6', 'B7', 'B8', 'B9', 'O1'];
+  const b8Cta =
+    ctaType === 'comment_dm'
+      ? `💬 댓글에 "${ctaKeyword}" 남기면 전문을 DM으로`
+      : '🔗 전문은 프로필 링크에서';
   return slides.map(({ planIndex, ...s }, i) => {
     const props = { ...s.props };
     if (PAGED.includes(s.template)) props.page = `${i + 1} / ${total}`;
+    if (s.template === 'B8') {
+      props.ctaLine = b8Cta;
+      delete props.tip; // 구 '복사' 문법 제거
+    }
+    if (s.template === 'O1' && ctaType === 'comment_dm' && !props.actions) {
+      props.actions = [
+        { icon: '💬', text: `댓글에 "${ctaKeyword}" — 전문을 DM으로 보내드려요` },
+        { icon: '🔖', text: '저장해두고 필요할 때 다시 보기' },
+      ];
+    }
     const planned = plan.slides[planIndex];
     if (planned?.image) {
       // C2·C3는 사진 없는 다크 커버 — coverImage는 사진형(C1·B4)에만
@@ -357,10 +436,11 @@ ${item.material}${instruction ? `\n\n[운영자 요청] ${instruction}` : ''}
 
 export async function generateCardSet(
   row: ContentRowLite,
-  opts?: { edge?: string }
+  opts?: { edge?: string; ctaType?: CardCtaType; ctaKeyword?: string }
 ): Promise<CardSetDraft> {
+  const ctaType: CardCtaType = opts?.ctaType ?? 'comment_dm';
   const plan = buildSlidePlan(row);
-  const userPrompt = planPrompt(row, plan, opts?.edge);
+  const userPrompt = planPrompt(row, plan, opts?.edge, ctaType);
 
   let lastRaw: z.infer<typeof GenOutputSchema> | null = null;
   let lastIssues: string[] = [];
@@ -427,14 +507,19 @@ ${lastIssues.map((i) => `- ${i}`).join('\n')}`;
   const threads = lastRaw.threadsText.includes(url)
     ? lastRaw.threadsText
     : `${lastRaw.threadsText.trim()}\n\n👉 전체 과정: ${url}`;
+  const ctaKeyword = opts?.ctaKeyword?.trim() || lastRaw.ctaKeyword?.trim() || '프롬프트';
+  const metaphorQueries = lastRaw.metaphorQueries ?? [];
 
   return {
     accent: plan.accent,
-    slides: finalizeSlides(slides, plan),
+    slides: finalizeSlides(slides, plan, ctaType, ctaKeyword),
     extractedImages: plan.images,
     igCaption: `${lastRaw.igCaption.trim()}\n\n${tags.join(' ')}`,
     threadsText: threads,
-    metaphorQueries: lastRaw.metaphorQueries ?? [],
+    metaphorQueries,
     edge: opts?.edge?.trim() || lastRaw.edge.trim(),
+    ctaType,
+    ctaKeyword,
+    coverCandidates: await fetchCoverCandidates(metaphorQueries),
   };
 }

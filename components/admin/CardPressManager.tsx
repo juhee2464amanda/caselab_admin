@@ -26,6 +26,9 @@ export type CardRow = {
   threads_cover: string | null;
   metaphor_queries?: string[];
   edge?: string | null;
+  cta_type?: 'info_save' | 'comment_dm';
+  cta_keyword?: string | null;
+  cover_candidates?: Array<{ thumb: string; full: string; credit: string; creditLink: string }>;
   status: 'auto_draft' | 'reviewed' | 'published';
   published_to: Array<{ channel: string; post_id: string; at: string }>;
   created_at?: string;
@@ -135,9 +138,12 @@ const FIELDS: Record<CardTemplateId, FieldDef[]> = {
     { key: 'sub', label: '부연', kind: 'input' },
   ],
   B8: [
-    { key: 'heading', label: '제목', kind: 'input', hint: '비우면 기본 문구' },
-    { key: 'lines', label: '프롬프트 (줄마다 1줄)', kind: 'lines', hint: '[변수]는 초록, # 시작 줄은 주석' },
-    { key: 'tip', label: '팁 문구', kind: 'input' },
+    { key: 'badge', label: '배지', kind: 'input', hint: '예: 패턴 03 · 비우면 "프롬프트 패턴"' },
+    { key: 'patternName', label: '패턴명', kind: 'input', hint: '≤12자' },
+    { key: 'when', label: '어떤 상황에서', kind: 'input', hint: '≤22자' },
+    { key: 'lines', label: '맛보기 (줄마다 1줄, 3~4줄)', kind: 'lines', hint: '[변수]는 초록, # 시작 줄은 주석' },
+    { key: 'effect', label: '기대 효과', kind: 'input', hint: '≤20자' },
+    { key: 'ctaLine', label: 'CTA 문구', kind: 'input', hint: '재생성 시 CTA 유형에 맞게 자동 주입' },
   ],
   B9: [
     { key: 'lead', label: '도입', kind: 'input' },
@@ -376,6 +382,8 @@ function CardEditor({ card, source }: { card: CardRow; source?: SourceRow }) {
   const [threadsText, setThreadsText] = useState(card.threads_text ?? '');
   const [threadsCover, setThreadsCover] = useState(card.threads_cover ?? '');
   const [edge, setEdge] = useState(card.edge ?? '');
+  const [ctaType, setCtaType] = useState<'info_save' | 'comment_dm'>(card.cta_type ?? 'comment_dm');
+  const [ctaKeyword, setCtaKeyword] = useState(card.cta_keyword ?? '프롬프트');
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
   const [selIdx, setSelIdx] = useState(0);
@@ -496,6 +504,8 @@ function CardEditor({ card, source }: { card: CardRow; source?: SourceRow }) {
         threads_text: threadsText || null,
         threads_cover: threadsCover || null,
         edge: edge || null,
+        cta_type: ctaType,
+        cta_keyword: ctaKeyword || null,
         ...(nextStatus ? { status: nextStatus } : {}),
       })
       .eq('id', card.id);
@@ -512,7 +522,13 @@ function CardEditor({ card, source }: { card: CardRow; source?: SourceRow }) {
       const res = await fetch('/api/cardpress/generate', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ sourceType: 'content', sourceId: card.source_id, edge: edge.trim() || undefined }),
+        body: JSON.stringify({
+          sourceType: 'content',
+          sourceId: card.source_id,
+          edge: edge.trim() || undefined,
+          ctaType,
+          ctaKeyword: ctaKeyword.trim() || undefined,
+        }),
       });
       if (!res.ok) throw new Error((await res.json()).error ?? `HTTP ${res.status}`);
       router.refresh();
@@ -546,16 +562,44 @@ function CardEditor({ card, source }: { card: CardRow; source?: SourceRow }) {
         </div>
       </div>
 
-      {/* 엣지 — 이 콘텐츠의 차별점 한 줄. 수정 후 [AI 전체 재생성]하면 이 방향으로 다시 쓴다 */}
-      <div className="card p-3 flex items-center gap-2">
-        <Label className="text-xs shrink-0">엣지</Label>
-        <Input
-          value={edge}
-          onChange={(e) => { setEdge(e.target.value); setDirty(true); }}
-          placeholder="이 콘텐츠의 차별점 한 줄 (예: 앤트로픽 현직 엔지니어가 직접 공개한 검증된 패턴)"
-          className="text-sm"
-        />
-        <span className="text-[11px] text-ink/40 shrink-0 hidden sm:block">수정 후 [AI 전체 재생성] = 이 방향으로 재작성</span>
+      {/* 엣지 + CTA 유형 — 수정 후 [AI 전체 재생성]하면 이 방향·문법으로 다시 쓴다 */}
+      <div className="card p-3 space-y-2">
+        <div className="flex items-center gap-2">
+          <Label className="text-xs shrink-0">엣지</Label>
+          <Input
+            value={edge}
+            onChange={(e) => { setEdge(e.target.value); setDirty(true); }}
+            placeholder="이 콘텐츠의 차별점 한 줄 (예: 앤트로픽 현직 엔지니어가 직접 공개한 검증된 패턴)"
+            className="text-sm"
+          />
+        </div>
+        <div className="flex items-center gap-2 flex-wrap">
+          <Label className="text-xs shrink-0">CTA</Label>
+          {([
+            ['comment_dm', '댓글→DM 참여형'],
+            ['info_save', '정보 제공형'],
+          ] as const).map(([v, label]) => (
+            <button
+              key={v}
+              onClick={() => { setCtaType(v); setDirty(true); }}
+              className={`text-xs rounded-full px-2.5 py-1 ${ctaType === v ? 'bg-accent text-white' : 'bg-ink/5 text-ink/60 hover:bg-ink/10'}`}
+            >
+              {label}
+            </button>
+          ))}
+          {ctaType === 'comment_dm' && (
+            <>
+              <span className="text-[11px] text-ink/40">댓글 키워드:</span>
+              <Input
+                value={ctaKeyword}
+                onChange={(e) => { setCtaKeyword(e.target.value); setDirty(true); }}
+                className="text-sm w-28"
+              />
+              <span className="text-[11px] text-ink/40">ManyChat 코멘트 자동화에 같은 키워드 세팅 필요</span>
+            </>
+          )}
+          <span className="text-[11px] text-ink/40 ml-auto hidden lg:block">수정 후 [AI 전체 재생성] = 이 방향·문법으로 재작성</span>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-[1fr_400px] gap-4 items-start">
@@ -894,9 +938,22 @@ function ImageTray({ card, onPick, onThreadsCover }: { card: CardRow; onPick: (u
   return (
     <div className="card p-4 space-y-3">
       <div className="text-sm font-semibold">이미지 트레이 <span className="text-xs text-ink/40 font-normal">(호버 → 배치 · 커버/B2/B9 슬라이드 선택 후)</span></div>
+      {(card.cover_candidates?.length ?? 0) > 0 && (
+        <div>
+          <div className="text-[11px] text-ink/40 mb-1">커버 후보 (메타포 검색어 자동 수급 · Unsplash)</div>
+          <div className="flex gap-2 overflow-x-auto pb-1">
+            {card.cover_candidates!.map((c) => (
+              <Thumb key={c.full} url={c.full} thumb={c.thumb} credit={c.credit} />
+            ))}
+          </div>
+        </div>
+      )}
       {card.extracted_images.length > 0 && (
-        <div className="flex gap-2 overflow-x-auto pb-1">
-          {card.extracted_images.map((u) => <Thumb key={u} url={u} thumb={u} />)}
+        <div>
+          <div className="text-[11px] text-ink/40 mb-1">본문 추출 이미지</div>
+          <div className="flex gap-2 overflow-x-auto pb-1">
+            {card.extracted_images.map((u) => <Thumb key={u} url={u} thumb={u} />)}
+          </div>
         </div>
       )}
       <div className="flex items-center gap-2">

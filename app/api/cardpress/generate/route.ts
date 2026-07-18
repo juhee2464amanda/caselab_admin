@@ -35,6 +35,9 @@ export async function POST(req: NextRequest) {
     dryRun?: boolean;
     /** 운영자 지정 엣지 — 재생성 시 이 방향을 최우선 축으로 */
     edge?: string;
+    /** CTA 유형 (기본 comment_dm) + 댓글 키워드 */
+    ctaType?: 'info_save' | 'comment_dm';
+    ctaKeyword?: string;
   };
   if (body.sourceType === 'tool')
     return NextResponse.json({ error: 'tool 소스는 다음 단계에서 지원' }, { status: 501 });
@@ -55,6 +58,8 @@ export async function POST(req: NextRequest) {
   try {
     const draft = await generateCardSet(content as unknown as ContentRowLite, {
       edge: body.edge?.trim() || undefined,
+      ctaType: body.ctaType,
+      ctaKeyword: body.ctaKeyword?.trim() || undefined,
     });
 
     if (body.dryRun) return NextResponse.json({ dryRun: true, draft });
@@ -69,6 +74,9 @@ export async function POST(req: NextRequest) {
       threads_text: draft.threadsText,
       metaphor_queries: draft.metaphorQueries,
       edge: draft.edge,
+      cta_type: draft.ctaType,
+      cta_keyword: draft.ctaKeyword,
+      cover_candidates: draft.coverCandidates,
       status: 'auto_draft',
     };
     let { data: card, error: upsertError } = await admin
@@ -76,8 +84,8 @@ export async function POST(req: NextRequest) {
       .upsert(row, { onConflict: 'source_type,source_id' })
       .select()
       .single();
-    // 1021(metaphor_queries)·1022(edge) 미적용 DB 호환 — 없는 컬럼만 빼고 재시도
-    for (const col of ['metaphor_queries', 'edge']) {
+    // 1021~1023 미적용 DB 호환 — 없는 컬럼만 빼고 재시도
+    for (const col of ['metaphor_queries', 'edge', 'cta_type', 'cta_keyword', 'cover_candidates']) {
       if (upsertError?.message.includes(col)) {
         delete row[col];
         ({ data: card, error: upsertError } = await admin

@@ -1107,6 +1107,116 @@ function promptLine(line: string): ReactNode[] {
 
 function B8({ accent, props }: Extract<RenderSlideInput, { template: 'B8' }>) {
   const color = ACCENTS[accent];
+  const promptBox = (fontSize: number) => (
+    <div
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        marginTop: 36,
+        background: '#0F1320',
+        borderRadius: 20,
+        padding: '40px 44px',
+        fontSize,
+        lineHeight: 1.7,
+      }}
+    >
+      {props.lines.map((line, i) => (
+        <div key={i} style={{ display: 'flex', flexWrap: 'wrap' }}>
+          {promptLine(line)}
+        </div>
+      ))}
+    </div>
+  );
+
+  // 신레이아웃 — 패턴을 판다: 배지 → 패턴명 → 상황 → 맛보기 → 효과 → CTA(댓글→DM 등)
+  if (props.patternName) {
+    return (
+      <div style={{ ...cardBase, background: '#fff', color: INK, padding: '80px 72px' }}>
+        <Topbar color={INK} right={props.page} />
+        <div style={{ display: 'flex', marginTop: 48 }}>
+          <span
+            style={{
+              background: color,
+              color: '#fff',
+              fontSize: 24,
+              fontWeight: 800,
+              letterSpacing: '0.06em',
+              padding: '10px 22px',
+              borderRadius: 999,
+            }}
+          >
+            {props.badge ?? '프롬프트 패턴'}
+          </span>
+        </div>
+        <div
+          style={{
+            display: 'flex',
+            marginTop: 28,
+            fontSize: 64,
+            fontWeight: 800,
+            letterSpacing: '-0.035em',
+            lineHeight: 1.15,
+          }}
+        >
+          {props.patternName}
+        </div>
+        {props.when ? (
+          <div style={{ display: 'flex', marginTop: 18, fontSize: 30, lineHeight: 1.5, color: MUTED }}>
+            <span>{`"${props.when}"`}</span>
+          </div>
+        ) : null}
+        {promptBox(27)}
+        {props.effect ? (
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 14,
+              marginTop: 30,
+              fontSize: 29,
+              fontWeight: 700,
+              color,
+            }}
+          >
+            {/* ✦ 글리프는 twemoji 치환으로 깨짐 → CSS 다이아몬드 */}
+            <div
+              style={{
+                display: 'flex',
+                width: 16,
+                height: 16,
+                background: color,
+                transform: 'rotate(45deg)',
+                borderRadius: 3,
+                flexShrink: 0,
+              }}
+            />
+            <span>{props.effect}</span>
+          </div>
+        ) : null}
+        {props.ctaLine ? (
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              marginTop: 'auto',
+              alignSelf: 'flex-start',
+              background: mixWithWhite(color, 0.08),
+              border: `2px solid ${mixWithWhite(color, 0.3)}`,
+              borderRadius: 16,
+              padding: '22px 28px',
+              fontSize: 28,
+              fontWeight: 700,
+              color: INK,
+            }}
+          >
+            {props.ctaLine}
+          </div>
+        ) : null}
+      </div>
+    );
+  }
+
+  // 레거시 레이아웃 (구 저장분 렌더 호환)
   return (
     <div style={{ ...cardBase, background: '#fff', color: INK, padding: '80px 72px' }}>
       <Topbar color={INK} right={props.page} />
@@ -1121,30 +1231,13 @@ function B8({ accent, props }: Extract<RenderSlideInput, { template: 'B8' }>) {
         }}
       >
         {highlightLines(
-          props.heading ?? '복사해서 쓰는 프롬프트',
+          props.heading ?? '오늘의 프롬프트',
           props.hl ?? '프롬프트',
           { minHeight: 65 },
           { background: color, color: '#fff', padding: '2px 16px', borderRadius: 8 }
         )}
       </div>
-      <div
-        style={{
-          display: 'flex',
-          flexDirection: 'column',
-          marginTop: 44,
-          background: '#0F1320',
-          borderRadius: 20,
-          padding: '44px 46px',
-          fontSize: 28,
-          lineHeight: 1.7,
-        }}
-      >
-        {props.lines.map((line, i) => (
-          <div key={i} style={{ display: 'flex', flexWrap: 'wrap' }}>
-            {promptLine(line)}
-          </div>
-        ))}
-      </div>
+      {promptBox(28)}
       <div
         style={{
           display: 'flex',
@@ -1156,7 +1249,7 @@ function B8({ accent, props }: Extract<RenderSlideInput, { template: 'B8' }>) {
           color,
         }}
       >
-        {props.tip ?? '📌 저장해두고 그대로 붙여넣기'}
+        {props.tip ?? props.ctaLine ?? '📌 저장해두고 필요할 때 다시 보기'}
       </div>
     </div>
   );
