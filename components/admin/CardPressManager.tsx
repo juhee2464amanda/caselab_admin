@@ -8,7 +8,15 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { createSupabaseBrowserClient } from '@/lib/supabase/client';
+import { renderSlide } from '@/lib/cardpress/templates';
+import { RenderSlideSchema } from '@/types/cardpress';
 import type { CardSlide, CardTemplateId, CardAccent } from '@/types/cardpress';
+
+const ACCENT_HEX: Record<CardAccent, string> = {
+  'cat-case': '#2F6BFF',
+  'cat-trend': '#7C3AED',
+  'cat-tool': '#0E9F6E',
+};
 
 // 카드프레스 검수 스튜디오 (spec §3-③)
 // 좌: 슬라이드 리스트(on/off·순서·템플릿 교체·인라인 편집) / 우: 실비율 프리뷰 + 캡션·스레드 편집.
@@ -512,6 +520,39 @@ function CardEditor({ card, source }: { card: CardRow; source?: SourceRow }) {
   const [rewriting, setRewriting] = useState<number | null>(null);
   const [viewMode, setViewMode] = useState<'single' | 'grid'>('single');
   const [quickEdit, setQuickEdit] = useState(false);
+  const [previewMode, setPreviewMode] = useState<'live' | 'png'>('live');
+  const [liveEdit, setLiveEdit] = useState<{
+    key: string;
+    rect: { x: number; y: number; w: number; h: number };
+    value: string;
+  } | null>(null);
+
+  // 라이브 캔버스 편집 헬퍼 — 단일 prop 텍스트/스타일 패치
+  function patchPropText(key: string, text: string) {
+    patch((prev) =>
+      prev.map((s, k) => {
+        if (k !== selIdx) return s;
+        const def = FIELDS[s.template].find((d) => d.key === key);
+        if (!def) return s;
+        const v = textToField(text, def);
+        const p = { ...s.props };
+        if (v === undefined) delete p[key];
+        else p[key] = v;
+        return { ...s, props: p };
+      })
+    );
+  }
+  function patchStyle(key: 'accentColor' | 'overlay' | 'coverPos' | 'titleAnchor', value: unknown) {
+    patch((prev) =>
+      prev.map((s, k) => {
+        if (k !== selIdx) return s;
+        const p = { ...s.props };
+        if (value === undefined || value === '') delete p[key];
+        else p[key] = value;
+        return { ...s, props: p };
+      })
+    );
+  }
 
   const sel = slides[selIdx] as CardSlide | undefined;
 
@@ -528,7 +569,7 @@ function CardEditor({ card, source }: { card: CardRow; source?: SourceRow }) {
   const urlRef = useRef<string | null>(null);
 
   useEffect(() => {
-    if (!sel) return;
+    if (!sel || previewMode !== 'png') return;
     let cancelled = false;
     setPreviewLoading(true);
     setPreviewErr(null);
@@ -823,31 +864,121 @@ function CardEditor({ card, source }: { card: CardRow; source?: SourceRow }) {
               {viewMode === 'single' && (
                 <>
                   <button
+                    onClick={() => { setPreviewMode(previewMode === 'live' ? 'png' : 'live'); setLiveEdit(null); }}
+                    className="px-2 py-0.5 rounded border border-border text-xs hover:bg-ink/5"
+                    title="라이브=바로 편집(근사) · PNG=발행 실물 확인"
+                  >
+                    {previewMode === 'live' ? 'PNG 확인' : '라이브 편집'}
+                  </button>
+                  <button
                     onClick={() => setQuickEdit(!quickEdit)}
                     className={`px-2 py-0.5 rounded border text-xs ${quickEdit ? 'bg-accent text-white border-accent' : 'border-border hover:bg-ink/5 text-accent'}`}
-                    title="이 슬라이드의 워딩을 바로 수정"
+                    title="폼으로 수정 (AI 초안 3개 포함)"
                   >
-                    수정
+                    폼
                   </button>
-                  <button onClick={() => setSelIdx(Math.max(0, selIdx - 1))} className="px-2 py-0.5 rounded border border-border text-xs hover:bg-ink/5">←</button>
-                  <button onClick={() => setSelIdx(Math.min(slides.length - 1, selIdx + 1))} className="px-2 py-0.5 rounded border border-border text-xs hover:bg-ink/5">→</button>
+                  <button onClick={() => { setSelIdx(Math.max(0, selIdx - 1)); setLiveEdit(null); }} className="px-2 py-0.5 rounded border border-border text-xs hover:bg-ink/5">←</button>
+                  <button onClick={() => { setSelIdx(Math.min(slides.length - 1, selIdx + 1)); setLiveEdit(null); }} className="px-2 py-0.5 rounded border border-border text-xs hover:bg-ink/5">→</button>
                 </>
               )}
             </div>
           </div>
           {viewMode === 'single' ? (
             <>
-              <div className="relative w-full rounded-lg overflow-hidden border border-border bg-ink/5" style={{ aspectRatio: '4 / 5' }}>
-                {previewUrl && !previewErr && (
-                  <img src={previewUrl} alt="슬라이드 프리뷰" className={`w-full h-full object-contain transition-opacity ${previewLoading ? 'opacity-40' : ''}`} />
-                )}
-                {previewLoading && !previewUrl && (
-                  <div className="absolute inset-0 flex items-center justify-center text-xs text-ink/40">렌더 중…</div>
-                )}
-                {previewErr && (
-                  <div className="absolute inset-0 flex items-center justify-center text-xs text-red-500 p-4 text-center">{previewErr}</div>
-                )}
-              </div>
+              {/* 라이브 편집 툴바 — 색·효과·텍스트 위치 */}
+              {previewMode === 'live' && sel && (
+                <div className="flex items-center gap-3 mb-2 text-[11px] flex-wrap text-ink/60">
+                  <label className="flex items-center gap-1">
+                    포인트색
+                    <input
+                      type="color"
+                      value={(sel.props.accentColor as string) ?? ACCENT_HEX[card.accent]}
+                      onChange={(e) => patchStyle('accentColor', e.target.value)}
+                      className="h-5 w-7 cursor-pointer rounded border border-border p-0"
+                    />
+                  </label>
+                  {typeof sel.props.accentColor === 'string' && (
+                    <button onClick={() => patchStyle('accentColor', undefined)} className="rounded px-1.5 py-0.5 bg-ink/5 hover:bg-ink/10">
+                      기본색
+                    </button>
+                  )}
+                  {['C1', 'B4', 'C5'].includes(sel.template) && typeof sel.props.coverImage === 'string' && (
+                    <label className="flex items-center gap-1">
+                      어둡기
+                      <input
+                        type="range"
+                        min={0}
+                        max={0.85}
+                        step={0.05}
+                        value={(sel.props.overlay as number) ?? (sel.template === 'C5' ? 0.68 : sel.template === 'B4' ? 0.45 : 0.28)}
+                        onChange={(e) => patchStyle('overlay', parseFloat(e.target.value))}
+                        className="w-20"
+                      />
+                    </label>
+                  )}
+                  {sel.template === 'C1' && (
+                    <label className="flex items-center gap-1">
+                      텍스트 위치
+                      <select
+                        value={(sel.props.titleAnchor as string) ?? 'bottom'}
+                        onChange={(e) => patchStyle('titleAnchor', e.target.value)}
+                        className="border border-border rounded px-1 py-0.5 bg-transparent"
+                      >
+                        <option value="bottom">하단</option>
+                        <option value="center">중앙</option>
+                        <option value="top">상단</option>
+                      </select>
+                    </label>
+                  )}
+                  <span className="text-ink/35">텍스트 클릭=수정 · 사진 드래그=이동 · 트레이에서 끌어오기=배치</span>
+                </div>
+              )}
+
+              {previewMode === 'live' && sel ? (
+                <div className="relative">
+                  <LiveSlide
+                    slide={sel}
+                    accent={card.accent}
+                    onEditProp={(key, rect) => {
+                      const def = FIELDS[sel.template].find((d) => d.key === key);
+                      if (!def) return;
+                      setLiveEdit({ key, rect, value: fieldToText((sel.props as Record<string, unknown>)[key], def) });
+                    }}
+                    onDropImage={assignImage}
+                    onPan={(pos) => patchStyle('coverPos', pos)}
+                  />
+                  {liveEdit && (
+                    <textarea
+                      autoFocus
+                      className="absolute z-10 rounded-md border-2 border-accent bg-white text-ink shadow-lg p-2 text-sm leading-snug"
+                      style={{
+                        left: Math.max(0, Math.min(liveEdit.rect.x, 9999)),
+                        top: liveEdit.rect.y,
+                        width: Math.max(220, liveEdit.rect.w + 24),
+                        minHeight: Math.max(52, liveEdit.rect.h + 16),
+                      }}
+                      defaultValue={liveEdit.value}
+                      onBlur={(e) => { patchPropText(liveEdit.key, e.target.value); setLiveEdit(null); }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Escape') setLiveEdit(null);
+                        if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) (e.target as HTMLTextAreaElement).blur();
+                      }}
+                    />
+                  )}
+                </div>
+              ) : (
+                <div className="relative w-full rounded-lg overflow-hidden border border-border bg-ink/5" style={{ aspectRatio: '4 / 5' }}>
+                  {previewUrl && !previewErr && (
+                    <img src={previewUrl} alt="슬라이드 프리뷰" className={`w-full h-full object-contain transition-opacity ${previewLoading ? 'opacity-40' : ''}`} />
+                  )}
+                  {previewLoading && !previewUrl && (
+                    <div className="absolute inset-0 flex items-center justify-center text-xs text-ink/40">렌더 중…</div>
+                  )}
+                  {previewErr && (
+                    <div className="absolute inset-0 flex items-center justify-center text-xs text-red-500 p-4 text-center">{previewErr}</div>
+                  )}
+                </div>
+              )}
               {sel && !sel.enabled && <p className="text-xs text-amber-600 mt-2">이 슬라이드는 제외 상태예요.</p>}
               {/* 프리뷰 빠른 수정 — 적용하면 위 프리뷰가 바로 재렌더 */}
               {quickEdit && sel && (
@@ -973,6 +1104,124 @@ function PublishPanel({ card, dirty }: { card: CardRow; dirty: boolean }) {
         <p className="text-xs text-ink/40">
           발행 이력: {card.published_to.map((p) => `${p.channel} (${p.at.slice(0, 16).replace('T', ' ')})`).join(' · ')}
         </p>
+      )}
+    </div>
+  );
+}
+
+// ── 라이브 캔버스 — 템플릿을 브라우저에서 직접 렌더(근사), 그 위에서 편집 ──
+// 클릭한 텍스트 조각 → 그 텍스트가 들어있는 prop 필드를 역추적(가장 긴 값 우선).
+// 사진(data-bg) 드래그 = 배경 위치 팬, 트레이 드롭 = 이미지 배치. 최종 실물은 PNG 토글로 확인.
+function LiveSlide({
+  slide,
+  accent,
+  onEditProp,
+  onDropImage,
+  onPan,
+}: {
+  slide: CardSlide;
+  accent: CardAccent;
+  onEditProp: (key: string, rect: { x: number; y: number; w: number; h: number }) => void;
+  onDropImage: (url: string) => void;
+  onPan: (pos: string) => void;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [w, setW] = useState(0);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => setW(el.clientWidth));
+    ro.observe(el);
+    setW(el.clientWidth);
+    return () => ro.disconnect();
+  }, []);
+  const scale = w > 0 ? w / 1080 : 0;
+  const pan = useRef<{ x0: number; y0: number; px: number; py: number; moved: boolean } | null>(null);
+  const justPanned = useRef(false); // 팬 종료 직후의 click을 텍스트 편집으로 오인하지 않게
+
+  const parsed = RenderSlideSchema.safeParse({ template: slide.template, accent, props: slide.props });
+
+  function posOf(): [number, number] {
+    const m = typeof slide.props.coverPos === 'string' ? slide.props.coverPos.match(/([\d.]+)%\s+([\d.]+)%/) : null;
+    return m ? [parseFloat(m[1]), parseFloat(m[2])] : [50, 50];
+  }
+
+  function onMouseDown(e: React.MouseEvent) {
+    const t = e.target as HTMLElement;
+    if (!t.closest('[data-bg]')) return;
+    const [px, py] = posOf();
+    pan.current = { x0: e.clientX, y0: e.clientY, px, py, moved: false };
+    e.preventDefault();
+  }
+  function onMouseMove(e: React.MouseEvent) {
+    if (!pan.current || w === 0) return;
+    const dx = ((e.clientX - pan.current.x0) / w) * 100;
+    const dy = ((e.clientY - pan.current.y0) / (w * 1.25)) * 100;
+    if (Math.abs(dx) + Math.abs(dy) > 1) {
+      pan.current.moved = true;
+      justPanned.current = true;
+    }
+    const nx = Math.min(100, Math.max(0, pan.current.px - dx));
+    const ny = Math.min(100, Math.max(0, pan.current.py - dy));
+    if (pan.current.moved) onPan(`${nx.toFixed(1)}% ${ny.toFixed(1)}%`);
+  }
+  function onMouseUp() {
+    pan.current = null;
+  }
+
+  function onClick(e: React.MouseEvent) {
+    if (justPanned.current) {
+      justPanned.current = false;
+      return;
+    }
+    const t = e.target as HTMLElement;
+    if (t.closest('[data-bg]') && !(t.textContent ?? '').trim()) return;
+    const text = (t.textContent ?? '').trim().replace(/\s+/g, ' ');
+    if (!text) return;
+    const defs = FIELDS[slide.template];
+    let best: FieldDef | null = null;
+    let bestLen = -1;
+    for (const d of defs) {
+      const v = fieldToText((slide.props as Record<string, unknown>)[d.key], d)
+        .replace(/\*\*/g, '')
+        .replace(/\s+/g, ' ');
+      if (v && v.includes(text) && v.length > bestLen) {
+        best = d;
+        bestLen = v.length;
+      }
+    }
+    if (!best) return;
+    const cr = ref.current!.getBoundingClientRect();
+    const tr = t.getBoundingClientRect();
+    onEditProp(best.key, { x: tr.left - cr.left, y: tr.top - cr.top, w: tr.width, h: tr.height });
+  }
+
+  return (
+    <div
+      ref={ref}
+      className="relative w-full rounded-lg overflow-hidden border border-border bg-ink/5 cursor-text select-none"
+      style={{ aspectRatio: '4 / 5' }}
+      onClick={onClick}
+      onMouseDown={onMouseDown}
+      onMouseMove={onMouseMove}
+      onMouseUp={onMouseUp}
+      onMouseLeave={onMouseUp}
+      onDragOver={(e) => e.preventDefault()}
+      onDrop={(e) => {
+        e.preventDefault();
+        const url = e.dataTransfer.getData('text/plain');
+        if (url.startsWith('http')) onDropImage(url);
+      }}
+      title="텍스트 클릭=수정 · 사진 드래그=위치 · 트레이에서 끌어다 놓기=배치"
+    >
+      {scale > 0 && parsed.success ? (
+        <div style={{ width: 1080, height: 1350, transform: `scale(${scale})`, transformOrigin: 'top left', fontFamily: "'Pretendard','Apple SD Gothic Neo',sans-serif" }}>
+          {renderSlide(parsed.data)}
+        </div>
+      ) : (
+        <div className="absolute inset-0 flex items-center justify-center text-xs text-red-500 p-4 text-center">
+          {parsed.success ? '' : '슬라이드 데이터 오류 — 편집 폼에서 수정하세요'}
+        </div>
       )}
     </div>
   );
@@ -1262,7 +1511,13 @@ function ImageTray({ card, onPick, onCover, onThreadsCover }: { card: CardRow; o
 
   const Thumb = ({ url, thumb, credit }: { url: string; thumb: string; credit?: string }) => (
     <div className="relative group shrink-0">
-      <img src={thumb} alt={credit ?? ''} className="h-20 w-16 object-cover rounded-md border border-border" />
+      <img
+        src={thumb}
+        alt={credit ?? ''}
+        className="h-20 w-16 object-cover rounded-md border border-border cursor-grab"
+        draggable
+        onDragStart={(e) => e.dataTransfer.setData('text/plain', url)}
+      />
       <div className="absolute inset-0 hidden group-hover:flex flex-col items-center justify-center gap-1 bg-black/55 rounded-md">
         <button onClick={() => onPick(url)} className="text-[10px] text-white bg-accent rounded px-1.5 py-0.5">선택 슬라이드에</button>
         <button onClick={() => onThreadsCover(url)} className="text-[10px] text-white bg-white/20 rounded px-1.5 py-0.5">스레드 커버로</button>
@@ -1280,7 +1535,13 @@ function ImageTray({ card, onPick, onCover, onThreadsCover }: { card: CardRow; o
             {card.cover_candidates!.slice(0, 2).map((c) => (
               <div key={c.full} className="relative group shrink-0">
                 <button onClick={() => onCover(c.full)} title="커버에 적용" className="block">
-                  <img src={c.thumb} alt={c.credit} className="h-32 w-[102px] object-cover rounded-md border border-border group-hover:ring-2 group-hover:ring-accent transition-shadow" />
+                  <img
+                    src={c.thumb}
+                    alt={c.credit}
+                    className="h-32 w-[102px] object-cover rounded-md border border-border group-hover:ring-2 group-hover:ring-accent transition-shadow cursor-grab"
+                    draggable
+                    onDragStart={(e) => e.dataTransfer.setData('text/plain', c.full)}
+                  />
                 </button>
                 <button
                   onClick={() => onThreadsCover(c.full)}

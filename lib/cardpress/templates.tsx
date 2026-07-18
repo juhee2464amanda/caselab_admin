@@ -37,6 +37,13 @@ function mixWithWhite(hex: string, ratio: number): string {
 
 const FONT = 'Pretendard';
 
+// 슬라이드별 포인트색 오버라이드 (캔버스 편집) — 유효한 hex일 때만
+function accentOf(accent: CardAccent, props: { accentColor?: string }): string {
+  return props.accentColor && /^#[0-9a-fA-F]{6}$/.test(props.accentColor)
+    ? props.accentColor
+    : ACCENTS[accent];
+}
+
 // **강조** 마커 → 포인트색 볼드 스팬. pre-wrap: 세그먼트 경계의 공백 유지 + 내부 줄바꿈 허용.
 function em(text: string, accent: string, base: CSSProperties = {}): ReactNode[] {
   return text.split(/\*\*(.+?)\*\*/g).map((seg, i) =>
@@ -120,10 +127,11 @@ const cardBase: CSSProperties = {
 
 // 사진 배경 + 톤 통일 스크림 (벤치마크 룰: 어떤 사진이 와도 살아남는 후처리가 톤 통일의 90%)
 // overlay: 전체를 일괄 어둡게(0.2~0.35 / 빅넘버형 0.6+), 하단 45%는 0.85까지 떨어지는 그라데이션.
-function PhotoBg({ image, overlay }: { image?: string; overlay: number }) {
+function PhotoBg({ image, overlay, pos }: { image?: string; overlay: number; pos?: string }) {
   return (
     <>
       <div
+        data-bg={image ? '1' : undefined}
         style={{
           position: 'absolute',
           top: 0,
@@ -134,7 +142,8 @@ function PhotoBg({ image, overlay }: { image?: string; overlay: number }) {
           backgroundImage: image
             ? `url(${image})`
             : 'linear-gradient(135deg,#232a3d 0%,#12151f 100%)',
-          backgroundSize: `${CARD_W}px ${CARD_H}px`,
+          backgroundSize: 'cover',
+          backgroundPosition: pos ?? '50% 50%',
         }}
       />
       <div
@@ -166,17 +175,16 @@ function PhotoBg({ image, overlay }: { image?: string; overlay: number }) {
 
 // ---------- C1 · 사진몰입형 커버 ----------
 function C1({ accent, props }: Extract<RenderSlideInput, { template: 'C1' }>) {
-  const color = ACCENTS[accent];
+  const color = accentOf(accent, props);
   return (
     <div style={{ ...cardBase, background: '#1a1e2a', color: '#fff' }}>
-      <PhotoBg image={props.coverImage} overlay={0.28} />
+      <PhotoBg image={props.coverImage} overlay={props.overlay ?? 0.28} pos={props.coverPos} />
       <div
         style={{
           position: 'relative',
           flexGrow: 1,
           display: 'flex',
           flexDirection: 'column',
-          justifyContent: 'space-between',
           padding: 72,
         }}
       >
@@ -191,7 +199,17 @@ function C1({ accent, props }: Extract<RenderSlideInput, { template: 'C1' }>) {
             paddingBottom: 4,
           }}
         />
-        <div style={{ display: 'flex', flexDirection: 'column' }}>
+        <div
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            ...(props.titleAnchor === 'top'
+              ? { marginTop: 48 }
+              : props.titleAnchor === 'center'
+                ? { marginTop: 'auto', marginBottom: 'auto' }
+                : { marginTop: 'auto' }),
+          }}
+        >
           {props.kicker ? (
             <div
               style={{
@@ -255,10 +273,10 @@ function C1({ accent, props }: Extract<RenderSlideInput, { template: 'C1' }>) {
 
 // ---------- C5 · 빅넘버 커버 (사진 실패 폴백형 — 사진은 텍스처, 숫자/단어가 주인공) ----------
 function C5({ accent, props }: Extract<RenderSlideInput, { template: 'C5' }>) {
-  const color = ACCENTS[accent];
+  const color = accentOf(accent, props);
   return (
     <div style={{ ...cardBase, background: DARK_BG, color: '#fff' }}>
-      <PhotoBg image={props.coverImage} overlay={0.68} />
+      <PhotoBg image={props.coverImage} overlay={props.overlay ?? 0.68} pos={props.coverPos} />
       <div
         style={{
           position: 'relative',
@@ -333,7 +351,7 @@ function C5({ accent, props }: Extract<RenderSlideInput, { template: 'C5' }>) {
 
 // ---------- B2 · 이미지 + 배너 + 불릿 ----------
 function B2({ accent, props }: Extract<RenderSlideInput, { template: 'B2' }>) {
-  const color = ACCENTS[accent];
+  const color = accentOf(accent, props);
   return (
     <div style={{ ...cardBase, background: '#fff', color: INK, padding: '80px 72px' }}>
       <Topbar color={INK} right={props.page} />
@@ -528,7 +546,7 @@ function B5({ props }: Extract<RenderSlideInput, { template: 'B5' }>) {
 
 // ---------- O1 · 마무리 · CTA (포인트색 배경) ----------
 function O1({ accent, props }: Extract<RenderSlideInput, { template: 'O1' }>) {
-  const color = ACCENTS[accent];
+  const color = accentOf(accent, props);
   const actions = props.actions ?? [
     { icon: '🔖', text: '저장해두고 필요할 때 다시 보기' },
     { icon: '💬', text: '여러분 케이스도 댓글로 남겨주세요' },
@@ -639,7 +657,7 @@ function hexToRgba(hex: string, alpha: number): string {
 
 // ---------- C2 · 문장형 다크 커버 ----------
 function C2({ accent, props }: Extract<RenderSlideInput, { template: 'C2' }>) {
-  const color = ACCENTS[accent];
+  const color = accentOf(accent, props);
   return (
     <div style={{ ...cardBase, background: DARK_BG, color: '#fff', padding: '80px 72px' }}>
       <Topbar color="#fff" right={props.pill ?? `⚡ ${DEFAULT_TAGS[accent]}`} rightStyle={pillStyle()} />
@@ -692,7 +710,7 @@ function C2({ accent, props }: Extract<RenderSlideInput, { template: 'C2' }>) {
 
 // ---------- C3 · 툴/뉴스 커버 (로고 배지 중앙) ----------
 function C3({ accent, props }: Extract<RenderSlideInput, { template: 'C3' }>) {
-  const color = ACCENTS[accent];
+  const color = accentOf(accent, props);
   return (
     <div style={{ ...cardBase, background: DARK_BG, color: '#fff', padding: '80px 72px' }}>
       <Topbar color="#fff" right={props.pill ?? `🔧 ${DEFAULT_TAGS[accent]}`} rightStyle={pillStyle()} />
@@ -762,7 +780,7 @@ function C3({ accent, props }: Extract<RenderSlideInput, { template: 'C3' }>) {
 
 // ---------- C4 · VS 비교 커버 ----------
 function C4({ accent, props }: Extract<RenderSlideInput, { template: 'C4' }>) {
-  const color = ACCENTS[accent];
+  const color = accentOf(accent, props);
   const vsBox: CSSProperties = {
     display: 'flex',
     flexDirection: 'column',
@@ -852,7 +870,7 @@ function C4({ accent, props }: Extract<RenderSlideInput, { template: 'C4' }>) {
 
 // ---------- B1 · 개요·타임라인 리스트 ----------
 function B1({ accent, props }: Extract<RenderSlideInput, { template: 'B1' }>) {
-  const color = ACCENTS[accent];
+  const color = accentOf(accent, props);
   return (
     <div style={{ ...cardBase, background: '#fff', color: INK, padding: '80px 72px' }}>
       <Topbar color={INK} right={props.page} />
@@ -929,7 +947,7 @@ function B1({ accent, props }: Extract<RenderSlideInput, { template: 'B1' }>) {
 
 // ---------- B3 · 용어·정의 카드 ----------
 function B3({ accent, props }: Extract<RenderSlideInput, { template: 'B3' }>) {
-  const color = ACCENTS[accent];
+  const color = accentOf(accent, props);
   return (
     <div style={{ ...cardBase, background: '#fff', color: INK, padding: '80px 72px' }}>
       <Topbar color={INK} right={props.page} />
@@ -1016,10 +1034,10 @@ function B3({ accent, props }: Extract<RenderSlideInput, { template: 'B3' }>) {
 
 // ---------- B4 · 인용/선언 카드 (사진 위 한 문장) ----------
 function B4({ accent, props }: Extract<RenderSlideInput, { template: 'B4' }>) {
-  const color = ACCENTS[accent];
+  const color = accentOf(accent, props);
   return (
     <div style={{ ...cardBase, background: '#1c2740', color: '#fff' }}>
-      <PhotoBg image={props.coverImage} overlay={0.45} />
+      <PhotoBg image={props.coverImage} overlay={props.overlay ?? 0.45} pos={props.coverPos} />
       <div
         style={{
           position: 'relative',
@@ -1063,7 +1081,7 @@ function B4({ accent, props }: Extract<RenderSlideInput, { template: 'B4' }>) {
 
 // ---------- B6 · 스텝 프로세스 ----------
 function B6({ accent, props }: Extract<RenderSlideInput, { template: 'B6' }>) {
-  const color = ACCENTS[accent];
+  const color = accentOf(accent, props);
   return (
     <div style={{ ...cardBase, background: '#fff', color: INK, padding: '80px 72px' }}>
       <Topbar color={INK} right={props.page} />
@@ -1205,7 +1223,7 @@ function promptLine(line: string): ReactNode[] {
 }
 
 function B8({ accent, props }: Extract<RenderSlideInput, { template: 'B8' }>) {
-  const color = ACCENTS[accent];
+  const color = accentOf(accent, props);
   const promptBox = (fontSize: number) => (
     <div
       style={{
@@ -1363,7 +1381,7 @@ const CALLOUT_POS: Record<'tl' | 'tr' | 'bl' | 'br', CSSProperties> = {
 };
 
 function B9({ accent, props }: Extract<RenderSlideInput, { template: 'B9' }>) {
-  const color = ACCENTS[accent];
+  const color = accentOf(accent, props);
   return (
     <div style={{ ...cardBase, background: '#fff', color: INK, padding: '80px 72px' }}>
       <Topbar color={INK} right={props.page} />

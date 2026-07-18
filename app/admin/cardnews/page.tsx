@@ -24,6 +24,12 @@ export default async function AdminCardnews() {
 
   return (
     <div className="p-4 sm:p-8">
+      {/* 라이브 캔버스가 실물과 같은 서체로 보이도록 Pretendard 로드 (Satori 렌더와 동일 폰트) */}
+      {/* eslint-disable-next-line @next/next/no-css-tags */}
+      <link
+        rel="stylesheet"
+        href="https://cdn.jsdelivr.net/npm/pretendard@1.3.9/dist/web/static/pretendard.min.css"
+      />
       <header className="mb-6">
         <h1 className="font-serif text-xl sm:text-2xl font-semibold">카드뉴스</h1>
         <p className="text-sm text-ink/60 mt-1">

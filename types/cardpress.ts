@@ -9,7 +9,17 @@ export type CardAccent = z.infer<typeof CardAccentSchema>;
 // 텍스트 규칙: title 등은 '\n'으로 명시적 줄바꿈. hl은 title 안의 부분 문자열(형광펜, 슬라이드당 1개).
 // 불릿·본문 텍스트는 **강조** 마커로 포인트색 볼드 처리.
 
+
+// 캔버스 편집용 스타일 오버라이드 — 검수 UI에서 조정, 발행 렌더에도 그대로 반영
+export const StyleOverrideFields = {
+  accentColor: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(), // 슬라이드별 포인트색 오버라이드
+  overlay: z.number().min(0).max(0.9).optional(),                // 사진 오버레이 어둡기 (커버류)
+  coverPos: z.string().optional(),                                // 배경 위치 "50% 30%" (사진 팬)
+  titleAnchor: z.enum(['top', 'center', 'bottom']).optional(),    // 커버 텍스트 앵커 (C1)
+};
+
 export const C1PropsSchema = z.object({
+  ...StyleOverrideFields,
   kicker: z.string().optional(),     // 헤드라인 위 프레이밍 한 줄 ("~의 경제학") — 벤치마크 4층 구조
   title: z.string().min(1),          // 커버 제목 (≤17자 권장, '\n' 줄바꿈)
   hl: z.string().optional(),         // title 안의 형광펜 대상 부분 문자열
@@ -21,6 +31,7 @@ export const C1PropsSchema = z.object({
 
 // C5 빅넘버 커버 — 사진이 실패해도 되는 폴백형 (벤치마크: 사진을 텍스처 수준으로 죽이고 숫자/단어로 승부)
 export const C5PropsSchema = z.object({
+  ...StyleOverrideFields,
   kicker: z.string().optional(),     // 맥락 1줄
   big: z.string().min(1),            // 거대 숫자/단어 ("10배", "FOCUS")
   resolve: z.string().min(1),        // 해소 1줄 ('\n' 허용, **강조** 지원)
@@ -29,6 +40,7 @@ export const C5PropsSchema = z.object({
 });
 
 export const B2PropsSchema = z.object({
+  ...StyleOverrideFields,
   page: z.string().optional(),       // "4 / 8"
   banner: z.string().min(1),         // "✓ AI에게 시킨 것"
   bullets: z.array(z.string().min(1)).min(1).max(5), // **강조** 마커 지원
@@ -36,6 +48,7 @@ export const B2PropsSchema = z.object({
 });
 
 export const B5PropsSchema = z.object({
+  ...StyleOverrideFields,
   page: z.string().optional(),
   heading: z.string().optional(),    // 기본 '솔직 후기'
   goodLabel: z.string().optional(),  // 기본 '잘된 것'
@@ -45,6 +58,7 @@ export const B5PropsSchema = z.object({
 });
 
 export const O1PropsSchema = z.object({
+  ...StyleOverrideFields,
   page: z.string().optional(),
   eyebrow: z.string().optional(),    // 기본 '오늘의 정리'
   title: z.string().min(1),          // '\n' 줄바꿈, hl 지원(흰 반투명 하이라이트)
@@ -58,6 +72,7 @@ export const O1PropsSchema = z.object({
 });
 
 export const C2PropsSchema = z.object({
+  ...StyleOverrideFields,
   title: z.string().min(1),          // 선언형 문장 ('\n' 줄바꿈, hl 형광펜)
   hl: z.string().optional(),
   eyebrow: z.string().optional(),    // "모두가 유행이라는데"
@@ -66,6 +81,7 @@ export const C2PropsSchema = z.object({
 });
 
 export const C3PropsSchema = z.object({
+  ...StyleOverrideFields,
   title: z.string().min(1),
   hl: z.string().optional(),
   sub: z.string().optional(),
@@ -74,6 +90,7 @@ export const C3PropsSchema = z.object({
 });
 
 export const C4PropsSchema = z.object({
+  ...StyleOverrideFields,
   eyebrow: z.string().optional(),    // "이미지 생성, 뭐가 더 낫나"
   vsA: z.object({ name: z.string(), by: z.string().optional() }),
   vsB: z.object({ name: z.string(), by: z.string().optional() }),
@@ -82,6 +99,7 @@ export const C4PropsSchema = z.object({
 });
 
 export const B1PropsSchema = z.object({
+  ...StyleOverrideFields,
   page: z.string().optional(),
   lead: z.string().optional(),       // 도입 문장 (**강조** 지원)
   heading: z.string().min(1),        // "먼저 일 푸는 순서부터"
@@ -90,6 +108,7 @@ export const B1PropsSchema = z.object({
 });
 
 export const B3PropsSchema = z.object({
+  ...StyleOverrideFields,
   page: z.string().optional(),
   badge: z.string().optional(),      // 기본 '30초 개념'
   term: z.string().min(1),           // 큰 용어 (96px)
@@ -99,6 +118,7 @@ export const B3PropsSchema = z.object({
 });
 
 export const B4PropsSchema = z.object({
+  ...StyleOverrideFields,
   title: z.string().min(1),          // 사진 위 한 문장 ('\n' 줄바꿈, hl 형광펜)
   hl: z.string().optional(),
   attribution: z.string().optional(),// "— 실험 3주차의 기록"
@@ -106,6 +126,7 @@ export const B4PropsSchema = z.object({
 });
 
 export const B6PropsSchema = z.object({
+  ...StyleOverrideFields,
   page: z.string().optional(),
   heading: z.string().min(1),        // "이렇게 세팅했어요"
   hl: z.string().optional(),
@@ -113,6 +134,7 @@ export const B6PropsSchema = z.object({
 });
 
 export const B7PropsSchema = z.object({
+  ...StyleOverrideFields,
   page: z.string().optional(),
   big: z.string().min(1),            // "40"
   unit: z.string().optional(),       // "%"
@@ -122,6 +144,7 @@ export const B7PropsSchema = z.object({
 
 // B8 — "복사" 문법(웹)이 아니라 인스타 문법: 패턴을 팔고, 전문은 CTA(댓글→DM/본가)로.
 export const B8PropsSchema = z.object({
+  ...StyleOverrideFields,
   page: z.string().optional(),
   badge: z.string().optional(),      // "패턴 03" 등 작은 배지 (기본 '프롬프트 패턴')
   patternName: z.string().optional(),// 패턴명 (크게) — 있으면 신레이아웃으로 렌더
@@ -136,6 +159,7 @@ export const B8PropsSchema = z.object({
 });
 
 export const B9PropsSchema = z.object({
+  ...StyleOverrideFields,
   page: z.string().optional(),
   lead: z.string().optional(),       // "화면에서 **여기**만 보면 됩니다."
   shot: z.string().url(),            // 스크린샷 url (필수 — 없으면 이 슬라이드를 안 씀)
