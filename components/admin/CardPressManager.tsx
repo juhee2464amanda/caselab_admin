@@ -606,6 +606,7 @@ function CardEditor({ card, source }: { card: CardRow; source?: SourceRow }) {
         if (i !== 0) return s;
         const props: Record<string, unknown> = { ...s.props, coverImage: url };
         if (s.template === 'C2' || s.template === 'C3') {
+          if (props.eyebrow && !props.kicker) props.kicker = props.eyebrow; // 도입 문구는 키커로 승계
           delete props.eyebrow;
           delete props.pill;
           delete props.logoText;
