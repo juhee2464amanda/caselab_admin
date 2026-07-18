@@ -258,15 +258,39 @@ export function CardPressManager({ initial, sources }: { initial: CardRow[]; sou
         : (b.published_at ?? '').localeCompare(a.published_at ?? '')
     );
 
-  async function generateFor(sourceId: string) {
-    setGenerating(sourceId);
+  // 만들기 씬: 소재 선택 → 기획 설정(엣지·CTA) → 생성 시작 → 완료 시 새 카드로 자동 진입
+  const [composeId, setComposeId] = useState<string | null>(null);
+  const [composeEdge, setComposeEdge] = useState('');
+  const [composeCta, setComposeCta] = useState<'comment_dm' | 'info_save'>('comment_dm');
+  const [composeKeyword, setComposeKeyword] = useState('프롬프트');
+  const composeSource = composeId ? sourceMap.get(composeId) : null;
+
+  function startCompose(sourceId: string) {
+    setComposeId(sourceId);
+    setComposeEdge('');
+    setComposeCta('comment_dm');
+    setComposeKeyword('프롬프트');
+  }
+
+  async function createCard() {
+    if (!composeId) return;
+    setGenerating(composeId);
     try {
       const res = await fetch('/api/cardpress/generate', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ sourceType: 'content', sourceId }),
+        body: JSON.stringify({
+          sourceType: 'content',
+          sourceId: composeId,
+          edge: composeEdge.trim() || undefined,
+          ctaType: composeCta,
+          ctaKeyword: composeCta === 'comment_dm' ? composeKeyword.trim() || undefined : undefined,
+        }),
       });
-      if (!res.ok) throw new Error((await res.json()).error ?? `HTTP ${res.status}`);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? `HTTP ${res.status}`);
+      setComposeId(null);
+      if (data.card?.id) setSelectedId(data.card.id); // 완료 즉시 검수로 진입
       router.refresh();
     } catch (e) {
       alert(`생성 실패: ${(e as Error).message}`);
@@ -304,16 +328,83 @@ export function CardPressManager({ initial, sources }: { initial: CardRow[]; sou
         {withoutCard.length > 0 ? (
           <>
             <Input value={srcQuery} onChange={(e) => setSrcQuery(e.target.value)} placeholder="제목 검색" />
-            <div className="space-y-1.5 max-h-60 overflow-y-auto">
+            <div className="space-y-1.5 max-h-72 overflow-y-auto">
               {candidates.map((s) => (
-                <div key={s.id} className="flex items-center justify-between gap-3 text-sm">
-                  <span className="truncate">
-                    {s.title}
-                    <span className="text-[11px] text-ink/40 ml-1.5">조회 {s.view_count ?? 0}</span>
-                  </span>
-                  <Button size="sm" variant="outline" disabled={generating !== null} onClick={() => generateFor(s.id)}>
-                    {generating === s.id ? '생성 중… (수 분 소요)' : '카드 생성'}
-                  </Button>
+                <div key={s.id}>
+                  <div className="flex items-center justify-between gap-3 text-sm">
+                    <span className="truncate">
+                      {s.title}
+                      <span className="text-[11px] text-ink/40 ml-1.5">조회 {s.view_count ?? 0}</span>
+                    </span>
+                    <Button
+                      size="sm"
+                      variant={composeId === s.id ? 'accent' : 'outline'}
+                      disabled={generating !== null}
+                      onClick={() => (composeId === s.id ? setComposeId(null) : startCompose(s.id))}
+                    >
+                      {composeId === s.id ? '닫기' : '만들기'}
+                    </Button>
+                  </div>
+
+                  {/* 기획 설정 패널 — 생성 전에 방향을 정하는 씬 */}
+                  {composeId === s.id && (
+                    <div className="mt-2 mb-1 rounded-lg border border-accent/30 bg-accent/5 p-3 space-y-2.5">
+                      {generating === s.id ? (
+                        <div className="text-sm text-ink/70 py-2">
+                          <span className="font-semibold">AI가 카드를 만드는 중…</span> (3~10분 소요)
+                          <p className="text-xs text-ink/40 mt-1">
+                            본문을 슬라이드로 매핑하고 압축 재작성합니다. 완료되면 아래 목록에 나타나고 바로 검수 화면으로 이동해요.
+                            이 탭을 닫지만 않으면 다른 작업을 해도 됩니다.
+                          </p>
+                        </div>
+                      ) : (
+                        <>
+                          <div>
+                            <Label className="text-xs">기획방향 / 엣지 <span className="text-ink/40">(선택 — 비우면 AI가 이 콘텐츠의 차별점을 스스로 정의)</span></Label>
+                            <Textarea
+                              className="mt-1"
+                              rows={2}
+                              value={composeEdge}
+                              onChange={(e) => setComposeEdge(e.target.value)}
+                              placeholder={'예: "앤트로픽 현직 엔지니어가 직접 검증했다"는 신뢰가 이 글의 엣지 — 커버와 도입에서 이걸 세울 것'}
+                            />
+                          </div>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <Label className="text-xs shrink-0">CTA</Label>
+                            {([
+                              ['comment_dm', '댓글→DM 참여형'],
+                              ['info_save', '정보 제공형'],
+                            ] as const).map(([v, label]) => (
+                              <button
+                                key={v}
+                                onClick={() => setComposeCta(v)}
+                                className={`text-xs rounded-full px-2.5 py-1 ${composeCta === v ? 'bg-accent text-white' : 'bg-ink/5 text-ink/60 hover:bg-ink/10'}`}
+                              >
+                                {label}
+                              </button>
+                            ))}
+                            {composeCta === 'comment_dm' && (
+                              <>
+                                <span className="text-[11px] text-ink/40">댓글 키워드:</span>
+                                <Input value={composeKeyword} onChange={(e) => setComposeKeyword(e.target.value)} className="text-sm w-28" />
+                              </>
+                            )}
+                          </div>
+                          <p className="text-[11px] text-ink/40">
+                            {composeCta === 'comment_dm'
+                              ? `캡션·마무리가 "댓글에 '${composeKeyword || '키워드'}' 남기면 DM으로" 문법으로 생성됩니다 (ManyChat 자동화 연동 전제)`
+                              : '캡션에 대표 프롬프트 전문 + 프로필 링크 유도 문법으로 생성됩니다'}
+                          </p>
+                          <div className="flex justify-end gap-2">
+                            <Button size="sm" variant="outline" onClick={() => setComposeId(null)}>취소</Button>
+                            <Button size="sm" variant="accent" onClick={createCard} disabled={generating !== null}>
+                              생성 시작 (3~10분)
+                            </Button>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  )}
                 </div>
               ))}
               {candidates.length === 0 && <p className="text-xs text-ink/40">조건에 맞는 콘텐츠가 없어요.</p>}
