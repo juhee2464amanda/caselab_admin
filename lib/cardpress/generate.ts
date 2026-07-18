@@ -85,6 +85,36 @@ function lintLen(name: string, text: string | undefined, max: number): string[] 
   return t.length > max ? [`${name} "${t.slice(0, 20)}…": ${t.length}자 (최대 ${max}자)`] : [];
 }
 
+/** 두 텍스트가 같은 정보를 반복하는지 — 공백 제거 후 5자 이상 공통 부분 문자열 검출 */
+function sharesLongSubstring(a?: string, b?: string, min = 5): boolean {
+  if (!a || !b) return false;
+  const x = plain(a).replace(/\s/g, '');
+  const y = plain(b).replace(/\s/g, '');
+  for (let i = 0; i + min <= x.length; i++) if (y.includes(x.slice(i, i + min))) return true;
+  return false;
+}
+
+/** 커버 전용 검사 — ① 소스 제목의 영문 키워드(제품·모델명)가 커버 텍스트에 존재 ② 필드 간 정보 중복 금지 */
+function lintCover(props: Record<string, string>, sourceTitle: string): string[] {
+  const issues: string[] = [];
+  const coverText = ['kicker', 'eyebrow', 'title', 'sub', 'big', 'resolve']
+    .map((k) => props[k] ?? '')
+    .join(' ');
+  // 제품·모델명 휴리스틱: 소스 제목 속 영문(+숫자) 토큰 (예: "Fable 5", "NotebookLM")
+  const keywords = sourceTitle.match(/[A-Za-z][A-Za-z0-9.-]*(?: \d+[A-Za-z0-9.]*)?/g) ?? [];
+  const norm = (s: string) => s.toLowerCase().replace(/\s/g, '');
+  if (keywords.length > 0 && !keywords.some((k) => norm(coverText).includes(norm(k)))) {
+    issues.push(`핵심 키워드(${keywords.join('/')})가 커버 텍스트에 없음 — 무엇에 관한 글인지 커버에서 보여야 함`);
+  }
+  const pairs: Array<[string, string]> = [
+    ['kicker', 'sub'], ['kicker', 'title'], ['eyebrow', 'sub'], ['eyebrow', 'title'], ['sub', 'title'],
+  ];
+  for (const [a, b] of pairs)
+    if (sharesLongSubstring(props[a], props[b]))
+      issues.push(`${a}와 ${b}가 같은 정보 반복("${props[a]}" ↔ "${props[b]}") — 각 필드는 서로 다른 정보 1개씩`);
+  return issues;
+}
+
 /** 템플릿별 글자수/줄수 규격 — Satori 렌더에서 넘치지 않는 경험적 한계값 */
 function lintSlide(template: CardTemplateId, props: Record<string, unknown>): string[] {
   const p = props as Record<string, string> & {
@@ -211,6 +241,11 @@ const SYSTEM = `당신은 케이스랩(caselab)의 SNS 콘텐츠 에디터입니
 - 종결어미는 "~습니다/이었다" 단정 서술형, 물음표는 피한다
 - 커버 템플릿 선택: 핵심이 숫자/단어 하나로 요약되면 C5(빅넘버), 강한 인용 한 문장이 있으면 C2(선언), 그 외 C1/C2 — 계획의 대안 안에서 판단
 
+[커버 필수 체크 — 어기면 반려]
+1. 핵심 대상 명시: 이 글이 "무엇에 관한" 글인지(제품·모델·주제명 — 예: Fable 5)가 kicker·title·sub 중 최소 한 곳에 반드시 등장. 후킹 각도를 잡느라 주제어를 떨어뜨리지 말 것 — 독자는 커버만 보고 자기 관심사인지 판단한다
+2. 필드 간 중복 금지: kicker·title·sub·footer는 각자 다른 정보 1개씩 — 신뢰(출처)는 한 필드에서만, 같은 사실을 두 필드에 반복하지 말 것
+3. sub의 역할: title 재서술이 아니라 궁금증 증폭 또는 스펙 제공(N가지·읽는 시간·대상 독자)
+
 [커버 이미지 검색어(metaphorQueries) — 4단 우선순위]
 1순위 리터럴: 본문에 등장하는 구체 사물 그대로 (naengmyeon, rolex watch macro)
 2순위 은유: 개념을 설명하는 관용적 사물 — 치환표: 병목→steel chain macro / 집중→dartboard bullseye / 니치→ant macro / 불확실성→foggy mountain / 관문·심사→old door knocker / 유입 경로→fishing net silhouette / 성장→seedling soil / 함정→mousetrap / 데이터·AI→matrix code dark, server room dark / 계약→contract fountain pen / 돈·가격→coins macro
@@ -310,9 +345,12 @@ async function fetchCoverCandidates(queries: string[]): Promise<CoverCandidate[]
 type RawSlide = z.infer<typeof GenOutputSchema>['slides'][number];
 type ParsedSlide = CardSlide & { planIndex: number };
 
+const COVER_TEMPLATES: CardTemplateId[] = ['C1', 'C2', 'C3', 'C5'];
+
 function validateSlides(
   raw: RawSlide[],
-  plan: SlidePlan
+  plan: SlidePlan,
+  sourceTitle: string
 ): { issues: string[]; parsed: ParsedSlide[] } {
   const issues: string[] = [];
   const parsed: ParsedSlide[] = [];
@@ -344,6 +382,10 @@ function validateSlides(
       return;
     }
     issues.push(...lintSlide(check.data.template, s.props).map((m) => `${i + 1}번 ${m}`));
+    if (COVER_TEMPLATES.includes(check.data.template))
+      issues.push(
+        ...lintCover(s.props as Record<string, string>, sourceTitle).map((m) => `${i + 1}번 [커버] ${m}`)
+      );
     parsed.push({
       template: check.data.template,
       order: i + 1,
@@ -513,17 +555,25 @@ ${opts.instruction ? `\n[운영자 수정 방향 — 최우선] ${opts.instructi
       continue;
     }
     const valid: Array<Record<string, unknown>> = [];
+    const allIssues: string[] = [];
     for (const c of json.candidates ?? []) {
       const check = RenderSlideSchema.safeParse({ template, accent: plan.accent, props: c.props });
       if (!check.success) continue;
-      // 시스템 관리 필드는 현재 값 유지
+      // 시스템 관리·이미지 필드는 현재 값 유지 (후보가 빠뜨려도 잃지 않게)
       const merged = { ...c.props } as Record<string, unknown>;
-      if (opts.currentProps?.page) merged.page = opts.currentProps.page;
-      if (opts.currentProps?.ctaLine) merged.ctaLine = opts.currentProps.ctaLine;
+      for (const k of ['page', 'ctaLine', 'coverImage', 'media', 'shot'])
+        if (opts.currentProps?.[k] && !merged[k]) merged[k] = opts.currentProps[k];
+      if (COVER_TEMPLATES.includes(template)) {
+        const coverIssues = lintCover(merged as Record<string, string>, row.title);
+        if (coverIssues.length) {
+          allIssues.push(...coverIssues);
+          continue;
+        }
+      }
       valid.push(merged);
     }
     if (valid.length > 0) return valid.slice(0, count);
-    lastIssues = ['유효한 후보가 없음 — 템플릿 props 스키마를 지킬 것'];
+    lastIssues = allIssues.length ? allIssues : ['유효한 후보가 없음 — 템플릿 props 스키마를 지킬 것'];
   }
   throw new Error(`AI 초안 생성 실패: ${lastIssues.join(' / ')}`);
 }
@@ -582,7 +632,7 @@ ${lastIssues.map((i) => `- ${i}`).join('\n')}`;
       continue;
     }
     lastRaw = parsed.data;
-    const result = validateSlides(parsed.data.slides, plan);
+    const result = validateSlides(parsed.data.slides, plan, row.title);
     if (result.issues.length === 0) {
       slides = result.parsed;
       break;
