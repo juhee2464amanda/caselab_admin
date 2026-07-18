@@ -244,6 +244,7 @@ ${slideLines}`;
 }
 
 // ── 커버 후보 자동 수급 — 메타포 검색어 → Unsplash (IMAGE-SOURCES.md: portrait·다크 톤 우선) ──
+// 검수 피로를 줄이기 위해 "가장 연관도 높은 2장"만: 검색어별 최상위 결과에서 서로 다른 검색어 우선으로 2장.
 async function fetchCoverCandidates(queries: string[]): Promise<CoverCandidate[]> {
   const key = process.env.UNSPLASH_ACCESS_KEY;
   if (!key || queries.length === 0) return [];
@@ -251,7 +252,7 @@ async function fetchCoverCandidates(queries: string[]): Promise<CoverCandidate[]
     queries.slice(0, 3).map(async (q) => {
       try {
         const res = await fetch(
-          `https://api.unsplash.com/search/photos?query=${encodeURIComponent(q)}&per_page=3&orientation=portrait`,
+          `https://api.unsplash.com/search/photos?query=${encodeURIComponent(q)}&per_page=2&orientation=portrait`,
           { headers: { Authorization: `Client-ID ${key}` } }
         );
         if (!res.ok) return [];
@@ -272,10 +273,10 @@ async function fetchCoverCandidates(queries: string[]): Promise<CoverCandidate[]
       }
     })
   );
-  // 검색어별 상위를 교차 배치 (같은 검색어 결과가 몰리지 않게)
+  // 1순위 검색어의 1등 → 2순위 검색어의 1등 → (부족하면) 남은 결과에서 채움
   const flat: CoverCandidate[] = [];
-  for (let i = 0; i < 3; i++) for (const r of results) if (r[i]) flat.push(r[i]);
-  return flat.slice(0, 9);
+  for (let i = 0; i < 2; i++) for (const r of results) if (r[i]) flat.push(r[i]);
+  return flat.slice(0, 2);
 }
 
 // ── 생성 본체 ──────────────────────────────────────────────
@@ -402,7 +403,7 @@ ${item.material}${instruction ? `\n\n[운영자 요청] ${instruction}` : ''}
       raw = await callModel(SYSTEM, prompt, {
         allowedTools: [],
         model: 'sonnet',
-        timeoutMs: 480_000,
+        timeoutMs: 600_000,
       });
     } catch (e) {
       lastIssues = [`모델 호출 실패: ${(e as Error).message}`];
@@ -466,7 +467,7 @@ ${lastIssues.map((i) => `- ${i}`).join('\n')}`;
         model: 'sonnet',
         // 구독 CLI는 기동·큐 지연 편차가 큼 (150s·300s 실측 타임아웃) — 로컬 한정이라 넉넉히.
         // prod(Vercel)는 AI_PROVIDER=apikey 경로라 이 값에 안 걸린다.
-        timeoutMs: 480_000,
+        timeoutMs: 600_000,
       });
     } catch (e) {
       lastIssues = [`모델 호출 실패: ${(e as Error).message}`];

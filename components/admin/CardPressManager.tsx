@@ -275,7 +275,47 @@ export function CardPressManager({ initial, sources }: { initial: CardRow[]; sou
 
   return (
     <div className="space-y-6">
-      {/* 상태 필터 + 카드 세트 목록 */}
+      {/* 1. 새 카드뉴스 만들기 — "무엇을 만들 것인가"가 이 탭의 진입점 */}
+      <div className="card p-4 space-y-2">
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <div className="text-sm font-semibold">새 카드뉴스 만들기 <span className="text-xs text-ink/40 font-normal">발행 콘텐츠에서 소재 선택 — 반응 좋았던 것부터</span></div>
+          {withoutCard.length > 0 && (
+            <div className="flex items-center gap-1.5 text-xs">
+              {(['all', 'case', 'trend'] as const).map((t) => (
+                <button key={t} onClick={() => setSrcTrack(t)} className={`rounded-full px-2 py-0.5 ${srcTrack === t ? 'bg-accent text-white' : 'bg-ink/5 text-ink/60'}`}>
+                  {t === 'all' ? '전체' : t === 'case' ? '케이스' : '트렌드'}
+                </button>
+              ))}
+              <button onClick={() => setSrcSort(srcSort === 'views' ? 'recent' : 'views')} className="rounded-full px-2 py-0.5 bg-ink/5 text-ink/60 hover:bg-ink/10">
+                {srcSort === 'views' ? '조회수순 ▾' : '최신순 ▾'}
+              </button>
+            </div>
+          )}
+        </div>
+        {withoutCard.length > 0 ? (
+          <>
+            <Input value={srcQuery} onChange={(e) => setSrcQuery(e.target.value)} placeholder="제목 검색" />
+            <div className="space-y-1.5 max-h-60 overflow-y-auto">
+              {candidates.map((s) => (
+                <div key={s.id} className="flex items-center justify-between gap-3 text-sm">
+                  <span className="truncate">
+                    {s.title}
+                    <span className="text-[11px] text-ink/40 ml-1.5">조회 {s.view_count ?? 0}</span>
+                  </span>
+                  <Button size="sm" variant="outline" disabled={generating !== null} onClick={() => generateFor(s.id)}>
+                    {generating === s.id ? '생성 중… (수 분 소요)' : '카드 생성'}
+                  </Button>
+                </div>
+              ))}
+              {candidates.length === 0 && <p className="text-xs text-ink/40">조건에 맞는 콘텐츠가 없어요.</p>}
+            </div>
+          </>
+        ) : (
+          <p className="text-xs text-ink/40">모든 발행 콘텐츠에 카드가 있어요. 새 콘텐츠를 발행하면 자동으로 여기에 대기합니다.</p>
+        )}
+      </div>
+
+      {/* 2. 상태 필터 + 카드 세트 목록 */}
       <div>
         <div className="flex items-center gap-1.5 mb-2">
           {FILTERS.map((f) => (
@@ -332,40 +372,6 @@ export function CardPressManager({ initial, sources }: { initial: CardRow[]; sou
           )}
         </div>
       </div>
-
-      {/* 수동 생성 — 소재 선정 */}
-      {withoutCard.length > 0 && (
-        <div className="card p-4 space-y-2">
-          <div className="flex items-center justify-between gap-3 flex-wrap">
-            <div className="text-sm font-semibold">카드 없는 발행 콘텐츠 <span className="text-xs text-ink/40 font-normal">{withoutCard.length}건 — 반응 좋았던 것부터 카드화</span></div>
-            <div className="flex items-center gap-1.5 text-xs">
-              {(['all', 'case', 'trend'] as const).map((t) => (
-                <button key={t} onClick={() => setSrcTrack(t)} className={`rounded-full px-2 py-0.5 ${srcTrack === t ? 'bg-accent text-white' : 'bg-ink/5 text-ink/60'}`}>
-                  {t === 'all' ? '전체' : t === 'case' ? '케이스' : '트렌드'}
-                </button>
-              ))}
-              <button onClick={() => setSrcSort(srcSort === 'views' ? 'recent' : 'views')} className="rounded-full px-2 py-0.5 bg-ink/5 text-ink/60 hover:bg-ink/10">
-                {srcSort === 'views' ? '조회수순 ▾' : '최신순 ▾'}
-              </button>
-            </div>
-          </div>
-          <Input value={srcQuery} onChange={(e) => setSrcQuery(e.target.value)} placeholder="제목 검색" />
-          <div className="space-y-1.5 max-h-60 overflow-y-auto">
-            {candidates.map((s) => (
-              <div key={s.id} className="flex items-center justify-between gap-3 text-sm">
-                <span className="truncate">
-                  {s.title}
-                  <span className="text-[11px] text-ink/40 ml-1.5">조회 {s.view_count ?? 0}</span>
-                </span>
-                <Button size="sm" variant="outline" disabled={generating !== null} onClick={() => generateFor(s.id)}>
-                  {generating === s.id ? '생성 중… (수 분 소요)' : '카드 생성'}
-                </Button>
-              </div>
-            ))}
-            {candidates.length === 0 && <p className="text-xs text-ink/40">조건에 맞는 콘텐츠가 없어요.</p>}
-          </div>
-        </div>
-      )}
 
       {card && <CardEditor key={card.id} card={card} source={sourceMap.get(card.source_id)} />}
     </div>
@@ -491,6 +497,24 @@ function CardEditor({ card, source }: { card: CardRow; source?: SourceRow }) {
     const key = IMAGE_KEY[sel.template];
     if (!key) return alert(`${TEMPLATE_LABEL[sel.template]}에는 이미지 자리가 없어요. (커버·B2·B9 선택 후 클릭)`);
     patch((prev) => prev.map((s, k) => (k === selIdx ? { ...s, props: { ...s.props, [key]: url } } : s)));
+  }
+
+  // 커버 후보 클릭 → 무조건 커버(1번)에 적용. 다크 커버(C2·C3)면 사진 커버(C1)로 자동 전환.
+  function applyCover(url: string) {
+    patch((prev) =>
+      prev.map((s, i) => {
+        if (i !== 0) return s;
+        const props: Record<string, unknown> = { ...s.props, coverImage: url };
+        if (s.template === 'C2' || s.template === 'C3') {
+          delete props.eyebrow;
+          delete props.pill;
+          delete props.logoText;
+          return { ...s, template: 'C1' as const, props };
+        }
+        return { ...s, props };
+      })
+    );
+    setSelIdx(0);
   }
 
   // ── 저장/상태 ──
@@ -653,7 +677,7 @@ function CardEditor({ card, source }: { card: CardRow; source?: SourceRow }) {
             />
           </div>
 
-          <ImageTray card={card} onPick={assignImage} onThreadsCover={(u) => { setThreadsCover(u); setDirty(true); }} />
+          <ImageTray card={card} onPick={assignImage} onCover={applyCover} onThreadsCover={(u) => { setThreadsCover(u); setDirty(true); }} />
 
           {/* 캡션·스레드 */}
           <div className="card p-4 space-y-3">
@@ -901,7 +925,7 @@ function SlideForm({ slide, onApply, onCancel }: { slide: CardSlide; onApply: (f
 }
 
 // ── 이미지 트레이 + Unsplash 인라인 검색 ──────────────────
-function ImageTray({ card, onPick, onThreadsCover }: { card: CardRow; onPick: (url: string) => void; onThreadsCover: (url: string) => void }) {
+function ImageTray({ card, onPick, onCover, onThreadsCover }: { card: CardRow; onPick: (url: string) => void; onCover: (url: string) => void; onThreadsCover: (url: string) => void }) {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<Array<{ id: string; thumb: string; full: string; credit: string }>>([]);
   const [notice, setNotice] = useState<string | null>(null);
@@ -940,10 +964,20 @@ function ImageTray({ card, onPick, onThreadsCover }: { card: CardRow; onPick: (u
       <div className="text-sm font-semibold">이미지 트레이 <span className="text-xs text-ink/40 font-normal">(호버 → 배치 · 커버/B2/B9 슬라이드 선택 후)</span></div>
       {(card.cover_candidates?.length ?? 0) > 0 && (
         <div>
-          <div className="text-[11px] text-ink/40 mb-1">커버 후보 (메타포 검색어 자동 수급 · Unsplash)</div>
-          <div className="flex gap-2 overflow-x-auto pb-1">
-            {card.cover_candidates!.map((c) => (
-              <Thumb key={c.full} url={c.full} thumb={c.thumb} credit={c.credit} />
+          <div className="text-[11px] text-ink/40 mb-1">커버 후보 — 클릭하면 바로 커버에 적용 (다크 커버면 사진 커버로 전환)</div>
+          <div className="flex gap-3">
+            {card.cover_candidates!.slice(0, 2).map((c) => (
+              <div key={c.full} className="relative group shrink-0">
+                <button onClick={() => onCover(c.full)} title="커버에 적용" className="block">
+                  <img src={c.thumb} alt={c.credit} className="h-32 w-[102px] object-cover rounded-md border border-border group-hover:ring-2 group-hover:ring-accent transition-shadow" />
+                </button>
+                <button
+                  onClick={() => onThreadsCover(c.full)}
+                  className="absolute bottom-1 left-1 right-1 hidden group-hover:block text-[10px] text-white bg-black/60 rounded px-1 py-0.5"
+                >
+                  스레드 커버로
+                </button>
+              </div>
             ))}
           </div>
         </div>
