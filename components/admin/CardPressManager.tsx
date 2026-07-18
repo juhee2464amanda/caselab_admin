@@ -703,6 +703,8 @@ function CardEditor({ card, source }: { card: CardRow; source?: SourceRow }) {
               <Input className="mt-1" value={threadsCover} onChange={(e) => { setThreadsCover(e.target.value); setDirty(true); }} placeholder="https://…" />
             </div>
           </div>
+
+          <PublishPanel card={card} dirty={dirty} />
         </div>
 
         {/* 우: 실비율(4:5) 프리뷰 — 1장 / 그리드(전체 흐름 검수) 토글 */}
@@ -758,6 +760,101 @@ function CardEditor({ card, source }: { card: CardRow; source?: SourceRow }) {
           )}
         </div>
       </div>
+    </div>
+  );
+}
+
+// ── 발행 패널 — 렌더→버킷 업로드 검수 → 채널 선택 → 원클릭 발행 / zip 백업 ──
+function PublishPanel({ card, dirty }: { card: CardRow; dirty: boolean }) {
+  const router = useRouter();
+  const [channels, setChannels] = useState<{ instagram: boolean; threads: boolean }>({
+    instagram: true,
+    threads: true,
+  });
+  const [busy, setBusy] = useState<'prepare' | 'publish' | null>(null);
+  const [images, setImages] = useState<string[]>([]);
+  const [errors, setErrors] = useState<string[]>([]);
+
+  async function call(dryRun: boolean) {
+    if (dirty) return alert('저장 안 된 수정이 있어요. 먼저 [저장]을 눌러주세요.');
+    if (!dryRun) {
+      const picked = Object.entries(channels).filter(([, v]) => v).map(([k]) => k);
+      if (picked.length === 0) return alert('발행 채널을 선택하세요.');
+      if (!confirm(`선택한 채널(${picked.join(', ')})에 즉시 게시됩니다. 발행할까요?`)) return;
+    }
+    setBusy(dryRun ? 'prepare' : 'publish');
+    setErrors([]);
+    try {
+      const res = await fetch('/api/cardpress/publish', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          cardId: card.id,
+          dryRun,
+          channels: Object.entries(channels).filter(([, v]) => v).map(([k]) => k),
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? `HTTP ${res.status}`);
+      setImages(data.images ?? []);
+      if (data.errors) setErrors(data.errors);
+      if (!dryRun && !data.errors) router.refresh();
+    } catch (e) {
+      setErrors([(e as Error).message]);
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  return (
+    <div className="card p-4 space-y-3">
+      <div className="text-sm font-semibold">발행</div>
+      <div className="flex items-center gap-4 text-sm">
+        {(['instagram', 'threads'] as const).map((ch) => (
+          <label key={ch} className="flex items-center gap-1.5">
+            <input
+              type="checkbox"
+              checked={channels[ch]}
+              onChange={() => setChannels((p) => ({ ...p, [ch]: !p[ch] }))}
+            />
+            {ch === 'instagram' ? 'Instagram 캐러셀+캡션' : 'Threads 글+링크+커버'}
+          </label>
+        ))}
+      </div>
+      <div className="flex items-center gap-2 flex-wrap">
+        <Button size="sm" variant="outline" onClick={() => call(true)} disabled={busy !== null}>
+          {busy === 'prepare' ? '렌더·업로드 중…' : '1) PNG 업로드 검수'}
+        </Button>
+        <Button size="sm" variant="accent" onClick={() => call(false)} disabled={busy !== null}>
+          {busy === 'publish' ? '발행 중…' : '2) 발행'}
+        </Button>
+        <a
+          href={`/api/cardpress/zip?cardId=${card.id}`}
+          className="text-xs text-accent hover:underline"
+          download
+        >
+          zip 다운로드 (수동 업로드 백업)
+        </a>
+      </div>
+      {images.length > 0 && (
+        <p className="text-xs text-ink/60">
+          업로드된 슬라이드 {images.length}장 —{' '}
+          {images.map((u, i) => (
+            <a key={u} href={u} target="_blank" rel="noreferrer" className="text-accent hover:underline mr-1">
+              {i + 1}
+            </a>
+          ))}
+          (클릭해서 실물 확인)
+        </p>
+      )}
+      {errors.map((e, i) => (
+        <p key={i} className="text-xs text-red-600">{e}</p>
+      ))}
+      {card.published_to.length > 0 && (
+        <p className="text-xs text-ink/40">
+          발행 이력: {card.published_to.map((p) => `${p.channel} (${p.at.slice(0, 16).replace('T', ' ')})`).join(' · ')}
+        </p>
+      )}
     </div>
   );
 }
