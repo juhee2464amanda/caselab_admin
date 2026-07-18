@@ -33,6 +33,8 @@ export async function POST(req: NextRequest) {
     sourceType?: 'content' | 'tool';
     sourceId?: string;
     dryRun?: boolean;
+    /** 운영자 지정 엣지 — 재생성 시 이 방향을 최우선 축으로 */
+    edge?: string;
   };
   if (body.sourceType === 'tool')
     return NextResponse.json({ error: 'tool 소스는 다음 단계에서 지원' }, { status: 501 });
@@ -51,11 +53,13 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: '발행(published) 콘텐츠만 카드로 만들 수 있어요' }, { status: 409 });
 
   try {
-    const draft = await generateCardSet(content as unknown as ContentRowLite);
+    const draft = await generateCardSet(content as unknown as ContentRowLite, {
+      edge: body.edge?.trim() || undefined,
+    });
 
     if (body.dryRun) return NextResponse.json({ dryRun: true, draft });
 
-    const row = {
+    const row: Record<string, unknown> = {
       source_type: 'content',
       source_id: content.id,
       slides: draft.slides,
@@ -64,6 +68,7 @@ export async function POST(req: NextRequest) {
       ig_caption: draft.igCaption,
       threads_text: draft.threadsText,
       metaphor_queries: draft.metaphorQueries,
+      edge: draft.edge,
       status: 'auto_draft',
     };
     let { data: card, error: upsertError } = await admin
@@ -71,14 +76,16 @@ export async function POST(req: NextRequest) {
       .upsert(row, { onConflict: 'source_type,source_id' })
       .select()
       .single();
-    // 1021(metaphor_queries) 미적용 DB 호환 — 컬럼 없으면 그 필드만 빼고 재시도
-    if (upsertError?.message.includes('metaphor_queries')) {
-      const { metaphor_queries: _omit, ...withoutMetaphor } = row;
-      ({ data: card, error: upsertError } = await admin
-        .from('content_cards')
-        .upsert(withoutMetaphor, { onConflict: 'source_type,source_id' })
-        .select()
-        .single());
+    // 1021(metaphor_queries)·1022(edge) 미적용 DB 호환 — 없는 컬럼만 빼고 재시도
+    for (const col of ['metaphor_queries', 'edge']) {
+      if (upsertError?.message.includes(col)) {
+        delete row[col];
+        ({ data: card, error: upsertError } = await admin
+          .from('content_cards')
+          .upsert(row, { onConflict: 'source_type,source_id' })
+          .select()
+          .single());
+      }
     }
     if (upsertError) return NextResponse.json({ error: upsertError.message }, { status: 500 });
 

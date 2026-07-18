@@ -26,6 +26,8 @@ export type CardSetDraft = {
   igCaption: string;
   threadsText: string;
   metaphorQueries: string[];
+  /** AI가 정의한(또는 운영자가 지정한) 이 콘텐츠의 엣지 한 줄 — 검수 UI에서 수정·재생성 축 */
+  edge: string;
 };
 
 const FIXED_TAGS = ['#케이스랩', '#AI활용', '#일잘러', '#업무효율', '#AI실험'];
@@ -36,12 +38,16 @@ const CATEGORY_TAGS: Record<CardAccent, string[]> = {
 };
 
 const GenOutputSchema = z.object({
+  edge: z.string().min(1),
   slides: z.array(
-    z.object({
-      template: z.string(),
-      sourceSection: z.string().optional(),
-      props: z.record(z.string(), z.unknown()),
-    })
+    z.union([
+      z.object({ skip: z.literal(true), sourceSection: z.string().optional() }),
+      z.object({
+        template: z.string(),
+        sourceSection: z.string().optional(),
+        props: z.record(z.string(), z.unknown()),
+      }),
+    ])
   ),
   igCaption: z.string().min(1),
   threadsText: z.string().min(1),
@@ -163,35 +169,52 @@ const SYSTEM = `당신은 케이스랩(caselab)의 SNS 콘텐츠 에디터입니
 - 솔직함: 잘된 것/별로였던 것(B5)의 실패 부분을 절대 미화하지 말 것
 - 재료에 없는 사실·숫자를 지어내지 말 것 (압축·재배열만)
 
+[0단계 — 엣지 정의 (가장 먼저)]
+이 콘텐츠가 다른 비슷한 글과 구별되는 지점(edge)을 한 줄로 정의하세요 — 출처의 신뢰성("앤트로픽 엔지니어가 직접"), 실측 결과, 반직관적 관점 등. 이 edge는:
+- 출력 JSON의 "edge" 필드에 담고
+- 커버(eyebrow·sub)와 신뢰/선언 슬라이드에 반드시 드러나게 반영하세요. 운영자가 [운영자 지정 엣지]를 준 경우 그것을 최우선으로 따르세요.
+
+[독자 의식 흐름 — 서사 규칙]
+- 스파인: 후킹 커버 → 왜 믿을 만한가(edge) → 문제 제기/오버뷰 → 실물(프롬프트·구체 항목) → 정리·저장 CTA
+- 슬라이드마다 "새 정보 1개". 직전 슬라이드와 소재·표현 중복 금지 (특히 오버뷰 슬라이드와 개별 항목 슬라이드가 같은 문장을 반복하지 않게)
+- 각 슬라이드는 "다음 장을 넘길 이유"를 남길 것
+
 [작업]
 아래 슬라이드 계획의 각 항목에 대해, 주어진 재료(material)를 해당 템플릿 규격에 맞게 압축한 props를 작성하세요.
 - 계획의 템플릿을 기본으로 쓰되, alternatives에 있는 템플릿이 재료에 더 맞으면 교체 가능 (예: 재료의 핵심이 강한 숫자 1개면 B2 대신 B7)
+- (선정) 표시가 붙은 항목: 전부 쓰지 말고 "가장 저장하고 싶을" 대표만 골라 작성하고, 나머지는 {"skip":true}로 반환하세요. 대표 개수는 계획에 명시된 목표를 따르세요. 선정 기준: 범용성(직무 무관 바로 사용)·의외성·실물 가치.
+- B3 용어 카드의 term은 개념·용어만 — 인명·회사명 금지 (신뢰 전달은 커버 eyebrow나 B4 attribution의 몫)
 - 글자수 제한은 공백 포함 엄격 적용 — 넘치면 렌더가 깨집니다
 
 ${TEMPLATE_SPECS}
 
 [함께 생성]
-- igCaption: 인스타 캡션 — 첫 줄 후킹 → 3~5문장(요약+핵심 시사점) → "자세한 과정은 프로필 링크에서". 해시태그는 쓰지 말 것(시스템이 붙임). 이모지는 절제.
+- igCaption: 인스타 캡션 — 첫 줄 후킹 → 3~5문장(요약+핵심 시사점) → 대표 프롬프트 1개 전문을 복사 가능하게 포함(따옴표 블록) → "나머지는 프로필 링크에서". 해시태그는 쓰지 말 것(시스템이 붙임). 이모지는 절제.
 - threadsText: 스레드 네이티브 톤으로 재작성한 글 300~450자 — 대화하듯, 핵심 발견 1~2개 + 솔직 후기 한 줄. 링크는 쓰지 말 것(시스템이 붙임).
 - metaphorQueries: 커버 배경 이미지 검색어 3개 — 제목·후킹 문장 속 "구체적 사물/장면"을 영어로 (주제어 말고 명사. 예: "airplane cabin aisle interior", "colored pencils macro"). 구체 명사가 없으면 개념을 사물로 치환(집중→과녁, 선택→갈림길).
 
 [출력 — JSON 하나만, 설명 없이]
-{"slides":[{"template":"C1","sourceSection":"계획의 sourceSection 그대로","props":{...}}, ...],"igCaption":"...","threadsText":"...","metaphorQueries":["...","...","..."]}
-슬라이드 순서·개수는 계획과 동일하게 유지하세요(템플릿 교체만 허용).`;
+{"edge":"이 콘텐츠의 엣지 한 줄","slides":[{"template":"C1","sourceSection":"계획의 sourceSection 그대로","props":{...}} 또는 {"skip":true,"sourceSection":"..."}, ...],"igCaption":"...","threadsText":"...","metaphorQueries":["...","...","..."]}
+슬라이드 배열의 순서·개수는 계획과 1:1 동일해야 합니다(선정 제외는 skip 객체로 자리를 지킬 것).`;
 
-function planPrompt(row: ContentRowLite, plan: SlidePlan): string {
+function planPrompt(row: ContentRowLite, plan: SlidePlan, operatorEdge?: string): string {
   const slideLines = plan.slides
     .map(
       (s, i) =>
-        `${i + 1}. template=${s.template}${s.alternatives?.length ? ` (대안: ${s.alternatives.join(',')})` : ''} · sourceSection=${s.sourceSection}${s.required ? ` · ${s.required}` : ''}\n재료:\n${s.material}`
+        `${i + 1}. template=${s.template}${s.alternatives?.length ? ` (대안: ${s.alternatives.join(',')})` : ''} · sourceSection=${s.sourceSection}${s.optional ? ' · (선정)' : ''}${s.required ? ` · ${s.required}` : ''}\n재료:\n${s.material}`
     )
     .join('\n\n');
+  const optCount = plan.slides.filter((s) => s.optional).length;
+  const selectLine =
+    optCount > 0 && plan.selectTarget
+      ? `\n(선정) 후보 ${optCount}개 중 대표 ${plan.selectTarget}개만 작성하고 나머지는 skip.`
+      : '';
   return `[콘텐츠]
 트랙: ${row.track === 'case' ? '실전 케이스' : 'AI 트렌드'}
 제목: ${row.title}
-요약: ${row.summary ?? '(없음)'}
+요약: ${row.summary ?? '(없음)'}${operatorEdge ? `\n\n[운영자 지정 엣지 — 최우선] ${operatorEdge}` : ''}
 
-[슬라이드 계획 — ${plan.slides.length}장]
+[슬라이드 계획 — ${plan.slides.length}장]${selectLine}
 ${slideLines}`;
 }
 
@@ -212,6 +235,11 @@ function validateSlides(
 
   raw.forEach((s, i) => {
     const planned: SlidePlanItem | undefined = plan.slides[i];
+    if ('skip' in s) {
+      if (planned && !planned.optional)
+        issues.push(`${i + 1}번(${planned.template}): (선정) 대상이 아닌 슬라이드는 skip 불가`);
+      return;
+    }
     const allowed = planned ? [planned.template, ...(planned.alternatives ?? [])] : [];
     if (planned && !allowed.includes(s.template as CardTemplateId)) {
       issues.push(`${i + 1}번: template=${s.template} — 허용(${allowed.join(',')}) 밖`);
@@ -327,9 +355,12 @@ ${item.material}${instruction ? `\n\n[운영자 요청] ${instruction}` : ''}
   throw new Error(`슬라이드 재작성 실패: ${lastIssues.slice(0, 3).join(' / ')}`);
 }
 
-export async function generateCardSet(row: ContentRowLite): Promise<CardSetDraft> {
+export async function generateCardSet(
+  row: ContentRowLite,
+  opts?: { edge?: string }
+): Promise<CardSetDraft> {
   const plan = buildSlidePlan(row);
-  const userPrompt = planPrompt(row, plan);
+  const userPrompt = planPrompt(row, plan, opts?.edge);
 
   let lastRaw: z.infer<typeof GenOutputSchema> | null = null;
   let lastIssues: string[] = [];
@@ -404,5 +435,6 @@ ${lastIssues.map((i) => `- ${i}`).join('\n')}`;
     igCaption: `${lastRaw.igCaption.trim()}\n\n${tags.join(' ')}`,
     threadsText: threads,
     metaphorQueries: lastRaw.metaphorQueries ?? [],
+    edge: opts?.edge?.trim() || lastRaw.edge.trim(),
   };
 }

@@ -18,7 +18,7 @@ export default async function AdminCardnews() {
   // 소스 콘텐츠 제목 + "카드 없는 발행 콘텐츠"(수동 생성 후보) 목록
   const { data: contents } = await supabase
     .from('contents')
-    .select('id, title, track, slug, status')
+    .select('id, title, track, slug, status, view_count, published_at')
     .eq('status', 'published')
     .order('published_at', { ascending: false });
 

@@ -28,6 +28,8 @@ export type SlidePlanItem = {
   required?: string;
   /** 이 슬라이드에 배치할 이미지 후보 (media/shot/cover) */
   image?: string;
+  /** 선정 대상 후보 — AI가 대표만 작성하고 나머지는 skip 가능 (리스트형 항목) */
+  optional?: boolean;
 };
 
 export type SlidePlan = {
@@ -35,7 +37,48 @@ export type SlidePlan = {
   slides: SlidePlanItem[];
   /** 본문에서 추출한 이미지 전체 (검수 UI 이미지 트레이) */
   images: string[];
+  /** optional 후보 중 AI가 작성해야 할 대표 개수 (≈ 후보의 50%, 최대 6) */
+  selectTarget?: number;
 };
+
+/** 리스트형 본문 항목 — deepDive 등에서 heading 단위 세그먼트로 분해한 것 */
+export type ListItem = {
+  id: string; // "01" 등 — sourceSection 'deepDive#01'
+  heading: string;
+  text: string;
+  prompt?: string;
+};
+
+/** heading으로 세그먼트를 나누고, 프롬프트가 있거나 번호 매긴 항목(01. …)이면 리스트 항목으로 인정.
+ *  ("프롬프트 11가지" 같은 모음형 콘텐츠가 슬라이드 1장으로 뭉개지는 것 방지 — 항목당 슬라이드 후보) */
+export function splitListItems(blocks: Block[] | undefined): ListItem[] {
+  if (!blocks?.length) return [];
+  type Seg = { heading: string; texts: string[]; prompt?: string };
+  const segs: Seg[] = [];
+  let cur: Seg | null = null;
+  for (const b of blocks) {
+    if (b.type === 'heading') {
+      if (cur) segs.push(cur);
+      cur = { heading: b.text.trim(), texts: [] };
+    } else if (cur) {
+      if (b.type === 'text') cur.texts.push(b.markdown.replace(MD_IMAGE_RE, '').trim());
+      else if (b.type === 'prompt' && !cur.prompt) cur.prompt = b.prompt;
+    }
+  }
+  if (cur) segs.push(cur);
+  // 프롬프트 모음형이면 프롬프트 있는 세그먼트만 항목 (그룹 소제목 "1. Pre-implementation" 오인 방지),
+  // 프롬프트 없는 리스트형(도구 7가지 등)은 번호 매긴 소제목을 항목으로.
+  const hasPrompts = segs.some((s) => s.prompt);
+  const items = segs.filter((s) =>
+    hasPrompts ? !!s.prompt : /^\d{1,2}[.)]\s*/.test(s.heading) && s.texts.length > 0
+  );
+  return items.map((s, i) => ({
+    id: String(i + 1).padStart(2, '0'),
+    heading: s.heading,
+    text: s.texts.join('\n'),
+    prompt: s.prompt,
+  }));
+}
 
 const MD_IMAGE_RE = /!\[[^\]]*\]\(([^)\s]+)\)/g;
 
@@ -177,8 +220,17 @@ function planCase(row: ContentRowLite, body: CaseBody, images: string[]): SlideP
     });
   }
 
-  const prompt = body.stepCards?.find((s) => s.prompt?.trim())?.prompt;
-  if (prompt) slides.push({ template: 'B8', sourceSection: 'stepCards.prompt', material: prompt });
+  // 프롬프트 실물은 저장가치의 핵심 — 스텝별 B8 후보로 전부 올리고, 많으면 AI가 대표만 선정(skip)
+  const promptSteps = (body.stepCards ?? []).filter((s) => s.prompt?.trim());
+  const stepOptional = promptSteps.length > 2;
+  for (const s of promptSteps) {
+    slides.push({
+      template: 'B8',
+      sourceSection: `stepCards#${s.num}`,
+      material: `${s.label}\n${s.prompt}`,
+      optional: stepOptional,
+    });
+  }
 
   if (body.pros?.length || body.cons?.length) {
     slides.push({
@@ -217,11 +269,13 @@ function planTrend(row: ContentRowLite, body: TrendBody, images: string[]): Slid
   const what = blocksToText(body.what);
   if (what) slides.push({ template: 'B3', sourceSection: 'what', material: what });
 
+  const items = splitListItems(body.deepDive);
+
   if (body.keyPoints?.length) {
     slides.push({
       template: 'B2',
       sourceSection: 'keyPoints',
-      material: body.keyPoints.map((k) => `- ${k}`).join('\n'),
+      material: `(역할: 전체 오버뷰/목차 — 뒤에 나올 개별 항목 슬라이드와 표현·내용이 겹치지 않게)\n${body.keyPoints.map((k) => `- ${k}`).join('\n')}`,
       alternatives: ['B7'],
     });
   }
@@ -229,14 +283,26 @@ function planTrend(row: ContentRowLite, body: TrendBody, images: string[]): Slid
   const why = blocksToText(body.why);
   if (why) slides.push({ template: 'B4', sourceSection: 'why', material: why });
 
-  const deepDive = blocksToText(body.deepDive);
-  if (deepDive)
-    slides.push({
-      template: 'B2',
-      sourceSection: 'deepDive',
-      material: deepDive,
-      image: images[1],
-    });
+  if (items.length >= 3) {
+    // 리스트형(모음) 콘텐츠 — 항목당 슬라이드 후보. 프롬프트 있으면 B8(실물), 없으면 B2.
+    for (const it of items) {
+      slides.push({
+        template: it.prompt ? 'B8' : 'B2',
+        sourceSection: `deepDive#${it.id}`,
+        material: `${it.heading}\n${it.text}${it.prompt ? `\n[프롬프트 원문]\n${it.prompt}` : ''}`,
+        optional: true,
+      });
+    }
+  } else {
+    const deepDive = blocksToText(body.deepDive);
+    if (deepDive)
+      slides.push({
+        template: 'B2',
+        sourceSection: 'deepDive',
+        material: deepDive,
+        image: images[1],
+      });
+  }
 
   const soWhat = blocksToText(body.soWhat);
   slides.push({
@@ -268,7 +334,10 @@ export function buildSlidePlan(row: ContentRowLite): SlidePlan {
             },
             { template: 'O1' as const, sourceSection: 'title+summary', material: coverMaterial(row) },
           ];
-  return { accent, slides, images };
+  // 선정 대표 개수 ≈ 후보의 50% (사용자 결정: 11개면 5개 수준), 최소 3·최대 6
+  const optCount = slides.filter((s) => s.optional).length;
+  const selectTarget = optCount > 0 ? Math.min(6, Math.max(3, Math.round(optCount / 2))) : undefined;
+  return { accent, slides, images, selectTarget };
 }
 
 /** 본가 콘텐츠 URL (스레드 글에 첨부 — 유입 트래픽 확보) */

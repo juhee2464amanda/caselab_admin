@@ -25,12 +25,22 @@ export type CardRow = {
   threads_text: string | null;
   threads_cover: string | null;
   metaphor_queries?: string[];
+  edge?: string | null;
   status: 'auto_draft' | 'reviewed' | 'published';
   published_to: Array<{ channel: string; post_id: string; at: string }>;
+  created_at?: string;
   updated_at: string;
 };
 
-export type SourceRow = { id: string; title: string; track: 'case' | 'trend'; slug: string; status: string };
+export type SourceRow = {
+  id: string;
+  title: string;
+  track: 'case' | 'trend';
+  slug: string;
+  status: string;
+  view_count?: number | null;
+  published_at?: string | null;
+};
 
 const STATUS_LABEL: Record<CardRow['status'], { text: string; cls: string }> = {
   auto_draft: { text: '검수 대기', cls: 'bg-yellow-100 text-yellow-700' },
@@ -214,11 +224,24 @@ export function CardPressManager({ initial, sources }: { initial: CardRow[]; sou
   const sourceMap = useMemo(() => new Map(sources.map((s) => [s.id, s])), [sources]);
 
   const [selectedId, setSelectedId] = useState<string | null>(initial[0]?.id ?? null);
+  const [statusFilter, setStatusFilter] = useState<'all' | CardRow['status']>('all');
   const card = initial.find((c) => c.id === selectedId) ?? null;
+  const filtered = statusFilter === 'all' ? initial : initial.filter((c) => c.status === statusFilter);
 
-  // 카드 없는 발행 콘텐츠 → 수동 생성 후보
+  // 카드 없는 발행 콘텐츠 → 수동 생성 후보 (검색·트랙 필터·조회수 정렬)
   const withoutCard = sources.filter((s) => !initial.some((c) => c.source_id === s.id));
   const [generating, setGenerating] = useState<string | null>(null);
+  const [srcQuery, setSrcQuery] = useState('');
+  const [srcTrack, setSrcTrack] = useState<'all' | 'case' | 'trend'>('all');
+  const [srcSort, setSrcSort] = useState<'recent' | 'views'>('views');
+  const candidates = withoutCard
+    .filter((s) => (srcTrack === 'all' ? true : s.track === srcTrack))
+    .filter((s) => (srcQuery.trim() ? s.title.toLowerCase().includes(srcQuery.trim().toLowerCase()) : true))
+    .sort((a, b) =>
+      srcSort === 'views'
+        ? (b.view_count ?? 0) - (a.view_count ?? 0)
+        : (b.published_at ?? '').localeCompare(a.published_at ?? '')
+    );
 
   async function generateFor(sourceId: string) {
     setGenerating(sourceId);
@@ -237,53 +260,103 @@ export function CardPressManager({ initial, sources }: { initial: CardRow[]; sou
     }
   }
 
+  const FILTERS: Array<{ key: 'all' | CardRow['status']; label: string }> = [
+    { key: 'all', label: `전체 ${initial.length}` },
+    { key: 'auto_draft', label: `검수 대기 ${initial.filter((c) => c.status === 'auto_draft').length}` },
+    { key: 'reviewed', label: `검수 완료 ${initial.filter((c) => c.status === 'reviewed').length}` },
+    { key: 'published', label: `발행됨 ${initial.filter((c) => c.status === 'published').length}` },
+  ];
+
   return (
     <div className="space-y-6">
-      {/* 카드 세트 목록 */}
-      <div className="card divide-y divide-border">
-        {initial.map((c) => {
-          const src = sourceMap.get(c.source_id);
-          const st = STATUS_LABEL[c.status];
-          return (
+      {/* 상태 필터 + 카드 세트 목록 */}
+      <div>
+        <div className="flex items-center gap-1.5 mb-2">
+          {FILTERS.map((f) => (
             <button
-              key={c.id}
-              onClick={() => setSelectedId(c.id)}
-              className={`w-full text-left px-4 py-3 flex items-center justify-between gap-3 transition-colors ${selectedId === c.id ? 'bg-accent/5' : 'hover:bg-ink/[0.02]'}`}
+              key={f.key}
+              onClick={() => setStatusFilter(f.key)}
+              className={`text-xs rounded-full px-2.5 py-1 transition-colors ${statusFilter === f.key ? 'bg-accent text-white' : 'bg-ink/5 text-ink/60 hover:bg-ink/10'}`}
             >
-              <div className="min-w-0 flex items-center gap-2 flex-wrap">
-                <span className="font-medium truncate">{src?.title ?? c.source_id}</span>
-                <span className="badge bg-ink/5 text-ink/60">{src?.track === 'case' ? '실전 케이스' : 'AI 트렌드'}</span>
-                <span className="text-xs text-ink/40">{c.slides.length}장</span>
-              </div>
-              <span className={`badge shrink-0 ${st.cls}`}>{st.text}</span>
+              {f.label}
             </button>
-          );
-        })}
-        {initial.length === 0 && (
-          <p className="px-4 py-6 text-sm text-ink/40">
-            아직 생성된 카드가 없어요. 콘텐츠를 발행하면 자동 생성되고, 아래에서 수동으로도 만들 수 있어요.
-          </p>
-        )}
+          ))}
+        </div>
+        <div className="card divide-y divide-border">
+          {filtered.map((c) => {
+            const src = sourceMap.get(c.source_id);
+            const st = STATUS_LABEL[c.status];
+            const cover =
+              (c.slides[0]?.props as Record<string, unknown> | undefined)?.coverImage as string | undefined;
+            const thumb = cover ?? c.extracted_images[0];
+            return (
+              <button
+                key={c.id}
+                onClick={() => setSelectedId(c.id)}
+                className={`w-full text-left px-4 py-3 flex items-center justify-between gap-3 transition-colors ${selectedId === c.id ? 'bg-accent/5' : 'hover:bg-ink/[0.02]'}`}
+              >
+                <div className="min-w-0 flex items-center gap-3">
+                  {thumb ? (
+                    <img src={thumb} alt="" className="h-12 w-[38px] rounded object-cover border border-border shrink-0" />
+                  ) : (
+                    <div className="h-12 w-[38px] rounded bg-ink/10 border border-border shrink-0" />
+                  )}
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-medium truncate">{src?.title ?? c.source_id}</span>
+                      <span className="badge bg-ink/5 text-ink/60">{src?.track === 'case' ? '실전 케이스' : 'AI 트렌드'}</span>
+                      <span className="text-xs text-ink/40">{c.slides.filter((s) => s.enabled).length}장</span>
+                    </div>
+                    <div className="text-[11px] text-ink/40 mt-0.5">
+                      생성 {(c.created_at ?? c.updated_at).slice(0, 10)} · 수정 {c.updated_at.slice(0, 10)}
+                      {c.published_to.length > 0 && ` · 발행: ${c.published_to.map((p) => p.channel).join(', ')}`}
+                    </div>
+                  </div>
+                </div>
+                <span className={`badge shrink-0 ${st.cls}`}>{st.text}</span>
+              </button>
+            );
+          })}
+          {filtered.length === 0 && (
+            <p className="px-4 py-6 text-sm text-ink/40">
+              {initial.length === 0
+                ? '아직 생성된 카드가 없어요. 콘텐츠를 발행하면 자동 생성되고, 아래에서 수동으로도 만들 수 있어요.'
+                : '이 상태의 카드가 없어요.'}
+            </p>
+          )}
+        </div>
       </div>
 
-      {/* 수동 생성 */}
+      {/* 수동 생성 — 소재 선정 */}
       {withoutCard.length > 0 && (
-        <div className="card p-4">
-          <div className="text-sm font-semibold mb-2">카드 없는 발행 콘텐츠</div>
-          <div className="space-y-1.5">
-            {withoutCard.map((s) => (
+        <div className="card p-4 space-y-2">
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <div className="text-sm font-semibold">카드 없는 발행 콘텐츠 <span className="text-xs text-ink/40 font-normal">{withoutCard.length}건 — 반응 좋았던 것부터 카드화</span></div>
+            <div className="flex items-center gap-1.5 text-xs">
+              {(['all', 'case', 'trend'] as const).map((t) => (
+                <button key={t} onClick={() => setSrcTrack(t)} className={`rounded-full px-2 py-0.5 ${srcTrack === t ? 'bg-accent text-white' : 'bg-ink/5 text-ink/60'}`}>
+                  {t === 'all' ? '전체' : t === 'case' ? '케이스' : '트렌드'}
+                </button>
+              ))}
+              <button onClick={() => setSrcSort(srcSort === 'views' ? 'recent' : 'views')} className="rounded-full px-2 py-0.5 bg-ink/5 text-ink/60 hover:bg-ink/10">
+                {srcSort === 'views' ? '조회수순 ▾' : '최신순 ▾'}
+              </button>
+            </div>
+          </div>
+          <Input value={srcQuery} onChange={(e) => setSrcQuery(e.target.value)} placeholder="제목 검색" />
+          <div className="space-y-1.5 max-h-60 overflow-y-auto">
+            {candidates.map((s) => (
               <div key={s.id} className="flex items-center justify-between gap-3 text-sm">
-                <span className="truncate">{s.title}</span>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  disabled={generating !== null}
-                  onClick={() => generateFor(s.id)}
-                >
+                <span className="truncate">
+                  {s.title}
+                  <span className="text-[11px] text-ink/40 ml-1.5">조회 {s.view_count ?? 0}</span>
+                </span>
+                <Button size="sm" variant="outline" disabled={generating !== null} onClick={() => generateFor(s.id)}>
                   {generating === s.id ? '생성 중… (수 분 소요)' : '카드 생성'}
                 </Button>
               </div>
             ))}
+            {candidates.length === 0 && <p className="text-xs text-ink/40">조건에 맞는 콘텐츠가 없어요.</p>}
           </div>
         </div>
       )}
@@ -302,11 +375,13 @@ function CardEditor({ card, source }: { card: CardRow; source?: SourceRow }) {
   const [igCaption, setIgCaption] = useState(card.ig_caption ?? '');
   const [threadsText, setThreadsText] = useState(card.threads_text ?? '');
   const [threadsCover, setThreadsCover] = useState(card.threads_cover ?? '');
+  const [edge, setEdge] = useState(card.edge ?? '');
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
   const [selIdx, setSelIdx] = useState(0);
   const [editIdx, setEditIdx] = useState<number | null>(null);
   const [rewriting, setRewriting] = useState<number | null>(null);
+  const [viewMode, setViewMode] = useState<'single' | 'grid'>('single');
 
   const sel = slides[selIdx] as CardSlide | undefined;
 
@@ -420,6 +495,7 @@ function CardEditor({ card, source }: { card: CardRow; source?: SourceRow }) {
         ig_caption: igCaption || null,
         threads_text: threadsText || null,
         threads_cover: threadsCover || null,
+        edge: edge || null,
         ...(nextStatus ? { status: nextStatus } : {}),
       })
       .eq('id', card.id);
@@ -430,13 +506,13 @@ function CardEditor({ card, source }: { card: CardRow; source?: SourceRow }) {
   }
 
   async function regenerate() {
-    if (!confirm('AI로 전체를 다시 생성할까요? 지금까지의 수정이 덮어써져요. (수 분 소요)')) return;
+    if (!confirm(`AI로 전체를 다시 생성할까요? 지금까지의 수정이 덮어써져요. (수 분 소요)${edge.trim() ? `\n\n엣지 방향: ${edge.trim()}` : ''}`)) return;
     setSaving(true);
     try {
       const res = await fetch('/api/cardpress/generate', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ sourceType: 'content', sourceId: card.source_id }),
+        body: JSON.stringify({ sourceType: 'content', sourceId: card.source_id, edge: edge.trim() || undefined }),
       });
       if (!res.ok) throw new Error((await res.json()).error ?? `HTTP ${res.status}`);
       router.refresh();
@@ -468,6 +544,18 @@ function CardEditor({ card, source }: { card: CardRow; source?: SourceRow }) {
           <Button size="sm" variant="outline" onClick={() => save()} disabled={saving || !dirty}>{saving ? '저장 중…' : '저장'}</Button>
           <Button size="sm" variant="accent" onClick={() => save('reviewed')} disabled={saving}>검수 완료</Button>
         </div>
+      </div>
+
+      {/* 엣지 — 이 콘텐츠의 차별점 한 줄. 수정 후 [AI 전체 재생성]하면 이 방향으로 다시 쓴다 */}
+      <div className="card p-3 flex items-center gap-2">
+        <Label className="text-xs shrink-0">엣지</Label>
+        <Input
+          value={edge}
+          onChange={(e) => { setEdge(e.target.value); setDirty(true); }}
+          placeholder="이 콘텐츠의 차별점 한 줄 (예: 앤트로픽 현직 엔지니어가 직접 공개한 검증된 패턴)"
+          className="text-sm"
+        />
+        <span className="text-[11px] text-ink/40 shrink-0 hidden sm:block">수정 후 [AI 전체 재생성] = 이 방향으로 재작성</span>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-[1fr_400px] gap-4 items-start">
@@ -512,6 +600,13 @@ function CardEditor({ card, source }: { card: CardRow; source?: SourceRow }) {
                 {editIdx === i && <SlideForm slide={s} onApply={(form) => applyEdit(i, form)} onCancel={() => setEditIdx(null)} />}
               </div>
             ))}
+            <AddSlidePanel
+              sourceId={card.source_id}
+              onAdd={(slide) => {
+                patch((prev) => [...prev, { ...slide, order: prev.length + 1, enabled: true }]);
+                setSelIdx(slides.length);
+              }}
+            />
           </div>
 
           <ImageTray card={card} onPick={assignImage} onThreadsCover={(u) => { setThreadsCover(u); setDirty(true); }} />
@@ -533,29 +628,204 @@ function CardEditor({ card, source }: { card: CardRow; source?: SourceRow }) {
           </div>
         </div>
 
-        {/* 우: 실비율(4:5) 프리뷰 */}
+        {/* 우: 실비율(4:5) 프리뷰 — 1장 / 그리드(전체 흐름 검수) 토글 */}
         <div className="card p-4 lg:sticky lg:top-4">
           <div className="flex items-center justify-between mb-2">
-            <span className="text-sm font-semibold">프리뷰 {sel ? `${selIdx + 1} / ${slides.length}` : ''}</span>
-            <div className="flex gap-1">
-              <button onClick={() => setSelIdx(Math.max(0, selIdx - 1))} className="px-2 py-0.5 rounded border border-border text-xs hover:bg-ink/5">←</button>
-              <button onClick={() => setSelIdx(Math.min(slides.length - 1, selIdx + 1))} className="px-2 py-0.5 rounded border border-border text-xs hover:bg-ink/5">→</button>
+            <span className="text-sm font-semibold">프리뷰 {viewMode === 'single' && sel ? `${selIdx + 1} / ${slides.length}` : ''}</span>
+            <div className="flex gap-1 items-center">
+              <button
+                onClick={() => setViewMode(viewMode === 'single' ? 'grid' : 'single')}
+                className={`px-2 py-0.5 rounded border text-xs ${viewMode === 'grid' ? 'bg-accent text-white border-accent' : 'border-border hover:bg-ink/5'}`}
+                title="전체 흐름을 한눈에"
+              >
+                그리드
+              </button>
+              {viewMode === 'single' && (
+                <>
+                  <button onClick={() => setSelIdx(Math.max(0, selIdx - 1))} className="px-2 py-0.5 rounded border border-border text-xs hover:bg-ink/5">←</button>
+                  <button onClick={() => setSelIdx(Math.min(slides.length - 1, selIdx + 1))} className="px-2 py-0.5 rounded border border-border text-xs hover:bg-ink/5">→</button>
+                </>
+              )}
             </div>
           </div>
-          <div className="relative w-full rounded-lg overflow-hidden border border-border bg-ink/5" style={{ aspectRatio: '4 / 5' }}>
-            {previewUrl && !previewErr && (
-              <img src={previewUrl} alt="슬라이드 프리뷰" className={`w-full h-full object-contain transition-opacity ${previewLoading ? 'opacity-40' : ''}`} />
-            )}
-            {previewLoading && !previewUrl && (
-              <div className="absolute inset-0 flex items-center justify-center text-xs text-ink/40">렌더 중…</div>
-            )}
-            {previewErr && (
-              <div className="absolute inset-0 flex items-center justify-center text-xs text-red-500 p-4 text-center">{previewErr}</div>
-            )}
-          </div>
-          {sel && !sel.enabled && <p className="text-xs text-amber-600 mt-2">이 슬라이드는 제외 상태예요.</p>}
+          {viewMode === 'single' ? (
+            <>
+              <div className="relative w-full rounded-lg overflow-hidden border border-border bg-ink/5" style={{ aspectRatio: '4 / 5' }}>
+                {previewUrl && !previewErr && (
+                  <img src={previewUrl} alt="슬라이드 프리뷰" className={`w-full h-full object-contain transition-opacity ${previewLoading ? 'opacity-40' : ''}`} />
+                )}
+                {previewLoading && !previewUrl && (
+                  <div className="absolute inset-0 flex items-center justify-center text-xs text-ink/40">렌더 중…</div>
+                )}
+                {previewErr && (
+                  <div className="absolute inset-0 flex items-center justify-center text-xs text-red-500 p-4 text-center">{previewErr}</div>
+                )}
+              </div>
+              {sel && !sel.enabled && <p className="text-xs text-amber-600 mt-2">이 슬라이드는 제외 상태예요.</p>}
+            </>
+          ) : (
+            <div className="grid grid-cols-3 gap-2 max-h-[70vh] overflow-y-auto">
+              {slides.map((s, i) =>
+                s.enabled ? (
+                  <SlideThumb
+                    key={i}
+                    slide={s}
+                    accent={card.accent}
+                    label={`${i + 1}`}
+                    selected={i === selIdx}
+                    onClick={() => { setSelIdx(i); setViewMode('single'); }}
+                  />
+                ) : null
+              )}
+            </div>
+          )}
         </div>
       </div>
+    </div>
+  );
+}
+
+// ── 그리드 뷰 썸네일 — 렌더 PNG를 키(템플릿+props)로 캐시 ──
+const thumbCache = new Map<string, string>();
+
+function SlideThumb({ slide, accent, label, selected, onClick }: {
+  slide: CardSlide; accent: CardAccent; label: string; selected: boolean; onClick: () => void;
+}) {
+  const key = JSON.stringify({ t: slide.template, a: accent, p: slide.props });
+  const [url, setUrl] = useState<string | null>(thumbCache.get(key) ?? null);
+  const [err, setErr] = useState(false);
+
+  useEffect(() => {
+    if (thumbCache.has(key)) { setUrl(thumbCache.get(key)!); return; }
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch('/api/cardpress/render', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ template: slide.template, accent, props: slide.props }),
+        });
+        if (!res.ok) throw new Error();
+        const objectUrl = URL.createObjectURL(await res.blob());
+        thumbCache.set(key, objectUrl);
+        if (!cancelled) setUrl(objectUrl);
+      } catch {
+        if (!cancelled) setErr(true);
+      }
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key]);
+
+  return (
+    <button
+      onClick={onClick}
+      className={`relative rounded-md overflow-hidden border ${selected ? 'border-accent ring-1 ring-accent' : 'border-border'} bg-ink/5`}
+      style={{ aspectRatio: '4 / 5' }}
+      title={`${label}번 슬라이드`}
+    >
+      {url ? (
+        <img src={url} alt="" className="w-full h-full object-cover" />
+      ) : (
+        <span className="absolute inset-0 flex items-center justify-center text-[10px] text-ink/40">{err ? '오류' : '…'}</span>
+      )}
+      <span className="absolute top-1 left-1 text-[10px] font-bold text-white bg-black/50 rounded px-1">{label}</span>
+    </button>
+  );
+}
+
+// ── 슬라이드 추가 — 매핑 계획(plan API)에서 섹션 선택 → AI 단건 작성 ──
+function AddSlidePanel({ sourceId, onAdd }: {
+  sourceId: string;
+  onAdd: (slide: Pick<CardSlide, 'template' | 'props' | 'sourceSection'>) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [plan, setPlan] = useState<Array<{ template: CardTemplateId; sourceSection: string; alternatives: CardTemplateId[]; materialPreview: string }> | null>(null);
+  const [pick, setPick] = useState('');
+  const [template, setTemplate] = useState<CardTemplateId | ''>('');
+  const [busy, setBusy] = useState(false);
+
+  async function openPanel() {
+    setOpen(true);
+    if (plan) return;
+    try {
+      const res = await fetch(`/api/cardpress/plan?sourceId=${sourceId}`);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? `HTTP ${res.status}`);
+      setPlan(data.slides);
+    } catch (e) {
+      alert(`계획 조회 실패: ${(e as Error).message}`);
+      setOpen(false);
+    }
+  }
+
+  const picked = plan?.find((p) => p.sourceSection === pick);
+
+  async function create() {
+    if (!picked) return;
+    setBusy(true);
+    try {
+      const res = await fetch('/api/cardpress/rewrite-slide', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ sourceId, sourceSection: picked.sourceSection, template: template || picked.template }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? `HTTP ${res.status}`);
+      onAdd({ template: data.slide.template, props: data.slide.props, sourceSection: picked.sourceSection });
+      setOpen(false);
+      setPick('');
+      setTemplate('');
+    } catch (e) {
+      alert(`슬라이드 작성 실패: ${(e as Error).message}`);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="px-3 py-2.5">
+      {!open ? (
+        <button onClick={openPanel} className="text-xs text-accent hover:underline">+ 슬라이드 추가 (AI가 빠뜨린 항목 등)</button>
+      ) : !plan ? (
+        <p className="text-xs text-ink/40">계획 불러오는 중…</p>
+      ) : (
+        <div className="space-y-2">
+          <Label className="text-xs">본문 섹션 선택</Label>
+          <select
+            className="w-full text-sm border border-border rounded-md px-2 py-1.5 bg-transparent"
+            value={pick}
+            onChange={(e) => { setPick(e.target.value); setTemplate(''); }}
+          >
+            <option value="">— 섹션 —</option>
+            {plan.map((p) => (
+              <option key={p.sourceSection} value={p.sourceSection}>
+                [{p.template}] {p.sourceSection} · {p.materialPreview.slice(0, 40)}
+              </option>
+            ))}
+          </select>
+          {picked && (
+            <div className="flex items-center gap-1.5 flex-wrap text-xs">
+              <span className="text-ink/40">템플릿:</span>
+              {[picked.template, ...picked.alternatives].map((t) => (
+                <button
+                  key={t}
+                  onClick={() => setTemplate(t)}
+                  className={`rounded px-1.5 py-0.5 ${(template || picked.template) === t ? 'bg-accent text-white' : 'bg-ink/5 text-ink/60'}`}
+                >
+                  {TEMPLATE_LABEL[t]}
+                </button>
+              ))}
+            </div>
+          )}
+          <div className="flex justify-end gap-2">
+            <Button size="sm" variant="outline" onClick={() => setOpen(false)}>취소</Button>
+            <Button size="sm" variant="accent" onClick={create} disabled={!picked || busy}>
+              {busy ? 'AI 작성 중… (수 분 소요)' : 'AI로 작성해 추가'}
+            </Button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
