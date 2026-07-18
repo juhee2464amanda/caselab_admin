@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { createSupabaseAdminClient } from '@/lib/supabase/admin';
-import { rewriteSlide } from '@/lib/cardpress/generate';
+import { rewriteSlide, rewriteSlideVariants } from '@/lib/cardpress/generate';
 import type { ContentRowLite } from '@/lib/cardpress/mapping';
 import type { CardTemplateId } from '@/types/cardpress';
 
@@ -33,6 +33,9 @@ export async function POST(req: NextRequest) {
     sourceSection?: string;
     template?: CardTemplateId;
     instruction?: string;
+    /** AI 수정 초안 모드 — 현재 props + 수정 방향으로 서로 다른 후보 count개 */
+    currentProps?: Record<string, unknown>;
+    count?: number;
   };
   if (!body.sourceId || !body.sourceSection || !body.template)
     return NextResponse.json({ error: 'sourceId·sourceSection·template 필요' }, { status: 400 });
@@ -47,6 +50,15 @@ export async function POST(req: NextRequest) {
   if (!content) return NextResponse.json({ error: '콘텐츠 없음' }, { status: 404 });
 
   try {
+    if (body.count && body.count > 1) {
+      const candidates = await rewriteSlideVariants(
+        content as unknown as ContentRowLite,
+        body.sourceSection,
+        body.template,
+        { instruction: body.instruction, currentProps: body.currentProps, count: body.count }
+      );
+      return NextResponse.json({ candidates });
+    }
     const slide = await rewriteSlide(
       content as unknown as ContentRowLite,
       body.sourceSection,

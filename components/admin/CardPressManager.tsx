@@ -217,6 +217,21 @@ function textToField(text: string, def: FieldDef): unknown {
   }
 }
 
+/** 편집 폼 값 → props 병합 (폼에 없는 시스템 필드(page 등)는 base에서 유지) */
+function formToProps(
+  template: CardTemplateId,
+  base: Record<string, unknown>,
+  form: Record<string, string>
+): Record<string, unknown> {
+  const props: Record<string, unknown> = { ...base };
+  for (const def of FIELDS[template]) {
+    const v = textToField(form[def.key] ?? '', def);
+    if (v === undefined) delete props[def.key];
+    else props[def.key] = v;
+  }
+  return props;
+}
+
 /** 활성 슬라이드 기준 page("n / total") 재계산 — 커버·B4는 페이지 없음 */
 function renumber(slides: CardSlide[]): CardSlide[] {
   const PAGED: CardTemplateId[] = ['B1', 'B2', 'B3', 'B5', 'B6', 'B7', 'B8', 'B9', 'O1'];
@@ -496,6 +511,7 @@ function CardEditor({ card, source }: { card: CardRow; source?: SourceRow }) {
   const [editIdx, setEditIdx] = useState<number | null>(null);
   const [rewriting, setRewriting] = useState<number | null>(null);
   const [viewMode, setViewMode] = useState<'single' | 'grid'>('single');
+  const [quickEdit, setQuickEdit] = useState(false);
 
   const sel = slides[selIdx] as CardSlide | undefined;
 
@@ -556,16 +572,7 @@ function CardEditor({ card, source }: { card: CardRow; source?: SourceRow }) {
 
   function applyEdit(i: number, form: Record<string, string>) {
     patch((prev) =>
-      prev.map((s, k) => {
-        if (k !== i) return s;
-        const props: Record<string, unknown> = { ...s.props };
-        for (const def of FIELDS[s.template]) {
-          const v = textToField(form[def.key] ?? '', def);
-          if (v === undefined) delete props[def.key];
-          else props[def.key] = v;
-        }
-        return { ...s, props };
-      })
+      prev.map((s, k) => (k === i ? { ...s, props: formToProps(s.template, s.props, form) } : s))
     );
     setEditIdx(null);
   }
@@ -766,7 +773,9 @@ function CardEditor({ card, source }: { card: CardRow; source?: SourceRow }) {
                     </button>
                   </div>
                 </div>
-                {editIdx === i && <SlideForm slide={s} onApply={(form) => applyEdit(i, form)} onCancel={() => setEditIdx(null)} />}
+                {editIdx === i && (
+                  <SlideForm slide={s} accent={card.accent} sourceId={card.source_id} onApply={(form) => applyEdit(i, form)} onCancel={() => setEditIdx(null)} />
+                )}
               </div>
             ))}
             <AddSlidePanel
@@ -813,6 +822,13 @@ function CardEditor({ card, source }: { card: CardRow; source?: SourceRow }) {
               </button>
               {viewMode === 'single' && (
                 <>
+                  <button
+                    onClick={() => setQuickEdit(!quickEdit)}
+                    className={`px-2 py-0.5 rounded border text-xs ${quickEdit ? 'bg-accent text-white border-accent' : 'border-border hover:bg-ink/5 text-accent'}`}
+                    title="이 슬라이드의 워딩을 바로 수정"
+                  >
+                    수정
+                  </button>
                   <button onClick={() => setSelIdx(Math.max(0, selIdx - 1))} className="px-2 py-0.5 rounded border border-border text-xs hover:bg-ink/5">←</button>
                   <button onClick={() => setSelIdx(Math.min(slides.length - 1, selIdx + 1))} className="px-2 py-0.5 rounded border border-border text-xs hover:bg-ink/5">→</button>
                 </>
@@ -833,6 +849,17 @@ function CardEditor({ card, source }: { card: CardRow; source?: SourceRow }) {
                 )}
               </div>
               {sel && !sel.enabled && <p className="text-xs text-amber-600 mt-2">이 슬라이드는 제외 상태예요.</p>}
+              {/* 프리뷰 빠른 수정 — 적용하면 위 프리뷰가 바로 재렌더 */}
+              {quickEdit && sel && (
+                <SlideForm
+                  key={`${selIdx}-${sel.template}`}
+                  slide={sel}
+                  accent={card.accent}
+                  sourceId={card.source_id}
+                  onApply={(form) => { applyEdit(selIdx, form); setQuickEdit(false); }}
+                  onCancel={() => setQuickEdit(false)}
+                />
+              )}
             </>
           ) : (
             <div className="grid grid-cols-3 gap-2 max-h-[70vh] overflow-y-auto">
@@ -1096,14 +1123,100 @@ function AddSlidePanel({ sourceId, onAdd }: {
   );
 }
 
-// ── 인라인 편집 폼 ────────────────────────────────────────
-function SlideForm({ slide, onApply, onCancel }: { slide: CardSlide; onApply: (form: Record<string, string>) => void; onCancel: () => void }) {
+// ── 인라인 편집 폼 (+ AI 수정: 방향 입력 → 초안 3개 비교 → 폼에 반영) ──────────
+function SlideForm({
+  slide,
+  accent,
+  sourceId,
+  onApply,
+  onCancel,
+}: {
+  slide: CardSlide;
+  accent: CardAccent;
+  sourceId: string;
+  onApply: (form: Record<string, string>) => void;
+  onCancel: () => void;
+}) {
   const defs = FIELDS[slide.template];
   const [form, setForm] = useState<Record<string, string>>(() =>
     Object.fromEntries(defs.map((d) => [d.key, fieldToText((slide.props as Record<string, unknown>)[d.key], d)]))
   );
+  const [instruction, setInstruction] = useState('');
+  const [aiBusy, setAiBusy] = useState(false);
+  const [candidates, setCandidates] = useState<Array<Record<string, unknown>> | null>(null);
+  const [pickedCand, setPickedCand] = useState<number | null>(null);
+
+  async function fetchCandidates() {
+    if (!slide.sourceSection) return alert('sourceSection이 없어 AI 수정을 쓸 수 없어요.');
+    if (!instruction.trim()) return alert('수정 방향을 먼저 적어주세요. (예: "숫자를 앞세워 더 도발적으로")');
+    setAiBusy(true);
+    setCandidates(null);
+    setPickedCand(null);
+    try {
+      const res = await fetch('/api/cardpress/rewrite-slide', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          sourceId,
+          sourceSection: slide.sourceSection,
+          template: slide.template,
+          instruction: instruction.trim(),
+          currentProps: formToProps(slide.template, slide.props, form),
+          count: 3,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? `HTTP ${res.status}`);
+      setCandidates(data.candidates ?? []);
+    } catch (e) {
+      alert(`AI 초안 실패: ${(e as Error).message}`);
+    } finally {
+      setAiBusy(false);
+    }
+  }
+
+  function pickCandidate(i: number) {
+    if (!candidates) return;
+    const props = candidates[i];
+    setForm(Object.fromEntries(defs.map((d) => [d.key, fieldToText(props[d.key], d)])));
+    setPickedCand(i);
+  }
+
   return (
     <div className="mt-2 space-y-2 border-t border-border pt-2">
+      {/* AI 수정 — 방향 제시 → 서로 다른 초안 3개 → 골라서 폼에 반영 → 다듬어 적용 */}
+      <div className="rounded-md bg-accent/5 border border-accent/20 p-2 space-y-2">
+        <div className="flex items-center gap-2">
+          <Input
+            value={instruction}
+            onChange={(e) => setInstruction(e.target.value)}
+            placeholder='AI 수정 방향 (예: "숫자를 앞세워 더 도발적으로", "더 담백하게")'
+            className="text-sm"
+            onKeyDown={(e) => e.key === 'Enter' && !aiBusy && fetchCandidates()}
+          />
+          <Button size="sm" variant="outline" onClick={fetchCandidates} disabled={aiBusy}>
+            {aiBusy ? '초안 생성 중… (1~3분)' : '초안 3개'}
+          </Button>
+        </div>
+        {candidates && candidates.length > 0 && (
+          <div className="flex gap-2">
+            {candidates.map((c, i) => (
+              <div key={i} className="flex flex-col items-center gap-1">
+                <SlideThumb
+                  slide={{ ...slide, props: c }}
+                  accent={accent}
+                  label={`${i + 1}안`}
+                  selected={pickedCand === i}
+                  onClick={() => pickCandidate(i)}
+                />
+                <span className="text-[10px] text-ink/40">{pickedCand === i ? '반영됨 ↓' : '클릭=폼에 반영'}</span>
+              </div>
+            ))}
+          </div>
+        )}
+        {candidates && candidates.length === 0 && <p className="text-xs text-ink/40">후보가 없어요 — 방향을 바꿔 다시 시도해 보세요.</p>}
+      </div>
+
       {defs.map((d) => (
         <div key={d.key}>
           <Label className="text-xs">{d.label}{d.hint && <span className="text-ink/40"> · {d.hint}</span>}</Label>

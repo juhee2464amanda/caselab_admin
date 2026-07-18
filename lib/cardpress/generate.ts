@@ -246,10 +246,12 @@ function planPrompt(
   operatorEdge?: string,
   ctaType: CardCtaType = 'comment_dm'
 ): string {
+  // 재료는 항목당 500자로 절단 — 프롬프트가 커질수록 구독 CLI 타임아웃 위험이 커진다
+  const clip = (t: string) => (t.length > 500 ? `${t.slice(0, 500)}…` : t);
   const slideLines = plan.slides
     .map(
       (s, i) =>
-        `${i + 1}. template=${s.template}${s.alternatives?.length ? ` (대안: ${s.alternatives.join(',')})` : ''} · sourceSection=${s.sourceSection}${s.optional ? ' · (선정)' : ''}${s.required ? ` · ${s.required}` : ''}\n재료:\n${s.material}`
+        `${i + 1}. template=${s.template}${s.alternatives?.length ? ` (대안: ${s.alternatives.join(',')})` : ''} · sourceSection=${s.sourceSection}${s.optional ? ' · (선정)' : ''}${s.required ? ` · ${s.required}` : ''}\n재료:\n${clip(s.material)}`
     )
     .join('\n\n');
   const optCount = plan.slides.filter((s) => s.optional).length;
@@ -430,7 +432,7 @@ ${item.material}${instruction ? `\n\n[운영자 요청] ${instruction}` : ''}
       raw = await callModel(SYSTEM, prompt, {
         allowedTools: [],
         model: 'sonnet',
-        timeoutMs: 600_000,
+        timeoutMs: 900_000,
       });
     } catch (e) {
       lastIssues = [`모델 호출 실패: ${(e as Error).message}`];
@@ -460,6 +462,70 @@ ${item.material}${instruction ? `\n\n[운영자 요청] ${instruction}` : ''}
       return { template: targetTemplate, props: json.props ?? {} };
   }
   throw new Error(`슬라이드 재작성 실패: ${lastIssues.slice(0, 3).join(' / ')}`);
+}
+
+/** 슬라이드 AI 수정 초안 N개 — 운영자 수정 방향(instruction)을 받아 서로 다른 접근의 후보를 제안.
+ *  (검수 UI: 방향 입력 → 초안 3개 썸네일 비교 → 적용) */
+export async function rewriteSlideVariants(
+  row: ContentRowLite,
+  sourceSection: string,
+  template: CardTemplateId,
+  opts: { instruction?: string; currentProps?: Record<string, unknown>; count?: number }
+): Promise<Array<Record<string, unknown>>> {
+  const plan = buildSlidePlan(row);
+  const item = plan.slides.find((s) => s.sourceSection === sourceSection);
+  const count = Math.min(3, Math.max(2, opts.count ?? 3));
+
+  const prompt = `[콘텐츠] ${row.track === 'case' ? '실전 케이스' : 'AI 트렌드'} · ${row.title}
+
+[슬라이드 수정 — template=${template} · sourceSection=${sourceSection}]
+원본 재료:
+${item?.material?.slice(0, 500) ?? '(없음 — 현재 버전을 기준으로)'}
+
+현재 버전:
+${JSON.stringify(opts.currentProps ?? {})}
+${opts.instruction ? `\n[운영자 수정 방향 — 최우선] ${opts.instruction}` : ''}
+
+[작업] 위 수정 방향을 반영해 서로 다른 접근의 후보 ${count}개를 만드세요.
+- 각 후보는 워딩·강조점이 실제로 달라야 함 (미세 변형 금지)
+- page·ctaLine은 건드리지 말 것 (시스템 관리)
+
+[출력 — JSON 하나만] {"candidates":[{"props":{...}}${count > 1 ? ',…' : ''}]}`;
+
+  let lastIssues: string[] = [];
+  for (let attempt = 0; attempt < 2; attempt++) {
+    let raw: string;
+    try {
+      raw = await callModel(SYSTEM, attempt === 0 ? prompt : `${prompt}\n\n[이전 시도 문제] ${lastIssues.join(' / ')} — 규격을 지켜 다시`, {
+        allowedTools: [],
+        model: 'sonnet',
+        timeoutMs: 300_000,
+      });
+    } catch (e) {
+      lastIssues = [`모델 호출 실패: ${(e as Error).message}`];
+      continue;
+    }
+    let json: { candidates?: Array<{ props?: Record<string, unknown> }> };
+    try {
+      json = JSON.parse(extractJson(raw));
+    } catch {
+      lastIssues = ['응답이 JSON이 아님'];
+      continue;
+    }
+    const valid: Array<Record<string, unknown>> = [];
+    for (const c of json.candidates ?? []) {
+      const check = RenderSlideSchema.safeParse({ template, accent: plan.accent, props: c.props });
+      if (!check.success) continue;
+      // 시스템 관리 필드는 현재 값 유지
+      const merged = { ...c.props } as Record<string, unknown>;
+      if (opts.currentProps?.page) merged.page = opts.currentProps.page;
+      if (opts.currentProps?.ctaLine) merged.ctaLine = opts.currentProps.ctaLine;
+      valid.push(merged);
+    }
+    if (valid.length > 0) return valid.slice(0, count);
+    lastIssues = ['유효한 후보가 없음 — 템플릿 props 스키마를 지킬 것'];
+  }
+  throw new Error(`AI 초안 생성 실패: ${lastIssues.join(' / ')}`);
 }
 
 export async function generateCardSet(
@@ -494,7 +560,7 @@ ${lastIssues.map((i) => `- ${i}`).join('\n')}`;
         model: 'sonnet',
         // 구독 CLI는 기동·큐 지연 편차가 큼 (150s·300s 실측 타임아웃) — 로컬 한정이라 넉넉히.
         // prod(Vercel)는 AI_PROVIDER=apikey 경로라 이 값에 안 걸린다.
-        timeoutMs: 600_000,
+        timeoutMs: 900_000,
       });
     } catch (e) {
       lastIssues = [`모델 호출 실패: ${(e as Error).message}`];
