@@ -52,7 +52,7 @@ const STATUS_LABEL: Record<CardRow['status'], { text: string; cls: string }> = {
 };
 
 const TEMPLATE_LABEL: Record<CardTemplateId, string> = {
-  C1: 'C1 사진커버', C2: 'C2 다크커버', C3: 'C3 툴커버', C4: 'C4 VS커버',
+  C1: 'C1 사진커버', C2: 'C2 다크커버', C3: 'C3 툴커버', C4: 'C4 VS커버', C5: 'C5 빅넘버커버',
   B1: 'B1 타임라인', B2: 'B2 불릿', B3: 'B3 용어', B4: 'B4 선언',
   B5: 'B5 솔직후기', B6: 'B6 스텝', B7: 'B7 숫자', B8: 'B8 프롬프트',
   B9: 'B9 스크린샷', O1: 'O1 마무리',
@@ -60,12 +60,12 @@ const TEMPLATE_LABEL: Record<CardTemplateId, string> = {
 
 // 템플릿 교체 대안 (재료가 같은 섹션에서 서로 넘나들 수 있는 쌍)
 const ALT_MAP: Partial<Record<CardTemplateId, CardTemplateId[]>> = {
-  B2: ['B7', 'B6'], B7: ['B2'], B6: ['B2'], C1: ['C2'], C2: ['C1'], B4: ['B2'],
+  B2: ['B7', 'B6'], B7: ['B2'], B6: ['B2'], C1: ['C2', 'C5'], C2: ['C1', 'C5'], C5: ['C1', 'C2'], B4: ['B2'],
 };
 
 // 슬라이드별 이미지가 들어가는 props 키
 const IMAGE_KEY: Partial<Record<CardTemplateId, string>> = {
-  C1: 'coverImage', C2: 'coverImage', B4: 'coverImage', B2: 'media', B9: 'shot',
+  C1: 'coverImage', C2: 'coverImage', C5: 'coverImage', B4: 'coverImage', B2: 'media', B9: 'shot',
 };
 
 // ── 템플릿별 인라인 편집 필드 정의 ──────────────────────────
@@ -74,10 +74,19 @@ type FieldDef = { key: string; label: string; kind: FieldKind; hint?: string; pa
 
 const FIELDS: Record<CardTemplateId, FieldDef[]> = {
   C1: [
+    { key: 'kicker', label: '키커', kind: 'input', hint: '헤드라인 위 프레이밍 ("~의 경제학")' },
     { key: 'title', label: '제목', kind: 'textarea', hint: '줄바꿈 그대로 반영 · 줄당 ≤12자' },
     { key: 'hl', label: '형광펜 단어', kind: 'input', hint: '제목 속 부분 문자열' },
     { key: 'sub', label: '부제', kind: 'input' },
+    { key: 'footer', label: '푸터', kind: 'input', hint: '@영문개념 (예: @BLINDSPOT PASS)' },
     { key: 'coverImage', label: '배경 이미지 URL', kind: 'input' },
+  ],
+  C5: [
+    { key: 'kicker', label: '맥락 한 줄', kind: 'input' },
+    { key: 'big', label: '거대 숫자/단어', kind: 'input', hint: '≤6자 (10배, FOCUS)' },
+    { key: 'resolve', label: '해소 문장', kind: 'textarea', hint: '1~2줄, **강조** 1개' },
+    { key: 'footer', label: '푸터', kind: 'input', hint: '@영문개념' },
+    { key: 'coverImage', label: '배경 이미지 URL (텍스처로 깔림)', kind: 'input' },
   ],
   C2: [
     { key: 'eyebrow', label: '도입', kind: 'input' },

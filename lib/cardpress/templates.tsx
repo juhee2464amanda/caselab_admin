@@ -118,11 +118,11 @@ const cardBase: CSSProperties = {
   wordBreak: 'keep-all',
 };
 
-// ---------- C1 · 사진몰입형 커버 ----------
-function C1({ accent, props }: Extract<RenderSlideInput, { template: 'C1' }>) {
-  const color = ACCENTS[accent];
+// 사진 배경 + 톤 통일 스크림 (벤치마크 룰: 어떤 사진이 와도 살아남는 후처리가 톤 통일의 90%)
+// overlay: 전체를 일괄 어둡게(0.2~0.35 / 빅넘버형 0.6+), 하단 45%는 0.85까지 떨어지는 그라데이션.
+function PhotoBg({ image, overlay }: { image?: string; overlay: number }) {
   return (
-    <div style={{ ...cardBase, background: '#1a1e2a', color: '#fff' }}>
+    <>
       <div
         style={{
           position: 'absolute',
@@ -131,8 +131,8 @@ function C1({ accent, props }: Extract<RenderSlideInput, { template: 'C1' }>) {
           width: CARD_W,
           height: CARD_H,
           display: 'flex',
-          backgroundImage: props.coverImage
-            ? `url(${props.coverImage})`
+          backgroundImage: image
+            ? `url(${image})`
             : 'linear-gradient(135deg,#232a3d 0%,#12151f 100%)',
           backgroundSize: `${CARD_W}px ${CARD_H}px`,
         }}
@@ -145,10 +145,31 @@ function C1({ accent, props }: Extract<RenderSlideInput, { template: 'C1' }>) {
           width: CARD_W,
           height: CARD_H,
           display: 'flex',
-          background:
-            'linear-gradient(180deg,rgba(0,0,0,0.15) 0%,rgba(0,0,0,0) 32%,rgba(0,0,0,0.62) 100%)',
+          background: `rgba(0,0,0,${overlay})`,
         }}
       />
+      <div
+        style={{
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          width: CARD_W,
+          height: CARD_H,
+          display: 'flex',
+          background:
+            'linear-gradient(180deg,rgba(0,0,0,0) 0%,rgba(0,0,0,0) 55%,rgba(0,0,0,0.85) 100%)',
+        }}
+      />
+    </>
+  );
+}
+
+// ---------- C1 · 사진몰입형 커버 ----------
+function C1({ accent, props }: Extract<RenderSlideInput, { template: 'C1' }>) {
+  const color = ACCENTS[accent];
+  return (
+    <div style={{ ...cardBase, background: '#1a1e2a', color: '#fff' }}>
+      <PhotoBg image={props.coverImage} overlay={0.28} />
       <div
         style={{
           position: 'relative',
@@ -171,6 +192,19 @@ function C1({ accent, props }: Extract<RenderSlideInput, { template: 'C1' }>) {
           }}
         />
         <div style={{ display: 'flex', flexDirection: 'column' }}>
+          {props.kicker ? (
+            <div
+              style={{
+                display: 'flex',
+                fontSize: 28,
+                fontWeight: 700,
+                color: 'rgba(255,255,255,0.85)',
+                marginBottom: 20,
+              }}
+            >
+              {props.kicker}
+            </div>
+          ) : null}
           <div
             style={{
               display: 'flex',
@@ -199,7 +233,99 @@ function C1({ accent, props }: Extract<RenderSlideInput, { template: 'C1' }>) {
               {props.sub}
             </div>
           ) : null}
+          {props.footer ? (
+            <div
+              style={{
+                display: 'flex',
+                fontSize: 20,
+                fontWeight: 700,
+                letterSpacing: '0.12em',
+                color: 'rgba(255,255,255,0.55)',
+                marginTop: 30,
+              }}
+            >
+              {props.footer}
+            </div>
+          ) : null}
         </div>
+      </div>
+    </div>
+  );
+}
+
+// ---------- C5 · 빅넘버 커버 (사진 실패 폴백형 — 사진은 텍스처, 숫자/단어가 주인공) ----------
+function C5({ accent, props }: Extract<RenderSlideInput, { template: 'C5' }>) {
+  const color = ACCENTS[accent];
+  return (
+    <div style={{ ...cardBase, background: DARK_BG, color: '#fff' }}>
+      <PhotoBg image={props.coverImage} overlay={0.68} />
+      <div
+        style={{
+          position: 'relative',
+          flexGrow: 1,
+          display: 'flex',
+          flexDirection: 'column',
+          padding: 72,
+        }}
+      >
+        <Topbar color="#fff" right={DEFAULT_TAGS[accent]} rightStyle={{ color: 'rgba(255,255,255,0.6)', fontSize: 26 }} />
+        <div
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            marginTop: 'auto',
+            marginBottom: 'auto',
+          }}
+        >
+          {props.kicker ? (
+            <div style={{ display: 'flex', fontSize: 32, fontWeight: 600, color: 'rgba(255,255,255,0.8)' }}>
+              {props.kicker}
+            </div>
+          ) : null}
+          <div
+            style={{
+              display: 'flex',
+              marginTop: 24,
+              fontSize: 190,
+              fontWeight: 800,
+              lineHeight: 1.02,
+              letterSpacing: '-0.045em',
+              color,
+            }}
+          >
+            {props.big}
+          </div>
+          <div
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              marginTop: 30,
+              fontSize: 44,
+              fontWeight: 800,
+              letterSpacing: '-0.02em',
+              lineHeight: 1.35,
+            }}
+          >
+            {props.resolve.split('\n').map((line, i) => (
+              <div key={i} style={{ display: 'flex', flexWrap: 'wrap' }}>
+                {em(line, '#fff')}
+              </div>
+            ))}
+          </div>
+        </div>
+        {props.footer ? (
+          <div
+            style={{
+              display: 'flex',
+              fontSize: 20,
+              fontWeight: 700,
+              letterSpacing: '0.12em',
+              color: 'rgba(255,255,255,0.5)',
+            }}
+          >
+            {props.footer}
+          </div>
+        ) : null}
       </div>
     </div>
   );
@@ -895,31 +1021,7 @@ function B4({ accent, props }: Extract<RenderSlideInput, { template: 'B4' }>) {
   const color = ACCENTS[accent];
   return (
     <div style={{ ...cardBase, background: '#1c2740', color: '#fff' }}>
-      <div
-        style={{
-          position: 'absolute',
-          top: 0,
-          left: 0,
-          width: CARD_W,
-          height: CARD_H,
-          display: 'flex',
-          backgroundImage: props.coverImage
-            ? `url(${props.coverImage})`
-            : 'linear-gradient(135deg,#1c2740,#0c0f18)',
-          backgroundSize: `${CARD_W}px ${CARD_H}px`,
-        }}
-      />
-      <div
-        style={{
-          position: 'absolute',
-          top: 0,
-          left: 0,
-          width: CARD_W,
-          height: CARD_H,
-          display: 'flex',
-          background: 'linear-gradient(180deg,rgba(0,0,0,0.5),rgba(0,0,0,0.5))',
-        }}
-      />
+      <PhotoBg image={props.coverImage} overlay={0.45} />
       <div
         style={{
           position: 'relative',
@@ -1335,6 +1437,8 @@ export function renderSlide(input: RenderSlideInput): ReactNode {
       return <C3 {...input} />;
     case 'C4':
       return <C4 {...input} />;
+    case 'C5':
+      return <C5 {...input} />;
     case 'B1':
       return <B1 {...input} />;
     case 'B2':

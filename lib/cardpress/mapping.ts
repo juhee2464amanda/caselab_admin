@@ -177,7 +177,7 @@ function planCase(row: ContentRowLite, body: CaseBody, images: string[]): SlideP
     template: 'C1',
     sourceSection: 'title+summary',
     material: coverMaterial(row),
-    alternatives: ['C2'],
+    alternatives: ['C2', 'C5'],
     image: images[0],
   });
 
@@ -262,7 +262,7 @@ function planTrend(row: ContentRowLite, body: TrendBody, images: string[]): Slid
     template: 'C2',
     sourceSection: 'title+summary',
     material: coverMaterial(row),
-    alternatives: ['C1'],
+    alternatives: ['C1', 'C5'],
     image: images[0],
   });
 

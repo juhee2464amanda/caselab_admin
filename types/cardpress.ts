@@ -10,11 +10,22 @@ export type CardAccent = z.infer<typeof CardAccentSchema>;
 // 불릿·본문 텍스트는 **강조** 마커로 포인트색 볼드 처리.
 
 export const C1PropsSchema = z.object({
+  kicker: z.string().optional(),     // 헤드라인 위 프레이밍 한 줄 ("~의 경제학") — 벤치마크 4층 구조
   title: z.string().min(1),          // 커버 제목 (≤17자 권장, '\n' 줄바꿈)
   hl: z.string().optional(),         // title 안의 형광펜 대상 부분 문자열
   sub: z.string().optional(),        // "읽는 데 5분 · 적용 30분"
   tag: z.string().optional(),        // 우상단 태그 (기본: accent별 카테고리명)
+  footer: z.string().optional(),     // 좌하단 초소형 @개념 영문 ("@BLINDSPOT PASS")
   coverImage: z.string().url().optional(), // 배경 사진 url (없으면 그라데이션 폴백)
+});
+
+// C5 빅넘버 커버 — 사진이 실패해도 되는 폴백형 (벤치마크: 사진을 텍스처 수준으로 죽이고 숫자/단어로 승부)
+export const C5PropsSchema = z.object({
+  kicker: z.string().optional(),     // 맥락 1줄
+  big: z.string().min(1),            // 거대 숫자/단어 ("10배", "FOCUS")
+  resolve: z.string().min(1),        // 해소 1줄 ('\n' 허용, **강조** 지원)
+  footer: z.string().optional(),
+  coverImage: z.string().url().optional(), // 있으면 텍스처 수준(강한 오버레이)으로 깔림
 });
 
 export const B2PropsSchema = z.object({
@@ -139,6 +150,7 @@ export const RenderSlideSchema = z.discriminatedUnion('template', [
   z.object({ template: z.literal('C2'), accent: CardAccentSchema, props: C2PropsSchema }),
   z.object({ template: z.literal('C3'), accent: CardAccentSchema, props: C3PropsSchema }),
   z.object({ template: z.literal('C4'), accent: CardAccentSchema, props: C4PropsSchema }),
+  z.object({ template: z.literal('C5'), accent: CardAccentSchema, props: C5PropsSchema }),
   z.object({ template: z.literal('B1'), accent: CardAccentSchema, props: B1PropsSchema }),
   z.object({ template: z.literal('B2'), accent: CardAccentSchema, props: B2PropsSchema }),
   z.object({ template: z.literal('B3'), accent: CardAccentSchema, props: B3PropsSchema }),

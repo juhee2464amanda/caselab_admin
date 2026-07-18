@@ -103,9 +103,17 @@ function lintSlide(template: CardTemplateId, props: Record<string, unknown>): st
     case 'C1':
     case 'C2':
     case 'C3':
+      push(lintLen('kicker', p.kicker, 15));
       push(lintLines('title', p.title ?? '', 13, 3));
       push(lintLen('sub', p.sub, 30));
+      push(lintLen('footer', p.footer, 22));
       if (p.hl && !(p.title ?? '').includes(p.hl)) push([`hl "${p.hl}"이 title 안에 없음`]);
+      break;
+    case 'C5':
+      push(lintLen('kicker', p.kicker, 22));
+      push(lintLen('big', p.big, 6));
+      push(lintLines('resolve', p.resolve ?? '', 17, 2));
+      push(lintLen('footer', p.footer, 22));
       break;
     case 'B4':
       push(lintLines('title', p.title ?? '', 14, 3));
@@ -165,7 +173,8 @@ function lintSlide(template: CardTemplateId, props: Record<string, unknown>): st
 // ── 프롬프트 ──────────────────────────────────────────────
 
 const TEMPLATE_SPECS = `[템플릿별 props 규격 — 줄바꿈은 문자열 안 "\\n", **강조**는 포인트색 볼드 마커]
-- C1 사진몰입 커버 / C2 문장형 다크 커버 / C3 툴 커버: {"title":"2~3줄, 줄당 ≤12자","hl":"title 속 핵심 단어 1개(부분 문자열 그대로, 짧게)","sub":"≤28자 부제(읽기·적용 시간 있으면 활용)"} (C2는 "eyebrow":"≤16자 도입" 추가 가능)
+- C1 사진몰입 커버 / C2 문장형 다크 커버 / C3 툴 커버: {"kicker":"≤14자 프레이밍 한 줄(C1, 선택 — '~의 경제학'·'~시대의 사건' 식)","title":"2~3줄, 줄당 ≤12자","hl":"title 속 핵심 단어 1개(부분 문자열 그대로, 짧게)","sub":"≤28자 부제(읽기·적용 시간 있으면 활용)","footer":"@영문개념 ≤20자(C1, 선택 — 예: @BLINDSPOT PASS)"} (C2는 "eyebrow":"≤16자 도입" 추가 가능)
+- C5 빅넘버 커버: {"kicker":"≤20자 맥락 1줄","big":"거대 숫자/단어 ≤6자 (예: 10배, 11, FOCUS)","resolve":"1~2줄, 줄당 ≤16자 해소 문장 (**강조** 1개)","footer":"@영문개념(선택)"} — 핵심이 숫자/단어 하나로 요약될 때. 사진 없어도 성립
 - B1 타임라인: {"lead":"≤36자 도입(선택, **강조** 1개)","heading":"≤13자 한 줄","hl":"heading 속 핵심 구","rows":[{"term":"≤8자","desc":"≤14자"}] 2~5개}
 - B2 불릿: {"banner":"≤14자(✓ 접두 가능)","bullets":["≤30자, **강조** 각 1개"] 2~4개}
 - B3 용어: {"badge":"기본 '30초 개념'(생략 가능)","term":"≤10자 핵심 용어","termEn":"영문(선택)","lead":"≤20자 한 줄 정의","body":"≤58자 부연, **강조** 1개"}
@@ -193,6 +202,21 @@ const SYSTEM = `당신은 케이스랩(caselab)의 SNS 콘텐츠 에디터입니
 - 스파인: 후킹 커버 → 왜 믿을 만한가(edge) → 문제 제기/오버뷰 → 실물(프롬프트·구체 항목) → 정리·저장 CTA
 - 슬라이드마다 "새 정보 1개". 직전 슬라이드와 소재·표현 중복 금지 (특히 오버뷰 슬라이드와 개별 항목 슬라이드가 같은 문장을 반복하지 않게)
 - 각 슬라이드는 "다음 장을 넘길 이유"를 남길 것
+
+[커버 헤드라인 공식 — 벤치마크 검증 룰, 우선순위대로 시도]
+1. 이상하게 구체적인 숫자를 박는다 ("11가지"보다 "0.3초에", "80%는 앞쪽 106석"이 강함)
+2. 반전 부정문 ("~가 아닙니다") — 상식을 뒤집고 정답은 다음 장으로 미룬다
+3. 미완결 호기심 ("~한 이유", "~한 계산법") — 이유를 커버에서 절대 말하지 않는다
+4. 고유명사 실명 박기 (앤트로픽, Claude Code — "한 빅테크가" 같은 익명화 금지)
+- 종결어미는 "~습니다/이었다" 단정 서술형, 물음표는 피한다
+- 커버 템플릿 선택: 핵심이 숫자/단어 하나로 요약되면 C5(빅넘버), 강한 인용 한 문장이 있으면 C2(선언), 그 외 C1/C2 — 계획의 대안 안에서 판단
+
+[커버 이미지 검색어(metaphorQueries) — 4단 우선순위]
+1순위 리터럴: 본문에 등장하는 구체 사물 그대로 (naengmyeon, rolex watch macro)
+2순위 은유: 개념을 설명하는 관용적 사물 — 치환표: 병목→steel chain macro / 집중→dartboard bullseye / 니치→ant macro / 불확실성→foggy mountain / 관문·심사→old door knocker / 유입 경로→fishing net silhouette / 성장→seedling soil / 함정→mousetrap / 데이터·AI→matrix code dark, server room dark / 계약→contract fountain pen / 돈·가격→coins macro
+3순위 장면: 이야기의 분위기 컷 (old office desk night, contract signing) — 사람은 back view·crowd·distant 강제
+4순위 텍스처: 무드 배경 (dark green matrix code, old world map dark)
+규칙: 영어 2~4단어 + 구체 명사 필수 + 촬영 스타일 단어 1개(macro/close up/dark/moody/silhouette/minimal). 3개를 1→2→3순위 순서로.
 
 [작업]
 아래 슬라이드 계획의 각 항목에 대해, 주어진 재료(material)를 해당 템플릿 규격에 맞게 압축한 props를 작성하세요.
@@ -252,7 +276,7 @@ async function fetchCoverCandidates(queries: string[]): Promise<CoverCandidate[]
     queries.slice(0, 3).map(async (q) => {
       try {
         const res = await fetch(
-          `https://api.unsplash.com/search/photos?query=${encodeURIComponent(q)}&per_page=2&orientation=portrait`,
+          `https://api.unsplash.com/search/photos?query=${encodeURIComponent(q)}&per_page=2&orientation=portrait&content_filter=high`,
           { headers: { Authorization: `Client-ID ${key}` } }
         );
         if (!res.ok) return [];
@@ -352,6 +376,9 @@ function finalizeSlides(
       props.ctaLine = b8Cta;
       delete props.tip; // 구 '복사' 문법 제거
     }
+    // 커버 이미지 배치: C5는 텍스처로 깔리므로 허용
+    if (s.template === 'C5' && planIndex === 0 && plan.slides[0]?.image && !props.coverImage)
+      props.coverImage = plan.slides[0].image;
     if (s.template === 'O1' && ctaType === 'comment_dm' && !props.actions) {
       props.actions = [
         { icon: '💬', text: `댓글에 "${ctaKeyword}" — 전문을 DM으로 보내드려요` },
