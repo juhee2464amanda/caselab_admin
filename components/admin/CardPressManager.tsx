@@ -540,6 +540,17 @@ function CardEditor({ card, source }: { card: CardRow; source?: SourceRow }) {
   } | null>(null);
   useEffect(() => setSelPopup(null), [selIdx]);
 
+  // 저장 안 된 수정이 있으면 새로고침/이탈 시 브라우저 경고 (수정 유실 방지)
+  useEffect(() => {
+    if (!dirty) return;
+    const warn = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = '';
+    };
+    window.addEventListener('beforeunload', warn);
+    return () => window.removeEventListener('beforeunload', warn);
+  }, [dirty]);
+
   // 라이브 캔버스 편집 헬퍼 — 단일 prop 텍스트/스타일 패치
   function patchPropText(key: string, text: string) {
     patch((prev) =>
@@ -865,7 +876,19 @@ function CardEditor({ card, source }: { card: CardRow; source?: SourceRow }) {
         {/* 우: 실비율(4:5) 프리뷰 — 1장 / 그리드(전체 흐름 검수) 토글 */}
         <div className="card p-4 lg:sticky lg:top-4">
           <div className="flex items-center justify-between mb-2">
-            <span className="text-sm font-semibold">프리뷰 {viewMode === 'single' && sel ? `${selIdx + 1} / ${slides.length}` : ''}</span>
+            <span className="text-sm font-semibold flex items-center gap-2">
+              프리뷰 {viewMode === 'single' && sel ? `${selIdx + 1} / ${slides.length}` : ''}
+              {dirty && (
+                <button
+                  onClick={() => save()}
+                  disabled={saving}
+                  className="text-[11px] rounded-full px-2.5 py-1 bg-amber-500 text-white hover:bg-amber-600 animate-pulse"
+                  title="수정 사항이 아직 DB에 저장되지 않았어요"
+                >
+                  {saving ? '저장 중…' : '● 저장 안 됨 — 저장하기'}
+                </button>
+              )}
+            </span>
             <div className="flex gap-1 items-center">
               <button
                 onClick={() => setViewMode(viewMode === 'single' ? 'grid' : 'single')}
