@@ -71,6 +71,13 @@ const ALT_MAP: Partial<Record<CardTemplateId, CardTemplateId[]>> = {
   B2: ['B7', 'B6'], B7: ['B2'], B6: ['B2'], C1: ['C2', 'C5'], C2: ['C1', 'C5'], C5: ['C1', 'C2'], B4: ['B2'],
 };
 
+// 형광펜(hl = 배경 포인트색 필)이 가리키는 대상 필드 — 드래그 선택 → 형광펜 지정에 사용
+const HL_TARGET: Partial<Record<CardTemplateId, string>> = {
+  C1: 'title', C2: 'title', C3: 'title', B4: 'title', O1: 'title', B1: 'heading', B6: 'heading',
+};
+// **강조** 마커(포인트색 볼드)를 렌더하는 필드
+const EM_FIELDS = new Set(['bullets', 'body', 'cap', 'lead', 'resolve']);
+
 // 슬라이드별 이미지가 들어가는 props 키
 const IMAGE_KEY: Partial<Record<CardTemplateId, string>> = {
   C1: 'coverImage', C2: 'coverImage', C5: 'coverImage', B4: 'coverImage', B2: 'media', B9: 'shot',
@@ -526,6 +533,12 @@ function CardEditor({ card, source }: { card: CardRow; source?: SourceRow }) {
     rect: { x: number; y: number; w: number; h: number };
     value: string;
   } | null>(null);
+  const [selPopup, setSelPopup] = useState<{
+    text: string;
+    key: string;
+    rect: { x: number; y: number; w: number; h: number };
+  } | null>(null);
+  useEffect(() => setSelPopup(null), [selIdx]);
 
   // 라이브 캔버스 편집 헬퍼 — 단일 prop 텍스트/스타일 패치
   function patchPropText(key: string, text: string) {
@@ -942,11 +955,62 @@ function CardEditor({ card, source }: { card: CardRow; source?: SourceRow }) {
                     onEditProp={(key, rect) => {
                       const def = FIELDS[sel.template].find((d) => d.key === key);
                       if (!def) return;
+                      setSelPopup(null);
                       setLiveEdit({ key, rect, value: fieldToText((sel.props as Record<string, unknown>)[key], def) });
+                    }}
+                    onSelectText={(info) => {
+                      setLiveEdit(null);
+                      setSelPopup(info);
                     }}
                     onDropImage={assignImage}
                     onPan={(pos) => patchStyle('coverPos', pos)}
                   />
+                  {/* 드래그 선택 → 형광펜/포인트색 미니 툴바 */}
+                  {selPopup && (() => {
+                    const def = FIELDS[sel.template].find((d) => d.key === selPopup.key);
+                    const raw = def ? fieldToText((sel.props as Record<string, unknown>)[selPopup.key], def) : '';
+                    const canHl = HL_TARGET[sel.template] === selPopup.key && raw.includes(selPopup.text);
+                    const canEm = EM_FIELDS.has(selPopup.key) && raw.includes(selPopup.text);
+                    const isHl = sel.props.hl === selPopup.text;
+                    const emApplied = raw.includes(`**${selPopup.text}**`);
+                    if (!canHl && !canEm) return null;
+                    const btn = 'text-[11px] rounded px-2 py-1 whitespace-nowrap';
+                    return (
+                      <div
+                        className="absolute z-20 flex items-center gap-1 rounded-md border border-border bg-white shadow-lg p-1"
+                        style={{ left: Math.max(0, selPopup.rect.x), top: Math.max(0, selPopup.rect.y - 38) }}
+                        onMouseDown={(e) => e.preventDefault()}
+                      >
+                        {canHl && !isHl && (
+                          <button className={`${btn} bg-accent text-white`} onClick={() => { patchPropText('hl', selPopup.text); setSelPopup(null); }}>
+                            ■ 형광펜
+                          </button>
+                        )}
+                        {canHl && isHl && (
+                          <button className={`${btn} bg-ink/10`} onClick={() => { patchPropText('hl', ''); setSelPopup(null); }}>
+                            형광펜 해제
+                          </button>
+                        )}
+                        {canEm && !emApplied && (
+                          <button
+                            className={`${btn} bg-accent/10 text-accent font-bold`}
+                            onClick={() => { patchPropText(selPopup.key, raw.replace(selPopup.text, `**${selPopup.text}**`)); setSelPopup(null); }}
+                          >
+                            A 포인트색
+                          </button>
+                        )}
+                        {canEm && emApplied && (
+                          <button
+                            className={`${btn} bg-ink/10`}
+                            onClick={() => { patchPropText(selPopup.key, raw.replace(`**${selPopup.text}**`, selPopup.text)); setSelPopup(null); }}
+                          >
+                            강조 해제
+                          </button>
+                        )}
+                        <button className={`${btn} text-ink/40`} onClick={() => setSelPopup(null)}>✕</button>
+                      </div>
+                    );
+                  })()}
                   {liveEdit && (
                     <textarea
                       autoFocus
@@ -1116,12 +1180,15 @@ function LiveSlide({
   slide,
   accent,
   onEditProp,
+  onSelectText,
   onDropImage,
   onPan,
 }: {
   slide: CardSlide;
   accent: CardAccent;
   onEditProp: (key: string, rect: { x: number; y: number; w: number; h: number }) => void;
+  /** 텍스트 드래그 선택 → 형광펜/강조 미니 툴바 */
+  onSelectText: (info: { text: string; key: string; rect: { x: number; y: number; w: number; h: number } }) => void;
   onDropImage: (url: string) => void;
   onPan: (pos: string) => void;
 }) {
@@ -1165,19 +1232,8 @@ function LiveSlide({
     const ny = Math.min(100, Math.max(0, pan.current.py - dy));
     if (pan.current.moved) onPan(`${nx.toFixed(1)}% ${ny.toFixed(1)}%`);
   }
-  function onMouseUp() {
-    pan.current = null;
-  }
-
-  function onClick(e: React.MouseEvent) {
-    if (justPanned.current) {
-      justPanned.current = false;
-      return;
-    }
-    const t = e.target as HTMLElement;
-    if (t.closest('[data-bg]') && !(t.textContent ?? '').trim()) return;
-    const text = (t.textContent ?? '').trim().replace(/\s+/g, ' ');
-    if (!text) return;
+  // 텍스트 조각 → 소유 prop 필드 역추적 (가장 긴 값 = 상위 필드 우선)
+  function findOwnerField(text: string): FieldDef | null {
     const defs = FIELDS[slide.template];
     let best: FieldDef | null = null;
     let bestLen = -1;
@@ -1190,6 +1246,49 @@ function LiveSlide({
         bestLen = v.length;
       }
     }
+    return best;
+  }
+
+  const justSelected = useRef(false);
+
+  function onMouseUp() {
+    pan.current = null;
+    // 드래그로 텍스트를 선택했으면 → 클릭 편집 대신 형광펜/강조 툴바
+    const selObj = window.getSelection();
+    if (selObj && !selObj.isCollapsed && ref.current?.contains(selObj.anchorNode)) {
+      const text = selObj.toString().trim().replace(/\s+/g, ' ');
+      if (text.length >= 1) {
+        const owner = findOwnerField(text);
+        if (owner) {
+          const rr = selObj.getRangeAt(0).getBoundingClientRect();
+          const cr = ref.current.getBoundingClientRect();
+          justSelected.current = true;
+          onSelectText({
+            text,
+            key: owner.key,
+            rect: { x: rr.left - cr.left, y: rr.top - cr.top, w: rr.width, h: rr.height },
+          });
+        }
+      }
+    }
+  }
+
+  function onClick(e: React.MouseEvent) {
+    if (justPanned.current) {
+      justPanned.current = false;
+      return;
+    }
+    if (justSelected.current) {
+      justSelected.current = false;
+      return;
+    }
+    const selObj = window.getSelection();
+    if (selObj && !selObj.isCollapsed) return;
+    const t = e.target as HTMLElement;
+    if (t.closest('[data-bg]') && !(t.textContent ?? '').trim()) return;
+    const text = (t.textContent ?? '').trim().replace(/\s+/g, ' ');
+    if (!text) return;
+    const best = findOwnerField(text);
     if (!best) return;
     const cr = ref.current!.getBoundingClientRect();
     const tr = t.getBoundingClientRect();
@@ -1199,7 +1298,7 @@ function LiveSlide({
   return (
     <div
       ref={ref}
-      className="relative w-full rounded-lg overflow-hidden border border-border bg-ink/5 cursor-text select-none"
+      className="relative w-full rounded-lg overflow-hidden border border-border bg-ink/5 cursor-text"
       style={{ aspectRatio: '4 / 5' }}
       onClick={onClick}
       onMouseDown={onMouseDown}
