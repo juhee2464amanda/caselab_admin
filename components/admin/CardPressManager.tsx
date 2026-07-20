@@ -1317,26 +1317,29 @@ function LiveSlide({
 
   const justSelected = useRef(false);
 
+  // 선택 읽기는 이벤트 한 틱 뒤에 (Safari는 mouseup 시점에 selection이 아직 확정 전일 수 있음)
+  function readSelection() {
+    setTimeout(() => {
+      const selObj = window.getSelection();
+      if (!selObj || selObj.isCollapsed || !ref.current?.contains(selObj.anchorNode)) return;
+      const text = selObj.toString().trim().replace(/\s+/g, ' ');
+      if (!text) return;
+      const owner = findOwnerField(text);
+      if (!owner) return;
+      const rr = selObj.getRangeAt(0).getBoundingClientRect();
+      const cr = ref.current.getBoundingClientRect();
+      justSelected.current = true;
+      onSelectText({
+        text,
+        key: owner.key,
+        rect: { x: rr.left - cr.left, y: rr.top - cr.top, w: rr.width, h: rr.height },
+      });
+    }, 0);
+  }
+
   function onMouseUp() {
     pan.current = null;
-    // 드래그로 텍스트를 선택했으면 → 클릭 편집 대신 형광펜/강조 툴바
-    const selObj = window.getSelection();
-    if (selObj && !selObj.isCollapsed && ref.current?.contains(selObj.anchorNode)) {
-      const text = selObj.toString().trim().replace(/\s+/g, ' ');
-      if (text.length >= 1) {
-        const owner = findOwnerField(text);
-        if (owner) {
-          const rr = selObj.getRangeAt(0).getBoundingClientRect();
-          const cr = ref.current.getBoundingClientRect();
-          justSelected.current = true;
-          onSelectText({
-            text,
-            key: owner.key,
-            rect: { x: rr.left - cr.left, y: rr.top - cr.top, w: rr.width, h: rr.height },
-          });
-        }
-      }
-    }
+    readSelection();
   }
 
   function onClick(e: React.MouseEvent) {
@@ -1365,12 +1368,13 @@ function LiveSlide({
     <div
       ref={ref}
       className="relative w-full rounded-lg overflow-hidden border border-border bg-ink/5 cursor-text"
-      style={{ aspectRatio: '4 / 5' }}
+      style={{ aspectRatio: '4 / 5', userSelect: 'text', WebkitUserSelect: 'text' }}
       onClick={onClick}
+      onDoubleClick={readSelection}
       onMouseDown={onMouseDown}
       onMouseMove={onMouseMove}
       onMouseUp={onMouseUp}
-      onMouseLeave={onMouseUp}
+      onMouseLeave={() => { pan.current = null; }}
       onDragOver={(e) => e.preventDefault()}
       onDrop={(e) => {
         e.preventDefault();
@@ -1380,7 +1384,7 @@ function LiveSlide({
       title="텍스트 클릭=수정 · 사진 드래그=위치 · 트레이에서 끌어다 놓기=배치"
     >
       {scale > 0 && parsed.success ? (
-        <div style={{ width: 1080, height: 1350, transform: `scale(${scale})`, transformOrigin: 'top left', fontFamily: "'Pretendard','Apple SD Gothic Neo',sans-serif" }}>
+        <div style={{ width: 1080, height: 1350, transform: `scale(${scale})`, transformOrigin: 'top left', fontFamily: "'Pretendard','Apple SD Gothic Neo',sans-serif", userSelect: 'text', WebkitUserSelect: 'text' }}>
           {renderSlide(parsed.data)}
         </div>
       ) : (
