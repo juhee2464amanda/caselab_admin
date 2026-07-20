@@ -71,6 +71,15 @@ const ALT_MAP: Partial<Record<CardTemplateId, CardTemplateId[]>> = {
   B2: ['B7', 'B6'], B7: ['B2'], B6: ['B2'], C1: ['C2', 'C5'], C2: ['C1', 'C5'], C5: ['C1', 'C2'], B4: ['B2'],
 };
 
+// 형광펜 색 팔레트 — 캐러셀 가이드 시스템(카테고리 3색+Bad 레드) + 벤치마크 골드
+const HL_PALETTE: Array<{ hex: string; name: string }> = [
+  { hex: '#2F6BFF', name: '블루' },
+  { hex: '#7C3AED', name: '바이올렛' },
+  { hex: '#0E9F6E', name: '에메랄드' },
+  { hex: '#E11D48', name: '레드' },
+  { hex: '#D9A414', name: '골드' },
+];
+
 // 형광펜(hl = 배경 포인트색 필)이 가리키는 대상 필드 — 드래그 선택 → 형광펜 지정에 사용
 const HL_TARGET: Partial<Record<CardTemplateId, string>> = {
   C1: 'title', C2: 'title', C3: 'title', B4: 'title', O1: 'title', B1: 'heading', B6: 'heading',
@@ -562,6 +571,26 @@ function CardEditor({ card, source }: { card: CardRow; source?: SourceRow }) {
         const p = { ...s.props };
         if (v === undefined) delete p[key];
         else p[key] = v;
+        // 형광펜 대상 텍스트를 고쳐서 hl이 더 이상 안 맞으면 자동 정리 (드래그로 재지정)
+        if (key === HL_TARGET[s.template] && typeof p.hl === 'string' && typeof v === 'string' && !v.includes(p.hl)) {
+          delete p.hl;
+          delete p.hlColor;
+        }
+        return { ...s, props: p };
+      })
+    );
+  }
+
+  /** 여러 props 동시 패치 (undefined = 삭제) — 형광펜 텍스트+색 지정 등 */
+  function patchProps(partial: Record<string, unknown>) {
+    patch((prev) =>
+      prev.map((s, k) => {
+        if (k !== selIdx) return s;
+        const p = { ...s.props };
+        for (const [key, v] of Object.entries(partial)) {
+          if (v === undefined || v === '') delete p[key];
+          else p[key] = v;
+        }
         return { ...s, props: p };
       })
     );
@@ -1004,15 +1033,29 @@ function CardEditor({ card, source }: { card: CardRow; source?: SourceRow }) {
                         style={{ left: Math.max(0, selPopup.rect.x), top: Math.max(0, selPopup.rect.y - 38) }}
                         onMouseDown={(e) => e.preventDefault()}
                       >
-                        {canHl && !isHl && (
-                          <button className={`${btn} bg-accent text-white`} onClick={() => { patchPropText('hl', selPopup.text); setSelPopup(null); }}>
-                            ■ 형광펜
-                          </button>
-                        )}
-                        {canHl && isHl && (
-                          <button className={`${btn} bg-ink/10`} onClick={() => { patchPropText('hl', ''); setSelPopup(null); }}>
-                            형광펜 해제
-                          </button>
+                        {canHl && (
+                          <>
+                            <span className="text-[10px] text-ink/40 pl-1">형광펜</span>
+                            {HL_PALETTE.map((c) => (
+                              <button
+                                key={c.hex}
+                                title={`형광펜 · ${c.name}`}
+                                onClick={() => {
+                                  // 카테고리 기본색과 같으면 hlColor 저장 생략(기본색 추종)
+                                  const isDefault = c.hex === ((sel.props.accentColor as string) ?? ACCENT_HEX[card.accent]);
+                                  patchProps({ hl: selPopup.text, hlColor: isDefault ? undefined : c.hex });
+                                  setSelPopup(null);
+                                }}
+                                className={`h-5 w-5 rounded border ${isHl && ((sel.props.hlColor ?? ACCENT_HEX[card.accent]) === c.hex) ? 'ring-2 ring-offset-1 ring-ink/60 border-transparent' : 'border-black/10'}`}
+                                style={{ background: c.hex }}
+                              />
+                            ))}
+                            {isHl && (
+                              <button className={`${btn} bg-ink/10`} onClick={() => { patchProps({ hl: undefined, hlColor: undefined }); setSelPopup(null); }}>
+                                해제
+                              </button>
+                            )}
+                          </>
                         )}
                         {canEm && !emApplied && (
                           <button

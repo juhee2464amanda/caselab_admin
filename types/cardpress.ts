@@ -15,6 +15,7 @@ export const StyleOverrideFields = {
   accentColor: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(), // 슬라이드별 포인트색 오버라이드
   overlay: z.number().min(0).max(0.9).optional(),                // 사진 오버레이 어둡기 (커버류)
   coverPos: z.string().optional(),                                // 배경 위치 "50% 30%" (사진 팬)
+  hlColor: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),      // 형광펜 배경색 (기본: 포인트색)
   titleAnchor: z.enum(['top', 'center', 'bottom']).optional(),    // 커버 텍스트 앵커 (C1)
 };
 

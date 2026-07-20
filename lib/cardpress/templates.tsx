@@ -37,6 +37,11 @@ function mixWithWhite(hex: string, ratio: number): string {
 
 const FONT = 'Pretendard';
 
+// 형광펜 배경색 — hlColor 오버라이드(가이드 팔레트: 블루·바이올렛·에메랄드·레드·골드), 기본은 포인트색
+function hlBg(props: { hlColor?: string }, fallback: string): string {
+  return props.hlColor && /^#[0-9a-fA-F]{6}$/.test(props.hlColor) ? props.hlColor : fallback;
+}
+
 // 슬라이드별 포인트색 오버라이드 (캔버스 편집) — 유효한 hex일 때만
 function accentOf(accent: CardAccent, props: { accentColor?: string }): string {
   return props.accentColor && /^#[0-9a-fA-F]{6}$/.test(props.accentColor)
@@ -238,7 +243,7 @@ function C1({ accent, props }: Extract<RenderSlideInput, { template: 'C1' }>) {
               props.hl,
               { minHeight: 100 },
               {
-                background: color,
+                background: hlBg(props, color),
                 color: '#fff',
                 padding: '2px 16px',
                 borderRadius: 8,
@@ -578,7 +583,7 @@ function O1({ accent, props }: Extract<RenderSlideInput, { template: 'O1' }>) {
             props.title,
             props.hl,
             { minHeight: 82 },
-            { background: 'rgba(255,255,255,0.22)', padding: '2px 12px', borderRadius: 8 }
+            { background: hlBg(props, 'rgba(255,255,255,0.22)'), padding: '2px 12px', borderRadius: 8 }
           )}
         </div>
         {props.body ? (
@@ -695,7 +700,7 @@ function C2({ accent, props }: Extract<RenderSlideInput, { template: 'C2' }>) {
             props.title,
             props.hl,
             { minHeight: 82 },
-            { background: color, color: '#fff', padding: '2px 16px', borderRadius: 8 }
+            { background: hlBg(props, color), color: '#fff', padding: '2px 16px', borderRadius: 8 }
           )}
         </div>
       </div>
@@ -757,7 +762,7 @@ function C3({ accent, props }: Extract<RenderSlideInput, { template: 'C3' }>) {
             props.title,
             props.hl,
             { minHeight: 82, justifyContent: 'center' },
-            { background: color, color: '#fff', padding: '2px 16px', borderRadius: 8 }
+            { background: hlBg(props, color), color: '#fff', padding: '2px 16px', borderRadius: 8 }
           )}
         </div>
       </div>
@@ -902,7 +907,7 @@ function B1({ accent, props }: Extract<RenderSlideInput, { template: 'B1' }>) {
           props.heading,
           props.hl,
           { minHeight: 75 },
-          { background: color, color: '#fff', padding: '2px 16px', borderRadius: 8 }
+          { background: hlBg(props, color), color: '#fff', padding: '2px 16px', borderRadius: 8 }
         )}
       </div>
       <div
@@ -1066,7 +1071,7 @@ function B4({ accent, props }: Extract<RenderSlideInput, { template: 'B4' }>) {
             props.title,
             props.hl,
             { minHeight: 75, justifyContent: 'center' },
-            { background: color, color: '#fff', padding: '2px 16px', borderRadius: 8, textShadow: 'none' }
+            { background: hlBg(props, color), color: '#fff', padding: '2px 16px', borderRadius: 8, textShadow: 'none' }
           )}
         </div>
         {props.attribution ? (
@@ -1099,7 +1104,7 @@ function B6({ accent, props }: Extract<RenderSlideInput, { template: 'B6' }>) {
           props.heading,
           props.hl,
           { minHeight: 68 },
-          { background: color, color: '#fff', padding: '2px 16px', borderRadius: 8 }
+          { background: hlBg(props, color), color: '#fff', padding: '2px 16px', borderRadius: 8 }
         )}
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 22, marginTop: 44 }}>
@@ -1351,7 +1356,7 @@ function B8({ accent, props }: Extract<RenderSlideInput, { template: 'B8' }>) {
           props.heading ?? '오늘의 프롬프트',
           props.hl ?? '프롬프트',
           { minHeight: 65 },
-          { background: color, color: '#fff', padding: '2px 16px', borderRadius: 8 }
+          { background: hlBg(props, color), color: '#fff', padding: '2px 16px', borderRadius: 8 }
         )}
       </div>
       {promptBox(28)}
