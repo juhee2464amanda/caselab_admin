@@ -163,11 +163,8 @@ export function collectImages(row: ContentRowLite): string[] {
 }
 
 function coverMaterial(row: ContentRowLite): string {
-  const time =
-    row.read_min || row.apply_min
-      ? `\n읽기/적용 시간: ${[row.read_min ? `읽는 데 ${row.read_min}분` : '', row.apply_min ? `적용 ${row.apply_min}분` : ''].filter(Boolean).join(' · ')}`
-      : '';
-  return `제목: ${row.title}\n요약: ${row.summary ?? ''}${time}`;
+  // 읽기/적용 시간은 본가 웹 개념 — 인스타 커버에선 무의미해서 재료에서 제외 (운영자 결정 2026-07-21)
+  return `제목: ${row.title}\n요약: ${row.summary ?? ''}`;
 }
 
 function planCase(row: ContentRowLite, body: CaseBody, images: string[]): SlidePlanItem[] {
