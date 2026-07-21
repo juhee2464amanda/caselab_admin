@@ -1270,18 +1270,41 @@ function B8({ accent, props }: Extract<RenderSlideInput, { template: 'B8' }>) {
             {props.badge ?? '프롬프트 패턴'}
           </span>
         </div>
-        <div
-          style={{
-            display: 'flex',
-            marginTop: 28,
-            fontSize: 64,
-            fontWeight: 800,
-            letterSpacing: '-0.035em',
-            lineHeight: 1.15,
-          }}
-        >
-          {props.patternName}
-        </div>
+        {props.patternEn ? (
+          /* 영어 패턴명 원문이 주인공, 한글 제목은 아래 부제 (운영자 결정 2026-07-21) */
+          <div style={{ display: 'flex', flexDirection: 'column', marginTop: 28 }}>
+            <div
+              style={{
+                display: 'flex',
+                flexWrap: 'wrap',
+                fontSize: 58,
+                fontWeight: 800,
+                letterSpacing: '-0.02em',
+                lineHeight: 1.12,
+              }}
+            >
+              {props.patternEn}
+            </div>
+            {props.patternName ? (
+              <div style={{ display: 'flex', marginTop: 14, fontSize: 32, fontWeight: 700, color: 'rgba(20,22,28,0.72)' }}>
+                {props.patternName}
+              </div>
+            ) : null}
+          </div>
+        ) : (
+          <div
+            style={{
+              display: 'flex',
+              marginTop: 28,
+              fontSize: 64,
+              fontWeight: 800,
+              letterSpacing: '-0.035em',
+              lineHeight: 1.15,
+            }}
+          >
+            {props.patternName}
+          </div>
+        )}
         {props.when ? (
           <div style={{ display: 'flex', marginTop: 18, fontSize: 30, lineHeight: 1.5, color: MUTED }}>
             <span>{`"${props.when}"`}</span>

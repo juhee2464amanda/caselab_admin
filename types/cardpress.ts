@@ -148,6 +148,7 @@ export const B8PropsSchema = z.object({
   ...StyleOverrideFields,
   page: z.string().optional(),
   badge: z.string().optional(),      // "패턴 03" 등 작은 배지 (기본 '프롬프트 패턴')
+  patternEn: z.string().optional(),  // 영어 패턴명 원문 ("Blindspot Pass") — 있으면 크게, 한글은 아래 작게
   patternName: z.string().optional(),// 패턴명 (크게) — 있으면 신레이아웃으로 렌더
   when: z.string().optional(),       // 어떤 상황에서 쓰는지 한 줄
   lines: z.array(z.string()).min(1).max(8), // 핵심 3~4줄 맛보기 ('#'주석색, [변수]=초록)

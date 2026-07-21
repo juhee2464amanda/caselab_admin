@@ -172,7 +172,8 @@ const FIELDS: Record<CardTemplateId, FieldDef[]> = {
   ],
   B8: [
     { key: 'badge', label: '배지', kind: 'input', hint: '예: 패턴 03 · 비우면 "프롬프트 패턴"' },
-    { key: 'patternName', label: '패턴명', kind: 'input', hint: '≤12자' },
+    { key: 'patternEn', label: '영어 패턴명', kind: 'input', hint: '원문 그대로 (크게 표시) — 예: Blindspot Pass' },
+    { key: 'patternName', label: '한글 패턴명', kind: 'input', hint: '≤12자 (영문 아래 부제)' },
     { key: 'when', label: '어떤 상황에서', kind: 'input', hint: '≤22자' },
     { key: 'lines', label: '맛보기 (줄마다 1줄, 3~4줄)', kind: 'lines', hint: '[변수]는 초록, # 시작 줄은 주석' },
     { key: 'effect', label: '기대 효과', kind: 'input', hint: '≤20자' },

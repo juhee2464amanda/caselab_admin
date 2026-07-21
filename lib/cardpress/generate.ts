@@ -188,6 +188,7 @@ function lintSlide(template: CardTemplateId, props: Record<string, unknown>): st
       push(lintLen('sub', p.sub, 40));
       break;
     case 'B8':
+      push(lintLen('patternEn', p.patternEn, 30));
       push(lintLen('patternName', p.patternName, 12));
       push(lintLen('when', p.when, 24));
       push(lintLen('effect', p.effect, 22));
@@ -212,7 +213,7 @@ const TEMPLATE_SPECS = `[템플릿별 props 규격 — 줄바꿈은 문자열 �
 - B5 잘된것/별로였던것: {"good":["≤55자"] 1~2개,"bad":["≤55자"] 1~2개} — 솔직하게, 실패를 뭉개지 말 것
 - B6 스텝: {"heading":"≤13자","hl":"핵심 구","steps":[{"title":"≤12자","desc":"≤18자"}] 2~4개}
 - B7 숫자: {"big":"숫자만 ≤4자","unit":"%·배 등(선택)","cap":"1~2줄, 줄당 ≤16자, **강조** 1개","sub":"≤38자(선택)"} — 재료에 실제로 있는 숫자만
-- B8 프롬프트 패턴: {"badge":"'패턴 03' 등 ≤8자(선택)","patternName":"≤12자 패턴명","when":"≤22자 — 어떤 상황에서 쓰는지 (따옴표 없이)","lines":["≤22자/줄"] 3~4줄 핵심 맛보기 — 전문이 아니라 구조가 보이는 핵심만, 변수는 [대괄호],"effect":"≤20자 기대 효과 (실측·구체적으로)"} — 인스타에선 복사 불가이므로 '복사' 언급 금지. 이 슬라이드의 목표는 "나도 써보고 싶다". CTA(댓글 유도 등)는 캡션이 전담 — 슬라이드에 ctaLine 생성 금지
+- B8 프롬프트 패턴: {"badge":"'패턴 03' 등 ≤8자(선택)","patternEn":"영어 패턴명 원문 그대로(재료에 있으면 필수 — 예: Blindspot Pass) ≤30자","patternName":"≤12자 한글 패턴명(patternEn 아래 부제로 렌더)","when":"≤22자 — 어떤 상황에서 쓰는지 (따옴표 없이)","lines":["≤22자/줄"] 3~4줄 핵심 맛보기 — 전문이 아니라 구조가 보이는 핵심만, 변수는 [대괄호],"effect":"≤20자 기대 효과 (실측·구체적으로)"} — 인스타에선 복사 불가이므로 '복사' 언급 금지. 이 슬라이드의 목표는 "나도 써보고 싶다". CTA(댓글 유도 등)는 캡션이 전담 — 슬라이드에 ctaLine 생성 금지
 - O1 마무리: {"eyebrow":"기본 '오늘의 정리'(생략 가능)","title":"2줄, 줄당 ≤11자 핵심 요약","hl":"핵심 단어","body":"≤58자"} — actions/handle은 생성하지 말 것(시스템 기본값 사용)`;
 
 const SYSTEM = `당신은 케이스랩(caselab)의 SNS 콘텐츠 에디터입니다. 발행된 웹 콘텐츠를 인스타그램 캐러셀 슬라이드 규격으로 압축 재작성합니다.
