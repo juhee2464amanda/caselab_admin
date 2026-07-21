@@ -402,8 +402,13 @@ function validateSlides(
 }
 
 /** page 자동 기입 + 계획 이미지 배치.
- *  CTA(댓글→DM 등)는 캡션·스레드가 전담 — 캐러셀 이미지에는 넣지 않는다(운영자 결정 2026-07-18). */
-function finalizeSlides(slides: ParsedSlide[], plan: SlidePlan): CardSlide[] {
+ *  CTA는 캡션·스레드 전담이되, 예외 1곳 — comment_dm이면 마지막 O1에만 댓글 안내 액션(운영자 결정 2026-07-21). */
+function finalizeSlides(
+  slides: ParsedSlide[],
+  plan: SlidePlan,
+  ctaType: CardCtaType,
+  ctaKeyword: string
+): CardSlide[] {
   const total = slides.length;
   const PAGED: CardTemplateId[] = ['B1', 'B2', 'B3', 'B5', 'B6', 'B7', 'B8', 'B9', 'O1'];
   return slides.map(({ planIndex, ...s }, i) => {
@@ -412,6 +417,12 @@ function finalizeSlides(slides: ParsedSlide[], plan: SlidePlan): CardSlide[] {
     if (s.template === 'B8') {
       delete props.ctaLine; // CTA는 캡션 전담
       delete props.tip; // 구 '복사' 문법 제거
+    }
+    if (s.template === 'O1' && ctaType === 'comment_dm' && !props.actions) {
+      props.actions = [
+        { icon: '💬', text: `전문 복사 링크가 필요하면 댓글에 "${ctaKeyword}"` },
+        { icon: '🔖', text: '저장해두고 하나씩 적용해 보세요' },
+      ];
     }
     // 커버 이미지 배치: C5는 텍스처로 깔리므로 허용
     if (s.template === 'C5' && planIndex === 0 && plan.slides[0]?.image && !props.coverImage)
@@ -643,7 +654,7 @@ ${lastIssues.map((i) => `- ${i}`).join('\n')}`;
 
   return {
     accent: plan.accent,
-    slides: finalizeSlides(slides, plan),
+    slides: finalizeSlides(slides, plan, ctaType, ctaKeyword),
     extractedImages: plan.images,
     igCaption: `${lastRaw.igCaption.trim()}\n\n${tags.join(' ')}`,
     threadsText: threads,
