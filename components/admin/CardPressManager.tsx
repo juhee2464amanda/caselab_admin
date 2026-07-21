@@ -24,7 +24,7 @@ const ACCENT_HEX: Record<CardAccent, string> = {
 
 export type CardRow = {
   id: string;
-  source_type: 'content' | 'tool';
+  source_type: 'content' | 'tool' | 'seed';
   source_id: string;
   slides: CardSlide[];
   accent: CardAccent;
@@ -52,6 +52,22 @@ export type SourceRow = {
   view_count?: number | null;
   published_at?: string | null;
 };
+
+/** 씨앗 아카이브 후보 — 카드뉴스 소스 ① (미발행 원석) */
+export type SeedSourceRow = {
+  id: string;
+  title: string;
+  lane: string | null;
+  status: string;
+  suggested_angle: string | null;
+  essence: Record<string, string> | null;
+  created_at: string;
+};
+
+/** 씨앗 표시 제목 — 채점 헤드라인 우선, 없으면 "[lane]" 태그 벗긴 원제목 */
+function seedDisplayTitle(s: Pick<SeedSourceRow, 'title' | 'essence'>): string {
+  return s.essence?.headline?.trim() || s.title.replace(/^\s*\[[^\]]*\]\s*/, '');
+}
 
 const STATUS_LABEL: Record<CardRow['status'], { text: string; cls: string }> = {
   auto_draft: { text: '검수 대기', cls: 'bg-yellow-100 text-yellow-700' },
@@ -273,7 +289,15 @@ function renumber(slides: CardSlide[]): CardSlide[] {
 }
 
 // ── 본체 ──────────────────────────────────────────────────
-export function CardPressManager({ initial, sources }: { initial: CardRow[]; sources: SourceRow[] }) {
+export function CardPressManager({
+  initial,
+  sources,
+  seeds = [],
+}: {
+  initial: CardRow[];
+  sources: SourceRow[];
+  seeds?: SeedSourceRow[];
+}) {
   const router = useRouter();
   const supabase = createSupabaseBrowserClient();
   const sourceMap = useMemo(() => new Map(sources.map((s) => [s.id, s])), [sources]);
@@ -284,11 +308,14 @@ export function CardPressManager({ initial, sources }: { initial: CardRow[]; sou
   const filtered = statusFilter === 'all' ? initial : initial.filter((c) => c.status === statusFilter);
 
   // 카드 없는 발행 콘텐츠 → 수동 생성 후보 (검색·트랙 필터·조회수 정렬)
-  const withoutCard = sources.filter((s) => !initial.some((c) => c.source_id === s.id));
+  const withoutCard = sources.filter(
+    (s) => !initial.some((c) => c.source_type === 'content' && c.source_id === s.id)
+  );
   const [generating, setGenerating] = useState<string | null>(null);
   const [srcQuery, setSrcQuery] = useState('');
   const [srcTrack, setSrcTrack] = useState<'all' | 'case' | 'trend'>('all');
   const [srcSort, setSrcSort] = useState<'recent' | 'views'>('views');
+  const [srcExpanded, setSrcExpanded] = useState(false);
   const candidates = withoutCard
     .filter((s) => (srcTrack === 'all' ? true : s.track === srcTrack))
     .filter((s) => (srcQuery.trim() ? s.title.toLowerCase().includes(srcQuery.trim().toLowerCase()) : true))
@@ -297,15 +324,24 @@ export function CardPressManager({ initial, sources }: { initial: CardRow[]; sou
         ? (b.view_count ?? 0) - (a.view_count ?? 0)
         : (b.published_at ?? '').localeCompare(a.published_at ?? '')
     );
+  // top3만 기본 노출 — 검색 중이거나 펼치면 전체
+  const visibleCandidates = srcQuery.trim() || srcExpanded ? candidates : candidates.slice(0, 3);
+
+  // 씨앗 아카이브 후보 — 서버에서 최신순으로 옴. 카드가 이미 있는 씨앗 제외, top3 (맨 위=main)
+  const seedCandidates = seeds
+    .filter((s) => !initial.some((c) => c.source_type === 'seed' && c.source_id === s.id))
+    .slice(0, 3);
+  const seedMap = useMemo(() => new Map(seeds.map((s) => [s.id, s])), [seeds]);
 
   // 만들기 씬: 소재 선택 → 기획 설정(엣지·CTA) → 생성 시작 → 완료 시 새 카드로 자동 진입
   const [composeId, setComposeId] = useState<string | null>(null);
+  const [composeKind, setComposeKind] = useState<'content' | 'seed'>('content');
   const [composeEdge, setComposeEdge] = useState('');
   const [composeCta, setComposeCta] = useState<'comment_dm' | 'info_save'>('comment_dm');
   const [composeKeyword, setComposeKeyword] = useState('프롬프트');
-  const composeSource = composeId ? sourceMap.get(composeId) : null;
 
-  function startCompose(sourceId: string) {
+  function startCompose(kind: 'content' | 'seed', sourceId: string) {
+    setComposeKind(kind);
     setComposeId(sourceId);
     setComposeEdge('');
     setComposeCta('comment_dm');
@@ -320,7 +356,7 @@ export function CardPressManager({ initial, sources }: { initial: CardRow[]; sou
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
-          sourceType: 'content',
+          sourceType: composeKind,
           sourceId: composeId,
           edge: composeEdge.trim() || undefined,
           ctaType: composeCta,
@@ -339,6 +375,69 @@ export function CardPressManager({ initial, sources }: { initial: CardRow[]; sou
     }
   }
 
+  // 기획 설정 패널 — 두 소스 패널이 공유 (생성 전에 방향을 정하는 씬)
+  function composePanel(kind: 'content' | 'seed', id: string) {
+    if (composeKind !== kind || composeId !== id) return null;
+    return (
+      <div className="mt-2 mb-1 rounded-lg border border-accent/30 bg-accent/5 p-3 space-y-2.5">
+        {generating === id ? (
+          <div className="text-sm text-ink/70 py-2">
+            <span className="font-semibold">AI가 카드를 만드는 중…</span> (3~10분 소요)
+            <p className="text-xs text-ink/40 mt-1">
+              {kind === 'seed' ? '씨앗 원문을' : '본문을'} 슬라이드로 매핑하고 압축 재작성합니다. 완료되면 아래 목록에 나타나고 바로 검수 화면으로 이동해요.
+              이 탭을 닫지만 않으면 다른 작업을 해도 됩니다.
+            </p>
+          </div>
+        ) : (
+          <>
+            <div>
+              <Label className="text-xs">기획방향 / 엣지 <span className="text-ink/40">(선택 — 비우면 AI가 이 소재의 차별점을 스스로 정의)</span></Label>
+              <Textarea
+                className="mt-1"
+                rows={2}
+                value={composeEdge}
+                onChange={(e) => setComposeEdge(e.target.value)}
+                placeholder={'예: "앤트로픽 현직 엔지니어가 직접 검증했다"는 신뢰가 이 글의 엣지 — 커버와 도입에서 이걸 세울 것'}
+              />
+            </div>
+            <div className="flex items-center gap-2 flex-wrap">
+              <Label className="text-xs shrink-0">CTA</Label>
+              {([
+                ['comment_dm', '댓글→DM 참여형'],
+                ['info_save', '정보 제공형'],
+              ] as const).map(([v, label]) => (
+                <button
+                  key={v}
+                  onClick={() => setComposeCta(v)}
+                  className={`text-xs rounded-full px-2.5 py-1 ${composeCta === v ? 'bg-accent text-white' : 'bg-ink/5 text-ink/60 hover:bg-ink/10'}`}
+                >
+                  {label}
+                </button>
+              ))}
+              {composeCta === 'comment_dm' && (
+                <>
+                  <span className="text-[11px] text-ink/40">댓글 키워드:</span>
+                  <Input value={composeKeyword} onChange={(e) => setComposeKeyword(e.target.value)} className="text-sm w-28" />
+                </>
+              )}
+            </div>
+            <p className="text-[11px] text-ink/40">
+              {composeCta === 'comment_dm'
+                ? `캡션·마무리가 "댓글에 '${composeKeyword || '키워드'}' 남기면 DM으로" 문법으로 생성됩니다 (ManyChat 자동화 연동 전제)`
+                : '캡션에 대표 프롬프트 전문 + 프로필 링크 유도 문법으로 생성됩니다'}
+            </p>
+            <div className="flex justify-end gap-2">
+              <Button size="sm" variant="outline" onClick={() => setComposeId(null)}>취소</Button>
+              <Button size="sm" variant="accent" onClick={createCard} disabled={generating !== null}>
+                생성 시작 (3~10분)
+              </Button>
+            </div>
+          </>
+        )}
+      </div>
+    );
+  }
+
   const FILTERS: Array<{ key: 'all' | CardRow['status']; label: string }> = [
     { key: 'all', label: `전체 ${initial.length}` },
     { key: 'auto_draft', label: `검수 대기 ${initial.filter((c) => c.status === 'auto_draft').length}` },
@@ -348,111 +447,113 @@ export function CardPressManager({ initial, sources }: { initial: CardRow[]; sou
 
   return (
     <div className="space-y-6">
-      {/* 1. 새 카드뉴스 만들기 — "무엇을 만들 것인가"가 이 탭의 진입점 */}
-      <div className="card p-4 space-y-2">
-        <div className="flex items-center justify-between gap-3 flex-wrap">
-          <div className="text-sm font-semibold">새 카드뉴스 만들기 <span className="text-xs text-ink/40 font-normal">발행 콘텐츠에서 소재 선택 — 반응 좋았던 것부터</span></div>
-          {withoutCard.length > 0 && (
-            <div className="flex items-center gap-1.5 text-xs">
-              {(['all', 'case', 'trend'] as const).map((t) => (
-                <button key={t} onClick={() => setSrcTrack(t)} className={`rounded-full px-2 py-0.5 ${srcTrack === t ? 'bg-accent text-white' : 'bg-ink/5 text-ink/60'}`}>
-                  {t === 'all' ? '전체' : t === 'case' ? '케이스' : '트렌드'}
-                </button>
-              ))}
-              <button onClick={() => setSrcSort(srcSort === 'views' ? 'recent' : 'views')} className="rounded-full px-2 py-0.5 bg-ink/5 text-ink/60 hover:bg-ink/10">
-                {srcSort === 'views' ? '조회수순 ▾' : '최신순 ▾'}
-              </button>
-            </div>
-          )}
+      {/* 1. 새 카드뉴스 만들기 — 소스 2원화: ① 씨앗 아카이브(최신이 main) ② 본가 발행 콘텐츠 */}
+      <div className="card p-4 space-y-3">
+        <div className="text-sm font-semibold">
+          새 카드뉴스 만들기{' '}
+          <span className="text-xs text-ink/40 font-normal">씨앗 아카이브 원석 또는 본가 발행 콘텐츠에서 소재 선택</span>
         </div>
-        {withoutCard.length > 0 ? (
-          <>
-            <Input value={srcQuery} onChange={(e) => setSrcQuery(e.target.value)} placeholder="제목 검색" />
-            <div className="space-y-1.5 max-h-72 overflow-y-auto">
-              {candidates.map((s) => (
-                <div key={s.id}>
+        <div className="grid gap-4 lg:grid-cols-2">
+          {/* ① 씨앗 아카이브 top3 — 맨 위(최신)가 메인 */}
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between gap-2">
+              <div className="text-xs font-semibold text-ink/70">
+                ① 씨앗 아카이브 <span className="text-ink/40 font-normal">최신 원석 top3</span>
+              </div>
+              <a href="/admin/studio/archive" className="text-[11px] text-accent hover:underline shrink-0">아카이브 전체 →</a>
+            </div>
+            {seedCandidates.length === 0 ? (
+              <p className="text-xs text-ink/40">카드로 만들 씨앗이 없어요. 수집되면 최신순으로 여기 올라와요.</p>
+            ) : (
+              seedCandidates.map((s, i) => (
+                <div key={s.id} className={i === 0 ? 'rounded-lg border border-accent/40 bg-accent/5 p-2.5' : 'px-1'}>
                   <div className="flex items-center justify-between gap-3 text-sm">
-                    <span className="truncate">
-                      {s.title}
-                      <span className="text-[11px] text-ink/40 ml-1.5">조회 {s.view_count ?? 0}</span>
+                    <span className="min-w-0 truncate">
+                      {i === 0 && <span className="badge bg-accent text-white mr-1.5">MAIN · 최신</span>}
+                      <span className={i === 0 ? 'font-medium' : ''}>{seedDisplayTitle(s)}</span>
+                      <span className="text-[11px] text-ink/40 ml-1.5">
+                        {s.created_at.slice(5, 10).replace('-', '/')}{s.lane ? ` · ${s.lane}` : ''}
+                      </span>
                     </span>
                     <Button
                       size="sm"
-                      variant={composeId === s.id ? 'accent' : 'outline'}
+                      variant={composeKind === 'seed' && composeId === s.id ? 'accent' : 'outline'}
                       disabled={generating !== null}
-                      onClick={() => (composeId === s.id ? setComposeId(null) : startCompose(s.id))}
+                      onClick={() =>
+                        composeKind === 'seed' && composeId === s.id ? setComposeId(null) : startCompose('seed', s.id)
+                      }
                     >
-                      {composeId === s.id ? '닫기' : '만들기'}
+                      {composeKind === 'seed' && composeId === s.id ? '닫기' : '만들기'}
                     </Button>
                   </div>
-
-                  {/* 기획 설정 패널 — 생성 전에 방향을 정하는 씬 */}
-                  {composeId === s.id && (
-                    <div className="mt-2 mb-1 rounded-lg border border-accent/30 bg-accent/5 p-3 space-y-2.5">
-                      {generating === s.id ? (
-                        <div className="text-sm text-ink/70 py-2">
-                          <span className="font-semibold">AI가 카드를 만드는 중…</span> (3~10분 소요)
-                          <p className="text-xs text-ink/40 mt-1">
-                            본문을 슬라이드로 매핑하고 압축 재작성합니다. 완료되면 아래 목록에 나타나고 바로 검수 화면으로 이동해요.
-                            이 탭을 닫지만 않으면 다른 작업을 해도 됩니다.
-                          </p>
-                        </div>
-                      ) : (
-                        <>
-                          <div>
-                            <Label className="text-xs">기획방향 / 엣지 <span className="text-ink/40">(선택 — 비우면 AI가 이 콘텐츠의 차별점을 스스로 정의)</span></Label>
-                            <Textarea
-                              className="mt-1"
-                              rows={2}
-                              value={composeEdge}
-                              onChange={(e) => setComposeEdge(e.target.value)}
-                              placeholder={'예: "앤트로픽 현직 엔지니어가 직접 검증했다"는 신뢰가 이 글의 엣지 — 커버와 도입에서 이걸 세울 것'}
-                            />
-                          </div>
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <Label className="text-xs shrink-0">CTA</Label>
-                            {([
-                              ['comment_dm', '댓글→DM 참여형'],
-                              ['info_save', '정보 제공형'],
-                            ] as const).map(([v, label]) => (
-                              <button
-                                key={v}
-                                onClick={() => setComposeCta(v)}
-                                className={`text-xs rounded-full px-2.5 py-1 ${composeCta === v ? 'bg-accent text-white' : 'bg-ink/5 text-ink/60 hover:bg-ink/10'}`}
-                              >
-                                {label}
-                              </button>
-                            ))}
-                            {composeCta === 'comment_dm' && (
-                              <>
-                                <span className="text-[11px] text-ink/40">댓글 키워드:</span>
-                                <Input value={composeKeyword} onChange={(e) => setComposeKeyword(e.target.value)} className="text-sm w-28" />
-                              </>
-                            )}
-                          </div>
-                          <p className="text-[11px] text-ink/40">
-                            {composeCta === 'comment_dm'
-                              ? `캡션·마무리가 "댓글에 '${composeKeyword || '키워드'}' 남기면 DM으로" 문법으로 생성됩니다 (ManyChat 자동화 연동 전제)`
-                              : '캡션에 대표 프롬프트 전문 + 프로필 링크 유도 문법으로 생성됩니다'}
-                          </p>
-                          <div className="flex justify-end gap-2">
-                            <Button size="sm" variant="outline" onClick={() => setComposeId(null)}>취소</Button>
-                            <Button size="sm" variant="accent" onClick={createCard} disabled={generating !== null}>
-                              생성 시작 (3~10분)
-                            </Button>
-                          </div>
-                        </>
-                      )}
-                    </div>
+                  {i === 0 && s.suggested_angle && (
+                    <p className="text-[11px] text-ink/50 mt-1">추천 각도: {s.suggested_angle}</p>
                   )}
+                  {composePanel('seed', s.id)}
                 </div>
-              ))}
-              {candidates.length === 0 && <p className="text-xs text-ink/40">조건에 맞는 콘텐츠가 없어요.</p>}
+              ))
+            )}
+          </div>
+
+          {/* ② 본가(caselab) 발행 콘텐츠 top3 */}
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <div className="text-xs font-semibold text-ink/70">
+                ② 본가 발행 콘텐츠 <span className="text-ink/40 font-normal">{srcSort === 'views' ? '반응 좋았던 것부터' : '최신 발행부터'} top3</span>
+              </div>
+              {withoutCard.length > 0 && (
+                <div className="flex items-center gap-1.5 text-xs">
+                  {(['all', 'case', 'trend'] as const).map((t) => (
+                    <button key={t} onClick={() => setSrcTrack(t)} className={`rounded-full px-2 py-0.5 ${srcTrack === t ? 'bg-accent text-white' : 'bg-ink/5 text-ink/60'}`}>
+                      {t === 'all' ? '전체' : t === 'case' ? '케이스' : '트렌드'}
+                    </button>
+                  ))}
+                  <button onClick={() => setSrcSort(srcSort === 'views' ? 'recent' : 'views')} className="rounded-full px-2 py-0.5 bg-ink/5 text-ink/60 hover:bg-ink/10">
+                    {srcSort === 'views' ? '조회수순 ▾' : '최신순 ▾'}
+                  </button>
+                </div>
+              )}
             </div>
-          </>
-        ) : (
-          <p className="text-xs text-ink/40">모든 발행 콘텐츠에 카드가 있어요. 새 콘텐츠를 발행하면 자동으로 여기에 대기합니다.</p>
-        )}
+            {withoutCard.length > 0 ? (
+              <>
+                <Input value={srcQuery} onChange={(e) => setSrcQuery(e.target.value)} placeholder="제목 검색" />
+                <div className="space-y-1.5 max-h-72 overflow-y-auto">
+                  {visibleCandidates.map((s) => (
+                    <div key={s.id}>
+                      <div className="flex items-center justify-between gap-3 text-sm">
+                        <span className="truncate">
+                          {s.title}
+                          <span className="text-[11px] text-ink/40 ml-1.5">조회 {s.view_count ?? 0}</span>
+                        </span>
+                        <Button
+                          size="sm"
+                          variant={composeKind === 'content' && composeId === s.id ? 'accent' : 'outline'}
+                          disabled={generating !== null}
+                          onClick={() =>
+                            composeKind === 'content' && composeId === s.id
+                              ? setComposeId(null)
+                              : startCompose('content', s.id)
+                          }
+                        >
+                          {composeKind === 'content' && composeId === s.id ? '닫기' : '만들기'}
+                        </Button>
+                      </div>
+                      {composePanel('content', s.id)}
+                    </div>
+                  ))}
+                  {candidates.length === 0 && <p className="text-xs text-ink/40">조건에 맞는 콘텐츠가 없어요.</p>}
+                </div>
+                {!srcQuery.trim() && candidates.length > 3 && (
+                  <button onClick={() => setSrcExpanded(!srcExpanded)} className="text-[11px] text-accent hover:underline">
+                    {srcExpanded ? '접기 ▴' : `전체 ${candidates.length}개 보기 ▾`}
+                  </button>
+                )}
+              </>
+            ) : (
+              <p className="text-xs text-ink/40">모든 발행 콘텐츠에 카드가 있어요. 새 콘텐츠를 발행하면 자동으로 여기에 대기합니다.</p>
+            )}
+          </div>
+        </div>
       </div>
 
       {/* 2. 상태 필터 + 카드 세트 목록 */}
@@ -470,7 +571,8 @@ export function CardPressManager({ initial, sources }: { initial: CardRow[]; sou
         </div>
         <div className="card divide-y divide-border">
           {filtered.map((c) => {
-            const src = sourceMap.get(c.source_id);
+            const src = c.source_type === 'content' ? sourceMap.get(c.source_id) : undefined;
+            const seedSrc = c.source_type === 'seed' ? seedMap.get(c.source_id) : undefined;
             const st = STATUS_LABEL[c.status];
             const cover =
               (c.slides[0]?.props as Record<string, unknown> | undefined)?.coverImage as string | undefined;
@@ -489,8 +591,12 @@ export function CardPressManager({ initial, sources }: { initial: CardRow[]; sou
                   )}
                   <div className="min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
-                      <span className="font-medium truncate">{src?.title ?? c.source_id}</span>
-                      <span className="badge bg-ink/5 text-ink/60">{src?.track === 'case' ? '실전 케이스' : 'AI 트렌드'}</span>
+                      <span className="font-medium truncate">
+                        {src?.title ?? (seedSrc ? seedDisplayTitle(seedSrc) : c.source_id)}
+                      </span>
+                      <span className="badge bg-ink/5 text-ink/60">
+                        {c.source_type === 'seed' ? '씨앗' : src?.track === 'case' ? '실전 케이스' : 'AI 트렌드'}
+                      </span>
                       <span className="text-xs text-ink/40">{c.slides.filter((s) => s.enabled).length}장</span>
                     </div>
                     <div className="text-[11px] text-ink/40 mt-0.5">
@@ -513,13 +619,26 @@ export function CardPressManager({ initial, sources }: { initial: CardRow[]; sou
         </div>
       </div>
 
-      {card && <CardEditor key={card.id} card={card} source={sourceMap.get(card.source_id)} />}
+      {card && (
+        <CardEditor
+          key={card.id}
+          card={card}
+          sourceTitle={
+            card.source_type === 'seed'
+              ? (() => {
+                  const s = seedMap.get(card.source_id);
+                  return s ? seedDisplayTitle(s) : undefined;
+                })()
+              : sourceMap.get(card.source_id)?.title
+          }
+        />
+      )}
     </div>
   );
 }
 
 // ── 편집기 ────────────────────────────────────────────────
-function CardEditor({ card, source }: { card: CardRow; source?: SourceRow }) {
+function CardEditor({ card, sourceTitle }: { card: CardRow; sourceTitle?: string }) {
   const router = useRouter();
   const supabase = createSupabaseBrowserClient();
 
@@ -687,7 +806,7 @@ function CardEditor({ card, source }: { card: CardRow; source?: SourceRow }) {
       const res = await fetch('/api/cardpress/rewrite-slide', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ sourceId: card.source_id, sourceSection: s.sourceSection, template: target }),
+        body: JSON.stringify({ sourceType: card.source_type, sourceId: card.source_id, sourceSection: s.sourceSection, template: target }),
       });
       if (!res.ok) throw new Error((await res.json()).error ?? `HTTP ${res.status}`);
       const { slide } = (await res.json()) as { slide: { template: CardTemplateId; props: Record<string, unknown> } };
@@ -909,7 +1028,7 @@ function CardEditor({ card, source }: { card: CardRow; source?: SourceRow }) {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
-          sourceType: 'content',
+          sourceType: card.source_type,
           sourceId: card.source_id,
           edge: edge.trim() || undefined,
           ctaType,
@@ -936,7 +1055,7 @@ function CardEditor({ card, source }: { card: CardRow; source?: SourceRow }) {
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div className="flex items-center gap-2 min-w-0">
-          <h2 className="font-serif text-base font-semibold truncate">{source?.title ?? card.source_id}</h2>
+          <h2 className="font-serif text-base font-semibold truncate">{sourceTitle ?? card.source_id}</h2>
           <span className={`badge shrink-0 ${STATUS_LABEL[card.status].cls}`}>{STATUS_LABEL[card.status].text}</span>
           {dirty && <span className="text-xs text-amber-600">저장 안 됨</span>}
         </div>
@@ -1028,11 +1147,12 @@ function CardEditor({ card, source }: { card: CardRow; source?: SourceRow }) {
                   </div>
                 </div>
                 {editIdx === i && (
-                  <SlideForm slide={s} accent={card.accent} sourceId={card.source_id} onApply={(form) => applyEdit(i, form)} onCancel={() => setEditIdx(null)} />
+                  <SlideForm slide={s} accent={card.accent} sourceType={card.source_type} sourceId={card.source_id} onApply={(form) => applyEdit(i, form)} onCancel={() => setEditIdx(null)} />
                 )}
               </div>
             ))}
             <AddSlidePanel
+              sourceType={card.source_type}
               sourceId={card.source_id}
               onAdd={(slide) => {
                 patch((prev) => [...prev, { ...slide, order: prev.length + 1, enabled: true }]);
@@ -1133,6 +1253,7 @@ function CardEditor({ card, source }: { card: CardRow; source?: SourceRow }) {
                   key={`${selIdx}-${sel.template}`}
                   slide={sel}
                   accent={card.accent}
+                  sourceType={card.source_type}
                   sourceId={card.source_id}
                   onApply={(form) => { applyEdit(selIdx, form); setQuickEdit(false); }}
                   onCancel={() => setQuickEdit(false)}
@@ -1484,7 +1605,8 @@ function SlideThumb({ slide, accent, label, selected, onClick }: {
 }
 
 // ── 슬라이드 추가 — 매핑 계획(plan API)에서 섹션 선택 → AI 단건 작성 ──
-function AddSlidePanel({ sourceId, onAdd }: {
+function AddSlidePanel({ sourceType, sourceId, onAdd }: {
+  sourceType: CardRow['source_type'];
   sourceId: string;
   onAdd: (slide: Pick<CardSlide, 'template' | 'props' | 'sourceSection'>) => void;
 }) {
@@ -1498,7 +1620,7 @@ function AddSlidePanel({ sourceId, onAdd }: {
     setOpen(true);
     if (plan) return;
     try {
-      const res = await fetch(`/api/cardpress/plan?sourceId=${sourceId}`);
+      const res = await fetch(`/api/cardpress/plan?sourceId=${sourceId}&sourceType=${sourceType}`);
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? `HTTP ${res.status}`);
       setPlan(data.slides);
@@ -1517,7 +1639,7 @@ function AddSlidePanel({ sourceId, onAdd }: {
       const res = await fetch('/api/cardpress/rewrite-slide', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ sourceId, sourceSection: picked.sourceSection, template: template || picked.template }),
+        body: JSON.stringify({ sourceType, sourceId, sourceSection: picked.sourceSection, template: template || picked.template }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? `HTTP ${res.status}`);
@@ -1583,12 +1705,14 @@ function AddSlidePanel({ sourceId, onAdd }: {
 function SlideForm({
   slide,
   accent,
+  sourceType,
   sourceId,
   onApply,
   onCancel,
 }: {
   slide: CardSlide;
   accent: CardAccent;
+  sourceType: CardRow['source_type'];
   sourceId: string;
   onApply: (form: Record<string, string>) => void;
   onCancel: () => void;
@@ -1613,6 +1737,7 @@ function SlideForm({
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
+          sourceType,
           sourceId,
           sourceSection: slide.sourceSection,
           template: slide.template,

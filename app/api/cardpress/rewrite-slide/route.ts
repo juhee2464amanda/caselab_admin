@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { createSupabaseAdminClient } from '@/lib/supabase/admin';
-import { rewriteSlide, rewriteSlideVariants } from '@/lib/cardpress/generate';
-import type { ContentRowLite } from '@/lib/cardpress/mapping';
+import { rewriteSlide, rewriteSlideVariants, type CardSource } from '@/lib/cardpress/generate';
+import type { ContentRowLite, SeedRowLite } from '@/lib/cardpress/mapping';
 import type { CardTemplateId } from '@/types/cardpress';
 
 export const runtime = 'nodejs';
@@ -29,6 +29,7 @@ export async function POST(req: NextRequest) {
   }
 
   const body = (await req.json()) as {
+    sourceType?: 'content' | 'seed';
     sourceId?: string;
     sourceSection?: string;
     template?: CardTemplateId;
@@ -41,30 +42,37 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'sourceId·sourceSection·template 필요' }, { status: 400 });
 
   const admin = createSupabaseAdminClient();
-  const { data: content, error } = await admin
-    .from('contents')
-    .select('id, track, title, summary, slug, thumbnail_url, read_min, apply_min, body, status')
-    .eq('id', body.sourceId)
-    .maybeSingle();
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  if (!content) return NextResponse.json({ error: '콘텐츠 없음' }, { status: 404 });
+  let source: CardSource;
+  if (body.sourceType === 'seed') {
+    const { data: seed, error } = await admin
+      .from('content_seeds')
+      .select('id, title, raw_text, lane, suggested_angle, note, essence, source_url')
+      .eq('id', body.sourceId)
+      .maybeSingle();
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    if (!seed) return NextResponse.json({ error: '씨앗 없음' }, { status: 404 });
+    source = { kind: 'seed', seed: seed as unknown as SeedRowLite };
+  } else {
+    const { data: content, error } = await admin
+      .from('contents')
+      .select('id, track, title, summary, slug, thumbnail_url, read_min, apply_min, body, status')
+      .eq('id', body.sourceId)
+      .maybeSingle();
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    if (!content) return NextResponse.json({ error: '콘텐츠 없음' }, { status: 404 });
+    source = { kind: 'content', row: content as unknown as ContentRowLite };
+  }
 
   try {
     if (body.count && body.count > 1) {
-      const candidates = await rewriteSlideVariants(
-        content as unknown as ContentRowLite,
-        body.sourceSection,
-        body.template,
-        { instruction: body.instruction, currentProps: body.currentProps, count: body.count }
-      );
+      const candidates = await rewriteSlideVariants(source, body.sourceSection, body.template, {
+        instruction: body.instruction,
+        currentProps: body.currentProps,
+        count: body.count,
+      });
       return NextResponse.json({ candidates });
     }
-    const slide = await rewriteSlide(
-      content as unknown as ContentRowLite,
-      body.sourceSection,
-      body.template,
-      body.instruction
-    );
+    const slide = await rewriteSlide(source, body.sourceSection, body.template, body.instruction);
     return NextResponse.json({ slide });
   } catch (e) {
     console.error('[cardpress/rewrite-slide]', e);
