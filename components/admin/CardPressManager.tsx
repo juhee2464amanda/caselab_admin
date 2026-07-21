@@ -995,7 +995,7 @@ function CardEditor({ card, source }: { card: CardRow; source?: SourceRow }) {
                       </select>
                     </label>
                   )}
-                  <span className="text-ink/35">텍스트 클릭=수정 · 사진 드래그=이동 · 트레이에서 끌어오기=배치</span>
+                  <span className="text-ink/35">텍스트 클릭=수정 · 드래그/더블클릭=형광펜 팔레트 · 사진 드래그=이동 · 트레이 끌어오기=배치</span>
                 </div>
               )}
 
@@ -1280,6 +1280,7 @@ function LiveSlide({
   }
 
   function onMouseDown(e: React.MouseEvent) {
+    downPos.current = { x: e.clientX, y: e.clientY };
     const t = e.target as HTMLElement;
     if (!t.closest('[data-bg]')) return;
     const [px, py] = posOf();
@@ -1316,6 +1317,9 @@ function LiveSlide({
   }
 
   const justSelected = useRef(false);
+  const downPos = useRef<{ x: number; y: number } | null>(null);
+  const pendingEdit = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => { if (pendingEdit.current) clearTimeout(pendingEdit.current); }, []);
 
   // 선택 읽기는 이벤트 한 틱 뒤에 (Safari는 mouseup 시점에 selection이 아직 확정 전일 수 있음)
   function readSelection() {
@@ -1326,6 +1330,11 @@ function LiveSlide({
       if (!text) return;
       const owner = findOwnerField(text);
       if (!owner) return;
+      // 선택이 확정됐으면 예약된 클릭 편집은 취소 — 선택 UX가 우선
+      if (pendingEdit.current) {
+        clearTimeout(pendingEdit.current);
+        pendingEdit.current = null;
+      }
       const rr = selObj.getRangeAt(0).getBoundingClientRect();
       const cr = ref.current.getBoundingClientRect();
       justSelected.current = true;
@@ -1351,6 +1360,8 @@ function LiveSlide({
       justSelected.current = false;
       return;
     }
+    // 드래그(선택 시도)였으면 클릭 편집을 열지 않는다
+    if (downPos.current && Math.hypot(e.clientX - downPos.current.x, e.clientY - downPos.current.y) > 4) return;
     const selObj = window.getSelection();
     if (selObj && !selObj.isCollapsed) return;
     const t = e.target as HTMLElement;
@@ -1361,7 +1372,13 @@ function LiveSlide({
     if (!best) return;
     const cr = ref.current!.getBoundingClientRect();
     const tr = t.getBoundingClientRect();
-    onEditProp(best.key, { x: tr.left - cr.left, y: tr.top - cr.top, w: tr.width, h: tr.height });
+    const rect = { x: tr.left - cr.left, y: tr.top - cr.top, w: tr.width, h: tr.height };
+    // 클릭 편집은 200ms 유예 — 그 사이 더블클릭 선택이 감지되면 취소되고 팔레트가 뜬다
+    if (pendingEdit.current) clearTimeout(pendingEdit.current);
+    pendingEdit.current = setTimeout(() => {
+      pendingEdit.current = null;
+      onEditProp(best.key, rect);
+    }, 200);
   }
 
   return (
