@@ -538,16 +538,24 @@ function CardEditor({ card, source }: { card: CardRow; source?: SourceRow }) {
   const [quickEdit, setQuickEdit] = useState(false);
   const [previewMode, setPreviewMode] = useState<'live' | 'png'>('live');
   const [liveEdit, setLiveEdit] = useState<{
+    idx: number;
     key: string;
     rect: { x: number; y: number; w: number; h: number };
     value: string;
   } | null>(null);
   const [selPopup, setSelPopup] = useState<{
+    idx: number;
     text: string;
     key: string;
     rect: { x: number; y: number; w: number; h: number };
   } | null>(null);
-  useEffect(() => setSelPopup(null), [selIdx]);
+
+  // 슬라이드 이동(리스트·화살표) 시 열린 오버레이 정리 — 캔버스 내 상호작용은 건드리지 않음
+  function selectSlide(i: number) {
+    setSelIdx(i);
+    setLiveEdit(null);
+    setSelPopup(null);
+  }
 
   // 저장 안 된 수정이 있으면 새로고침/이탈 시 브라우저 경고 (수정 유실 방지)
   useEffect(() => {
@@ -560,11 +568,11 @@ function CardEditor({ card, source }: { card: CardRow; source?: SourceRow }) {
     return () => window.removeEventListener('beforeunload', warn);
   }, [dirty]);
 
-  // 라이브 캔버스 편집 헬퍼 — 단일 prop 텍스트/스타일 패치
-  function patchPropText(key: string, text: string) {
+  // 라이브 캔버스 편집 헬퍼 — 인덱스 지정 패치 (전체 편집 모드에서 모든 카드가 공유)
+  function patchPropTextAt(idx: number, key: string, text: string) {
     patch((prev) =>
       prev.map((s, k) => {
-        if (k !== selIdx) return s;
+        if (k !== idx) return s;
         const def = FIELDS[s.template].find((d) => d.key === key);
         if (!def) return s;
         const v = textToField(text, def);
@@ -582,10 +590,10 @@ function CardEditor({ card, source }: { card: CardRow; source?: SourceRow }) {
   }
 
   /** 여러 props 동시 패치 (undefined = 삭제) — 형광펜 텍스트+색 지정 등 */
-  function patchProps(partial: Record<string, unknown>) {
+  function patchPropsAt(idx: number, partial: Record<string, unknown>) {
     patch((prev) =>
       prev.map((s, k) => {
-        if (k !== selIdx) return s;
+        if (k !== idx) return s;
         const p = { ...s.props };
         for (const [key, v] of Object.entries(partial)) {
           if (v === undefined || v === '') delete p[key];
@@ -596,15 +604,14 @@ function CardEditor({ card, source }: { card: CardRow; source?: SourceRow }) {
     );
   }
   function patchStyle(key: 'accentColor' | 'overlay' | 'coverPos' | 'titleAnchor', value: unknown) {
-    patch((prev) =>
-      prev.map((s, k) => {
-        if (k !== selIdx) return s;
-        const p = { ...s.props };
-        if (value === undefined || value === '') delete p[key];
-        else p[key] = value;
-        return { ...s, props: p };
-      })
-    );
+    patchPropsAt(selIdx, { [key]: value });
+  }
+  function assignImageAt(idx: number, url: string) {
+    const s = slides[idx];
+    if (!s) return;
+    const key = IMAGE_KEY[s.template];
+    if (!key) return alert(`${TEMPLATE_LABEL[s.template]}에는 이미지 자리가 없어요. (커버·B2·B9에 놓아주세요)`);
+    patchPropsAt(idx, { [key]: url });
   }
 
   const sel = slides[selIdx] as CardSlide | undefined;
@@ -692,14 +699,6 @@ function CardEditor({ card, source }: { card: CardRow; source?: SourceRow }) {
     }
   }
 
-  // ── 이미지 배치 ──
-  function assignImage(url: string) {
-    if (!sel) return;
-    const key = IMAGE_KEY[sel.template];
-    if (!key) return alert(`${TEMPLATE_LABEL[sel.template]}에는 이미지 자리가 없어요. (커버·B2·B9 선택 후 클릭)`);
-    patch((prev) => prev.map((s, k) => (k === selIdx ? { ...s, props: { ...s.props, [key]: url } } : s)));
-  }
-
   // 커버 후보 클릭 → 무조건 커버(1번)에 적용. 다크 커버(C2·C3)면 사진 커버(C1)로 자동 전환.
   function applyCover(url: string) {
     patch((prev) =>
@@ -717,6 +716,166 @@ function CardEditor({ card, source }: { card: CardRow; source?: SourceRow }) {
       })
     );
     setSelIdx(0);
+  }
+
+  // ── 편집 가능한 라이브 캔버스 (텍스트 클릭·형광펜 팔레트·팬·드롭 오버레이 포함) — 단일/전체 모드 공용 ──
+  function renderEditableCanvas(i: number) {
+    const s = slides[i];
+    if (!s) return null;
+    const popup = selPopup?.idx === i ? selPopup : null;
+    const editing = liveEdit?.idx === i ? liveEdit : null;
+    return (
+      <div className="relative">
+        <LiveSlide
+          slide={s}
+          accent={card.accent}
+          onEditProp={(key, rect) => {
+            const def = FIELDS[s.template].find((d) => d.key === key);
+            if (!def) return;
+            setSelIdx(i);
+            setSelPopup(null);
+            setLiveEdit({ idx: i, key, rect, value: fieldToText((s.props as Record<string, unknown>)[key], def) });
+          }}
+          onSelectText={(info) => {
+            setSelIdx(i);
+            setLiveEdit(null);
+            setSelPopup({ idx: i, ...info });
+          }}
+          onDropImage={(url) => { setSelIdx(i); assignImageAt(i, url); }}
+          onPan={(pos) => { setSelIdx(i); patchPropsAt(i, { coverPos: pos }); }}
+        />
+        {/* 드래그 선택 → 형광펜/포인트색 미니 툴바 */}
+        {popup && (() => {
+          const def = FIELDS[s.template].find((d) => d.key === popup.key);
+          const raw = def ? fieldToText((s.props as Record<string, unknown>)[popup.key], def) : '';
+          const canHl = HL_TARGET[s.template] === popup.key && raw.includes(popup.text);
+          const canEm = EM_FIELDS.has(popup.key) && raw.includes(popup.text);
+          const isHl = s.props.hl === popup.text;
+          const emApplied = raw.includes(`**${popup.text}**`);
+          if (!canHl && !canEm) return null;
+          const btn = 'text-[11px] rounded px-2 py-1 whitespace-nowrap';
+          return (
+            <div
+              className="absolute z-20 flex items-center gap-1 rounded-md border border-border bg-white shadow-lg p-1"
+              style={{ left: Math.max(0, popup.rect.x), top: Math.max(0, popup.rect.y - 38) }}
+              onMouseDown={(e) => e.preventDefault()}
+            >
+              {canHl && (
+                <>
+                  <span className="text-[10px] text-ink/40 pl-1">형광펜</span>
+                  {HL_PALETTE.map((c) => (
+                    <button
+                      key={c.hex}
+                      title={`형광펜 · ${c.name}`}
+                      onClick={() => {
+                        // 카테고리 기본색과 같으면 hlColor 저장 생략(기본색 추종)
+                        const isDefault = c.hex === ((s.props.accentColor as string) ?? ACCENT_HEX[card.accent]);
+                        patchPropsAt(i, { hl: popup.text, hlColor: isDefault ? undefined : c.hex });
+                        setSelPopup(null);
+                      }}
+                      className={`h-5 w-5 rounded border ${isHl && ((s.props.hlColor ?? ACCENT_HEX[card.accent]) === c.hex) ? 'ring-2 ring-offset-1 ring-ink/60 border-transparent' : 'border-black/10'}`}
+                      style={{ background: c.hex }}
+                    />
+                  ))}
+                  {isHl && (
+                    <button className={`${btn} bg-ink/10`} onClick={() => { patchPropsAt(i, { hl: undefined, hlColor: undefined }); setSelPopup(null); }}>
+                      해제
+                    </button>
+                  )}
+                </>
+              )}
+              {canEm && !emApplied && (
+                <button
+                  className={`${btn} bg-accent/10 text-accent font-bold`}
+                  onClick={() => { patchPropTextAt(i, popup.key, raw.replace(popup.text, `**${popup.text}**`)); setSelPopup(null); }}
+                >
+                  A 포인트색
+                </button>
+              )}
+              {canEm && emApplied && (
+                <button
+                  className={`${btn} bg-ink/10`}
+                  onClick={() => { patchPropTextAt(i, popup.key, raw.replace(`**${popup.text}**`, popup.text)); setSelPopup(null); }}
+                >
+                  강조 해제
+                </button>
+              )}
+              <button className={`${btn} text-ink/40`} onClick={() => setSelPopup(null)}>✕</button>
+            </div>
+          );
+        })()}
+        {editing && (
+          <textarea
+            autoFocus
+            className="absolute z-10 rounded-md border-2 border-accent bg-white text-ink shadow-lg p-2 text-sm leading-snug"
+            style={{
+              left: Math.max(0, editing.rect.x),
+              top: editing.rect.y,
+              width: Math.max(220, editing.rect.w + 24),
+              minHeight: Math.max(52, editing.rect.h + 16),
+            }}
+            defaultValue={editing.value}
+            onBlur={(e) => { patchPropTextAt(i, editing.key, e.target.value); setLiveEdit(null); }}
+            onKeyDown={(e) => {
+              if (e.key === 'Escape') setLiveEdit(null);
+              if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) (e.target as HTMLTextAreaElement).blur();
+            }}
+          />
+        )}
+      </div>
+    );
+  }
+
+  // 스타일 툴바 — 선택 슬라이드(selIdx)의 색·효과·텍스트 위치 (단일/전체 모드 공용)
+  function renderStyleToolbar(s: CardSlide) {
+    return (
+      <div className="flex items-center gap-3 mb-2 text-[11px] flex-wrap text-ink/60">
+        <span className="font-semibold text-ink/70">{selIdx + 1}번 스타일</span>
+        <label className="flex items-center gap-1">
+          포인트색
+          <input
+            type="color"
+            value={(s.props.accentColor as string) ?? ACCENT_HEX[card.accent]}
+            onChange={(e) => patchStyle('accentColor', e.target.value)}
+            className="h-5 w-7 cursor-pointer rounded border border-border p-0"
+          />
+        </label>
+        {typeof s.props.accentColor === 'string' && (
+          <button onClick={() => patchStyle('accentColor', undefined)} className="rounded px-1.5 py-0.5 bg-ink/5 hover:bg-ink/10">
+            기본색
+          </button>
+        )}
+        {['C1', 'B4', 'C5'].includes(s.template) && typeof s.props.coverImage === 'string' && (
+          <label className="flex items-center gap-1">
+            어둡기
+            <input
+              type="range"
+              min={0}
+              max={0.85}
+              step={0.05}
+              value={(s.props.overlay as number) ?? (s.template === 'C5' ? 0.68 : s.template === 'B4' ? 0.45 : 0.28)}
+              onChange={(e) => patchStyle('overlay', parseFloat(e.target.value))}
+              className="w-20"
+            />
+          </label>
+        )}
+        {s.template === 'C1' && (
+          <label className="flex items-center gap-1">
+            텍스트 위치
+            <select
+              value={(s.props.titleAnchor as string) ?? 'bottom'}
+              onChange={(e) => patchStyle('titleAnchor', e.target.value)}
+              className="border border-border rounded px-1 py-0.5 bg-transparent"
+            >
+              <option value="bottom">하단</option>
+              <option value="center">중앙</option>
+              <option value="top">상단</option>
+            </select>
+          </label>
+        )}
+        <span className="text-ink/35">텍스트 클릭=수정 · 드래그/더블클릭=형광펜 팔레트 · 사진 드래그=이동 · 트레이 끌어오기=배치</span>
+      </div>
+    );
   }
 
   // ── 저장/상태 ──
@@ -841,7 +1000,7 @@ function CardEditor({ card, source }: { card: CardRow; source?: SourceRow }) {
                     onChange={() => patch((prev) => prev.map((x, k) => (k === i ? { ...x, enabled: !x.enabled } : x)))}
                     title="포함/제외"
                   />
-                  <button onClick={() => setSelIdx(i)} className="flex-1 min-w-0 text-left flex items-center gap-2">
+                  <button onClick={() => selectSlide(i)} className="flex-1 min-w-0 text-left flex items-center gap-2">
                     <span className="badge bg-ink/5 text-ink/60 shrink-0">{TEMPLATE_LABEL[s.template]}</span>
                     <span className={`text-sm truncate ${s.enabled ? '' : 'line-through text-ink/30'}`}>
                       {String((s.props as Record<string, unknown>).title ?? (s.props as Record<string, unknown>).heading ?? (s.props as Record<string, unknown>).banner ?? (s.props as Record<string, unknown>).term ?? (s.props as Record<string, unknown>).cap ?? '')}
@@ -881,7 +1040,7 @@ function CardEditor({ card, source }: { card: CardRow; source?: SourceRow }) {
             />
           </div>
 
-          <ImageTray card={card} onPick={assignImage} onCover={applyCover} onThreadsCover={(u) => { setThreadsCover(u); setDirty(true); }} />
+          <ImageTray card={card} onPick={(url) => assignImageAt(selIdx, url)} onCover={applyCover} onThreadsCover={(u) => { setThreadsCover(u); setDirty(true); }} />
 
           {/* 캡션·스레드 */}
           <div className="card p-4 space-y-3">
@@ -924,7 +1083,7 @@ function CardEditor({ card, source }: { card: CardRow; source?: SourceRow }) {
                 className={`px-2 py-0.5 rounded border text-xs ${viewMode === 'grid' ? 'bg-accent text-white border-accent' : 'border-border hover:bg-ink/5'}`}
                 title="전체 흐름을 한눈에"
               >
-                그리드
+                전체 편집
               </button>
               {viewMode === 'single' && (
                 <>
@@ -942,160 +1101,17 @@ function CardEditor({ card, source }: { card: CardRow; source?: SourceRow }) {
                   >
                     폼
                   </button>
-                  <button onClick={() => { setSelIdx(Math.max(0, selIdx - 1)); setLiveEdit(null); }} className="px-2 py-0.5 rounded border border-border text-xs hover:bg-ink/5">←</button>
-                  <button onClick={() => { setSelIdx(Math.min(slides.length - 1, selIdx + 1)); setLiveEdit(null); }} className="px-2 py-0.5 rounded border border-border text-xs hover:bg-ink/5">→</button>
+                  <button onClick={() => selectSlide(Math.max(0, selIdx - 1))} className="px-2 py-0.5 rounded border border-border text-xs hover:bg-ink/5">←</button>
+                  <button onClick={() => selectSlide(Math.min(slides.length - 1, selIdx + 1))} className="px-2 py-0.5 rounded border border-border text-xs hover:bg-ink/5">→</button>
                 </>
               )}
             </div>
           </div>
+          {sel && (viewMode === 'grid' || previewMode === 'live') && renderStyleToolbar(sel)}
           {viewMode === 'single' ? (
             <>
-              {/* 라이브 편집 툴바 — 색·효과·텍스트 위치 */}
-              {previewMode === 'live' && sel && (
-                <div className="flex items-center gap-3 mb-2 text-[11px] flex-wrap text-ink/60">
-                  <label className="flex items-center gap-1">
-                    포인트색
-                    <input
-                      type="color"
-                      value={(sel.props.accentColor as string) ?? ACCENT_HEX[card.accent]}
-                      onChange={(e) => patchStyle('accentColor', e.target.value)}
-                      className="h-5 w-7 cursor-pointer rounded border border-border p-0"
-                    />
-                  </label>
-                  {typeof sel.props.accentColor === 'string' && (
-                    <button onClick={() => patchStyle('accentColor', undefined)} className="rounded px-1.5 py-0.5 bg-ink/5 hover:bg-ink/10">
-                      기본색
-                    </button>
-                  )}
-                  {['C1', 'B4', 'C5'].includes(sel.template) && typeof sel.props.coverImage === 'string' && (
-                    <label className="flex items-center gap-1">
-                      어둡기
-                      <input
-                        type="range"
-                        min={0}
-                        max={0.85}
-                        step={0.05}
-                        value={(sel.props.overlay as number) ?? (sel.template === 'C5' ? 0.68 : sel.template === 'B4' ? 0.45 : 0.28)}
-                        onChange={(e) => patchStyle('overlay', parseFloat(e.target.value))}
-                        className="w-20"
-                      />
-                    </label>
-                  )}
-                  {sel.template === 'C1' && (
-                    <label className="flex items-center gap-1">
-                      텍스트 위치
-                      <select
-                        value={(sel.props.titleAnchor as string) ?? 'bottom'}
-                        onChange={(e) => patchStyle('titleAnchor', e.target.value)}
-                        className="border border-border rounded px-1 py-0.5 bg-transparent"
-                      >
-                        <option value="bottom">하단</option>
-                        <option value="center">중앙</option>
-                        <option value="top">상단</option>
-                      </select>
-                    </label>
-                  )}
-                  <span className="text-ink/35">텍스트 클릭=수정 · 드래그/더블클릭=형광펜 팔레트 · 사진 드래그=이동 · 트레이 끌어오기=배치</span>
-                </div>
-              )}
-
               {previewMode === 'live' && sel ? (
-                <div className="relative">
-                  <LiveSlide
-                    slide={sel}
-                    accent={card.accent}
-                    onEditProp={(key, rect) => {
-                      const def = FIELDS[sel.template].find((d) => d.key === key);
-                      if (!def) return;
-                      setSelPopup(null);
-                      setLiveEdit({ key, rect, value: fieldToText((sel.props as Record<string, unknown>)[key], def) });
-                    }}
-                    onSelectText={(info) => {
-                      setLiveEdit(null);
-                      setSelPopup(info);
-                    }}
-                    onDropImage={assignImage}
-                    onPan={(pos) => patchStyle('coverPos', pos)}
-                  />
-                  {/* 드래그 선택 → 형광펜/포인트색 미니 툴바 */}
-                  {selPopup && (() => {
-                    const def = FIELDS[sel.template].find((d) => d.key === selPopup.key);
-                    const raw = def ? fieldToText((sel.props as Record<string, unknown>)[selPopup.key], def) : '';
-                    const canHl = HL_TARGET[sel.template] === selPopup.key && raw.includes(selPopup.text);
-                    const canEm = EM_FIELDS.has(selPopup.key) && raw.includes(selPopup.text);
-                    const isHl = sel.props.hl === selPopup.text;
-                    const emApplied = raw.includes(`**${selPopup.text}**`);
-                    if (!canHl && !canEm) return null;
-                    const btn = 'text-[11px] rounded px-2 py-1 whitespace-nowrap';
-                    return (
-                      <div
-                        className="absolute z-20 flex items-center gap-1 rounded-md border border-border bg-white shadow-lg p-1"
-                        style={{ left: Math.max(0, selPopup.rect.x), top: Math.max(0, selPopup.rect.y - 38) }}
-                        onMouseDown={(e) => e.preventDefault()}
-                      >
-                        {canHl && (
-                          <>
-                            <span className="text-[10px] text-ink/40 pl-1">형광펜</span>
-                            {HL_PALETTE.map((c) => (
-                              <button
-                                key={c.hex}
-                                title={`형광펜 · ${c.name}`}
-                                onClick={() => {
-                                  // 카테고리 기본색과 같으면 hlColor 저장 생략(기본색 추종)
-                                  const isDefault = c.hex === ((sel.props.accentColor as string) ?? ACCENT_HEX[card.accent]);
-                                  patchProps({ hl: selPopup.text, hlColor: isDefault ? undefined : c.hex });
-                                  setSelPopup(null);
-                                }}
-                                className={`h-5 w-5 rounded border ${isHl && ((sel.props.hlColor ?? ACCENT_HEX[card.accent]) === c.hex) ? 'ring-2 ring-offset-1 ring-ink/60 border-transparent' : 'border-black/10'}`}
-                                style={{ background: c.hex }}
-                              />
-                            ))}
-                            {isHl && (
-                              <button className={`${btn} bg-ink/10`} onClick={() => { patchProps({ hl: undefined, hlColor: undefined }); setSelPopup(null); }}>
-                                해제
-                              </button>
-                            )}
-                          </>
-                        )}
-                        {canEm && !emApplied && (
-                          <button
-                            className={`${btn} bg-accent/10 text-accent font-bold`}
-                            onClick={() => { patchPropText(selPopup.key, raw.replace(selPopup.text, `**${selPopup.text}**`)); setSelPopup(null); }}
-                          >
-                            A 포인트색
-                          </button>
-                        )}
-                        {canEm && emApplied && (
-                          <button
-                            className={`${btn} bg-ink/10`}
-                            onClick={() => { patchPropText(selPopup.key, raw.replace(`**${selPopup.text}**`, selPopup.text)); setSelPopup(null); }}
-                          >
-                            강조 해제
-                          </button>
-                        )}
-                        <button className={`${btn} text-ink/40`} onClick={() => setSelPopup(null)}>✕</button>
-                      </div>
-                    );
-                  })()}
-                  {liveEdit && (
-                    <textarea
-                      autoFocus
-                      className="absolute z-10 rounded-md border-2 border-accent bg-white text-ink shadow-lg p-2 text-sm leading-snug"
-                      style={{
-                        left: Math.max(0, Math.min(liveEdit.rect.x, 9999)),
-                        top: liveEdit.rect.y,
-                        width: Math.max(220, liveEdit.rect.w + 24),
-                        minHeight: Math.max(52, liveEdit.rect.h + 16),
-                      }}
-                      defaultValue={liveEdit.value}
-                      onBlur={(e) => { patchPropText(liveEdit.key, e.target.value); setLiveEdit(null); }}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Escape') setLiveEdit(null);
-                        if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) (e.target as HTMLTextAreaElement).blur();
-                      }}
-                    />
-                  )}
-                </div>
+                renderEditableCanvas(selIdx)
               ) : (
                 <div className="relative w-full rounded-lg overflow-hidden border border-border bg-ink/5" style={{ aspectRatio: '4 / 5' }}>
                   {previewUrl && !previewErr && (
@@ -1123,19 +1139,23 @@ function CardEditor({ card, source }: { card: CardRow; source?: SourceRow }) {
               )}
             </>
           ) : (
-            <div className="grid grid-cols-3 gap-2 max-h-[70vh] overflow-y-auto">
-              {slides.map((s, i) =>
-                s.enabled ? (
-                  <SlideThumb
-                    key={i}
-                    slide={s}
-                    accent={card.accent}
-                    label={`${i + 1}`}
-                    selected={i === selIdx}
-                    onClick={() => { setSelIdx(i); setViewMode('single'); }}
-                  />
-                ) : null
-              )}
+            /* 전체 편집 — 모든 카드가 라이브 캔버스, 각 카드 위에서 동일하게 편집 */
+            <div className="space-y-4 max-h-[75vh] overflow-y-auto pr-1">
+              {slides.map((s, i) => (
+                <div key={i} className={s.enabled ? '' : 'opacity-40'}>
+                  <div className="flex items-center justify-between text-[11px] text-ink/40 mb-1">
+                    <span>
+                      {i + 1}. {TEMPLATE_LABEL[s.template]}
+                      {!s.enabled && ' · 제외됨'}
+                      {i === selIdx && <span className="text-accent ml-1">◂ 스타일 툴바 대상</span>}
+                    </span>
+                    <button onClick={() => { selectSlide(i); setViewMode('single'); }} className="text-accent hover:underline">
+                      단일 보기
+                    </button>
+                  </div>
+                  {renderEditableCanvas(i)}
+                </div>
+              ))}
             </div>
           )}
         </div>
