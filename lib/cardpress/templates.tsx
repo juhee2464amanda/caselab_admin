@@ -1310,14 +1310,14 @@ function B8({ accent, props }: Extract<RenderSlideInput, { template: 'B8' }>) {
             <span>{`"${props.when}"`}</span>
           </div>
         ) : null}
-        {promptBox(27)}
+        {/* 효과/설명은 패턴 소개의 일부 — 프롬프트 맛보기보다 위 (운영자 결정 2026-07-21) */}
         {props.effect ? (
           <div
             style={{
               display: 'flex',
               alignItems: 'center',
               gap: 14,
-              marginTop: 30,
+              marginTop: 22,
               fontSize: 29,
               fontWeight: 700,
               color,
@@ -1338,6 +1338,7 @@ function B8({ accent, props }: Extract<RenderSlideInput, { template: 'B8' }>) {
             <span>{props.effect}</span>
           </div>
         ) : null}
+        {promptBox(27)}
         {props.ctaLine ? (
           <div
             style={{
