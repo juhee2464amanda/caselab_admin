@@ -513,7 +513,8 @@ export function CardPressManager({ initial, sources }: { initial: CardRow[]; sou
         </div>
       </div>
 
-      {card && <CardEditor key={card.id} card={card} source={sourceMap.get(card.source_id)} />}
+      {/* updated_at 포함 key — DB가 갱신되면(외부 패치·재생성) 편집기를 새 데이터로 리마운트 (덮어쓰기 사고 방지) */}
+      {card && <CardEditor key={`${card.id}:${card.updated_at}`} card={card} source={sourceMap.get(card.source_id)} />}
     </div>
   );
 }
