@@ -11,6 +11,7 @@ import { SEED_TRACKS, type SeedTrack } from '@/lib/seed-tracks';
 import { SOURCES, sourceProfile } from '@/lib/seed-sources';
 import { ESSENCE_LABELS, essenceRows } from '@/lib/seed-essence';
 import { CollectRequestButton } from '@/components/admin/CollectRequestButton';
+import { OpenLocalStudioNotice } from '@/components/admin/OpenLocalStudioNotice';
 
 export type CurSeed = {
   id: string;
@@ -286,7 +287,10 @@ export function SeedCuration({
               새 씨앗 분석{pending > 0 && ` (대기 ${pending})`}
             </Button>
           ) : (
-            <span className="text-xs text-ink/40">분석·생성은 로컬 작업장에서{pending > 0 && ` · 미채점 ${pending}`}</span>
+            <div className="flex items-center gap-2">
+              <OpenLocalStudioNotice variant="inline" />
+              <span className="text-xs text-ink/40">분석·생성은 로컬에서{pending > 0 && ` · 미채점 ${pending}`}</span>
+            </div>
           )}
         </div>
       </div>
@@ -409,12 +413,15 @@ export function SeedCuration({
                   </Button>
                 ))
               ) : (
-                <span className="text-xs text-ink/40">생성은 로컬 작업장에서</span>
+                <OpenLocalStudioNotice variant="inline" />
               )}
               <Button size="sm" variant="ghost" disabled={!!gen || outlining} onClick={clearSelection}>
                 <X className="h-3.5 w-3.5" /> 선택 해제
               </Button>
             </div>
+
+            {/* 배포판: 생성은 로컬에서만 — 딥링크로 로컬 스튜디오 열도록 안내 */}
+            {!LOCAL_AI && <OpenLocalStudioNotice />}
 
             {/* Step 2: 기획방향(필수) — 첫 기획은 반드시 사람이 방향을 준다 */}
             {LOCAL_AI && pendingTrack && (
