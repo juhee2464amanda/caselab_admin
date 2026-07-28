@@ -95,6 +95,16 @@ def run_bot(profile: str, prompt: str) -> bool:
     return True
 
 
+def _pid_alive(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)  # 시그널 0 = 존재/권한만 확인, 실제로 안 죽임
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True  # 존재하지만 내 소유 아님 → 살아있음
+    return True
+
+
 def acquire_lock() -> bool:
     LOCK_FILE.parent.mkdir(parents=True, exist_ok=True)
     try:
@@ -103,7 +113,26 @@ def acquire_lock() -> bool:
         os.close(fd)
         return True
     except FileExistsError:
-        return False
+        # 이전 폴러가 release_lock() 못 타고 죽으면 stale lock이 영구히 큐를 막는다
+        # (실제로 2일간 수집 정지 발생). lock 주인 PID가 죽었으면 회수한다.
+        try:
+            holder = int(LOCK_FILE.read_text().strip() or "0")
+        except (ValueError, OSError):
+            holder = 0
+        if holder and _pid_alive(holder):
+            return False  # 진짜 다른 폴러가 수집 중
+        sys.stderr.write(f"stale lock 회수(죽은 PID {holder or '?'})\n")
+        try:
+            LOCK_FILE.unlink()
+        except FileNotFoundError:
+            pass
+        try:
+            fd = os.open(str(LOCK_FILE), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+            os.write(fd, str(os.getpid()).encode())
+            os.close(fd)
+            return True
+        except FileExistsError:
+            return False  # 그 사이 다른 폴러가 선점
 
 
 def release_lock() -> None:
