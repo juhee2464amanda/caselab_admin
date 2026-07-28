@@ -55,24 +55,63 @@ function host(url: string): string {
   }
 }
 
+// 본문 전체에서 산문 텍스트를 수집해 글자 수 → 읽기 시간(분)을 추정한다.
+// 섹션 shape에 의존하지 않도록 body 트리를 재귀 순회하며 산문 키만 모은다(URL·enum 값 제외).
+const PROSE_KEYS = new Set([
+  'markdown', 'text', 'prompt', 'good', 'bad', 'human', 'ai',
+  'hypothesis', 'counter', 'title', 'value', 'desc', 'description',
+  'caption', 'summary', 'heading', 'name', 'label',
+]);
+// 한국어 묵독 속도 근사(자/분). 짧은 글도 최소 1분으로 올린다.
+const CHARS_PER_MIN = 500;
+
+function harvestProse(node: unknown, out: string[]): void {
+  if (Array.isArray(node)) {
+    for (const item of node) {
+      if (typeof item === 'string') out.push(item); // checklist.items 등 문자열 배열
+      else harvestProse(item, out);
+    }
+    return;
+  }
+  if (node && typeof node === 'object') {
+    for (const [k, v] of Object.entries(node)) {
+      if (typeof v === 'string') {
+        if (PROSE_KEYS.has(k)) out.push(v);
+      } else {
+        harvestProse(v, out);
+      }
+    }
+  }
+}
+
+/** 본문 분량 기반 읽기 시간(분) 추정. 수동 입력의 눈대중을 대체한다. */
+export function estimateReadMin(body: ContentBody): number {
+  const out: string[] = [];
+  harvestProse(body, out);
+  const text = out.join(' ').replace(/https?:\/\/\S+/g, ''); // 링크 URL 제외
+  const chars = text.replace(/\s/g, '').length;
+  return Math.max(1, Math.round(chars / CHARS_PER_MIN));
+}
+
 export function lintContent(
   row: Pick<ContentRow, 'read_min' | 'apply_min' | 'job_tags' | 'persona_coverage' | 'body'>
 ): LintResult {
   const checks: LintResult['checks'] = [];
   const body = row.body as ContentBody;
+  const isTrend = body.kind === 'trend';
 
-  // 1. 시간 라벨
+  // 1. 시간 라벨 — 트렌드는 '적용' 개념이 없어 읽기 시간만 요구, 사례는 읽기·적용 모두.
   checks.push({
     id: 'time-labels',
-    label: '시간 라벨 (읽기·적용 ≥ 1분)',
-    passed: row.read_min >= 1 && row.apply_min >= 1,
+    label: isTrend ? '읽기 시간 (≥ 1분)' : '시간 라벨 (읽기·적용 ≥ 1분)',
+    passed: isTrend ? row.read_min >= 1 : row.read_min >= 1 && row.apply_min >= 1,
   });
 
-  // 2. 직무 태그
+  // 2. 직무 태그 — 트렌드는 직무 무관 뉴스라 게이트 제외(N/A), 사례만 ≥ 1개 요구.
   checks.push({
     id: 'job-tags',
-    label: '직무 태그 ≥ 1개',
-    passed: (row.job_tags?.length ?? 0) >= 1,
+    label: isTrend ? '직무 태그 (트렌드 N/A)' : '직무 태그 ≥ 1개',
+    passed: isTrend ? true : (row.job_tags?.length ?? 0) >= 1,
   });
 
   // (페르소나 커버리지 게이트 제거 — 본가에서 미노출·미사용인 죽은 필드라 발행을 막지 않는다)
