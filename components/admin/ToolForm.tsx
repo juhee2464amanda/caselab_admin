@@ -184,6 +184,8 @@ export function ToolForm({ initial, onSaved, startInPreview }: Props) {
     { id: 'toolbody', label: '본문이 상세페이지 스키마와 일치 (도구만)', passed: !toolBodyError },
   ];
   const canPublish = checks.every((c) => c.passed);
+  // 우측 발행 준비 레일용 — 남은(미충족) 필수 항목 수. 모든 check가 차단 항목이다.
+  const failingCount = checks.filter((c) => !c.passed).length;
 
   function syncBody(newJson: string) {
     setBodyJson(newJson);
@@ -493,29 +495,6 @@ export function ToolForm({ initial, onSaved, startInPreview }: Props) {
               </div>
             </section>
 
-            <section className="card p-5">
-              <h3 className="font-semibold text-sm mb-3">필수 항목</h3>
-              <ul className="space-y-1.5">
-                {checks.map((c) => (
-                  <li key={c.id} className="flex items-start gap-2 text-xs">
-                    {c.passed ? (
-                      <CheckCircle2 className="h-3.5 w-3.5 text-green-600 mt-0.5 shrink-0" />
-                    ) : (
-                      <AlertCircle className="h-3.5 w-3.5 text-red-500 mt-0.5 shrink-0" />
-                    )}
-                    <span className={c.passed ? 'text-ink/60' : 'text-red-600 font-medium'}>
-                      {c.label}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-              {initial?.status && (
-                <div className="mt-4 border-t border-border pt-3">
-                  <h3 className="font-semibold text-sm mb-2">현재 상태</h3>
-                  <span className="badge">{initial.status}</span>
-                </div>
-              )}
-            </section>
           </div>
         )}
       </div>
@@ -604,8 +583,117 @@ export function ToolForm({ initial, onSaved, startInPreview }: Props) {
           )}
         </div>
 
-        {/* AI 제안 패널 — 지정 부분(선택/필드)에 수정 각도 → 후보 택1 */}
-        <aside>
+        {/* 우측 레일: 발행 준비 신호등(필수 항목 인라인 수정) + AI 제안 패널 */}
+        <aside className="space-y-6">
+          {/* 필수값을 여기서 바로 채우면 신호등이 초록으로 바뀌고 발행이 활성화된다 */}
+          <section className="card p-5 xl:sticky xl:top-4">
+            <div className="mb-4 flex items-center gap-2.5">
+              <span
+                className={cn(
+                  'h-3.5 w-3.5 shrink-0 rounded-full ring-4',
+                  canPublish ? 'bg-green-500 ring-green-500/20' : 'bg-red-500 ring-red-500/20',
+                )}
+              />
+              <h2 className="text-sm font-semibold">
+                {canPublish ? '발행 준비 완료' : `발행 전 입력 ${failingCount}개`}
+              </h2>
+              {initial?.status && <span className="badge ml-auto">{initial.status}</span>}
+            </div>
+
+            <div className="space-y-3">
+              {checks.map((c) => {
+                const isBodyGate = c.id === 'body' || c.id === 'toolbody';
+                return (
+                  <div key={c.id}>
+                    <div className="flex items-center gap-1.5 text-xs">
+                      {c.passed ? (
+                        <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-green-600" />
+                      ) : (
+                        <AlertCircle className="h-3.5 w-3.5 shrink-0 text-red-500" />
+                      )}
+                      <span className={c.passed ? 'text-ink/60' : 'font-medium text-red-600'}>{c.label}</span>
+                      {!c.passed && isBodyGate && (
+                        <button
+                          type="button"
+                          onClick={() => setPreviewOpen(false)}
+                          className="ml-auto text-[11px] text-ink/50 underline"
+                        >
+                          본문 편집 →
+                        </button>
+                      )}
+                    </div>
+
+                    {/* 인라인 수정 — 미충족 항목만 즉시 채운다 */}
+                    {!c.passed && c.id === 'name' && (
+                      <Input
+                        className="mt-1 h-8"
+                        value={name}
+                        onChange={(e) => setName(e.target.value)}
+                        placeholder="자료 이름"
+                      />
+                    )}
+                    {!c.passed && c.id === 'slug' && (
+                      <Input
+                        className="mt-1 h-8"
+                        value={slug}
+                        onChange={(e) => setSlug(e.target.value)}
+                        placeholder="slug (비우면 이름에서 자동)"
+                      />
+                    )}
+                    {!c.passed && c.id === 'category' && (
+                      <Select value={category} onValueChange={(v) => setCategory(v as typeof CATEGORIES[number])}>
+                        <SelectTrigger className="mt-1 h-8">
+                          <SelectValue placeholder="카테고리 선택" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {CATEGORIES.map((cat) => (
+                            <SelectItem key={cat} value={cat}>{CATEGORY_LABELS[cat]}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    )}
+                    {!c.passed && c.id === 'subcategory' &&
+                      (subcats.length ? (
+                        <Select value={subcategoryId} onValueChange={setSubcategoryId}>
+                          <SelectTrigger className="mt-1 h-8">
+                            <SelectValue placeholder="기능 분류 선택" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {subcats.map((s) => (
+                              <SelectItem key={s.id} value={s.id}>{s.label}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => setSettingsOpen(true)}
+                          className="mt-1 text-[11px] text-ink/50 underline"
+                        >
+                          설정에서 새 분류 추가 →
+                        </button>
+                      ))}
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="mt-4 space-y-2">
+              <Button
+                variant="accent"
+                className="w-full"
+                onClick={() => save('published')}
+                disabled={pending || !canPublish}
+              >
+                <Send className="h-4 w-4" /> {canPublish ? '발행' : '입력 후 발행'}
+              </Button>
+              <Button variant="outline" className="w-full" onClick={() => save('draft')} disabled={pending}>
+                <Save className="h-4 w-4" /> 초안 저장
+              </Button>
+            </div>
+          </section>
+
+          {/* AI 제안 패널 — 지정 부분(선택/필드)에 수정 각도 → 후보 택1 */}
           <RefinePanel />
         </aside>
       </div>

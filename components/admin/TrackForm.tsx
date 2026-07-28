@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useTransition, useEffect } from 'react';
+import { useState, useTransition, useEffect, useMemo, type ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
 import { Sparkles, Save, Send, AlertCircle, CheckCircle2, Eye, PenLine, SlidersHorizontal, ChevronDown } from 'lucide-react';
 import { Input } from '@/components/ui/input';
@@ -11,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { JOB_LABELS, JOB_TAGS, PERSONAS, PERSONA_LABELS } from '@/types/content';
 import type { ContentBody, ContentRow, JobTag, Persona } from '@/types/content';
 import { createSupabaseBrowserClient } from '@/lib/supabase/client';
-import { lintContent } from '@/lib/content-lint';
+import { lintContent, estimateReadMin } from '@/lib/content-lint';
 import { slugify, cn } from '@/lib/utils';
 import { CaseBodyEditor } from '@/components/admin/section-editors/CaseBodyEditor';
 import { TrendBodyEditor } from '@/components/admin/section-editors/TrendBodyEditor';
@@ -50,6 +50,23 @@ const EMPTY_TREND: ContentBody = {
   sources: [],
 };
 
+// 발행 준비 레일의 필수 입력 한 줄 — 충족 시 초록 체크, 미충족 시 빨간 경고 아이콘.
+function RailField({ ok, label, children }: { ok: boolean; label: string; children: ReactNode }) {
+  return (
+    <div>
+      <Label className="flex items-center gap-1.5 text-xs">
+        {ok ? (
+          <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-green-600" />
+        ) : (
+          <AlertCircle className="h-3.5 w-3.5 shrink-0 text-red-500" />
+        )}
+        {label}
+      </Label>
+      {children}
+    </div>
+  );
+}
+
 export function TrackForm({ initial, onSaved, startInPreview }: Props) {
   const router = useRouter();
   const supabase = createSupabaseBrowserClient();
@@ -60,6 +77,9 @@ export function TrackForm({ initial, onSaved, startInPreview }: Props) {
   const [slug, setSlug] = useState(initial?.slug ?? '');
   const [summary, setSummary] = useState(initial?.summary ?? '');
   const [readMin, setReadMin] = useState(initial?.read_min ?? 5);
+  // 읽기 시간 자동 모드 — 저장된 값이 없으면(신규·미설정) 본문 길이로 자동 산출.
+  // 값이 이미 있으면 운영자가 손댄 것으로 보고 수동 유지.
+  const [readMinAuto, setReadMinAuto] = useState((initial?.read_min ?? 0) < 1);
   const [applyMin, setApplyMin] = useState(initial?.apply_min ?? 10);
   const [authorQuote, setAuthorQuote] = useState(initial?.author_quote ?? '');
   const [thumbnailUrl, setThumbnailUrl] = useState(initial?.thumbnail_url ?? '');
@@ -110,6 +130,18 @@ export function TrackForm({ initial, onSaved, startInPreview }: Props) {
     } catch { /* 손상된 스냅샷은 무시 */ }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // 본문 길이 기반 읽기 시간 추정 — 자동 모드면 본문이 바뀔 때마다 반영.
+  const estReadMin = useMemo(() => estimateReadMin(body), [body]);
+  useEffect(() => {
+    if (readMinAuto) setReadMin(estReadMin);
+  }, [readMinAuto, estReadMin]);
+
+  // 읽기 시간 수동 입력 → 자동 해제. '자동' 버튼으로 되돌리면 다시 본문 기준.
+  function onReadMinInput(v: number) {
+    setReadMinAuto(false);
+    setReadMin(Number.isFinite(v) ? v : 0);
+  }
 
   // body 정본 = body 상태. GUI 편집 시 호출 → JSON도 동기화.
   function updateBody(next: ContentBody) {
@@ -167,6 +199,12 @@ export function TrackForm({ initial, onSaved, startInPreview }: Props) {
 
   // 발행 게이트 = 자동 lint(차단 항목)만. 수동 확인 체크는 폐지(솔로 운영 마찰 제거).
   const canPublish = lint.passed;
+
+  // 우측 발행 준비 레일용 파생값 — 신호등·남은 항목 수·본문/경고 상태.
+  const isTrend = track === 'trend';
+  const contentOk = lint.checks.find((c) => c.id === 'has-content')?.passed ?? false;
+  const failingCount = lint.checks.filter((c) => c.blocking !== false && !c.passed).length;
+  const warnings = lint.checks.filter((c) => c.blocking === false && !c.passed);
 
   // 저장/발행 write 실패 처리 — 세션 만료면 재로그인 유도, 아니면 원인 노출.
   // 반환값 true = 처리 종료(호출부에서 return), 이후 페이지 이동을 막는다.
@@ -332,13 +370,18 @@ export function TrackForm({ initial, onSaved, startInPreview }: Props) {
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <Label htmlFor="read" className="text-xs">읽기 시간 (분)</Label>
-                  <Input id="read" className="mt-1" type="number" min={1} value={readMin} onChange={(e) => setReadMin(+e.target.value)} />
+                  <Label htmlFor="read" className="text-xs">
+                    읽기 시간 (분){readMinAuto && <span className="ml-1 text-[10px] text-ink/40">· 본문 기준 자동</span>}
+                  </Label>
+                  <Input id="read" className="mt-1" type="number" min={1} value={readMin} onChange={(e) => onReadMinInput(+e.target.value)} />
                 </div>
-                <div>
-                  <Label htmlFor="apply" className="text-xs">적용 시간 (분)</Label>
-                  <Input id="apply" className="mt-1" type="number" min={1} value={applyMin} onChange={(e) => setApplyMin(+e.target.value)} />
-                </div>
+                {/* 트렌드는 '적용' 개념이 없어 발행 게이트에서 제외 → 입력도 숨김 */}
+                {track !== 'trend' && (
+                  <div>
+                    <Label htmlFor="apply" className="text-xs">적용 시간 (분)</Label>
+                    <Input id="apply" className="mt-1" type="number" min={1} value={applyMin} onChange={(e) => setApplyMin(+e.target.value)} />
+                  </div>
+                )}
               </div>
               <ThumbnailField value={thumbnailUrl} onChange={setThumbnailUrl} />
               <div>
@@ -371,30 +414,6 @@ export function TrackForm({ initial, onSaved, startInPreview }: Props) {
                   ))}
                 </div>
               </div>
-            </section>
-
-            <section className="card p-5">
-              <h3 className="font-semibold text-sm mb-3">발행 게이트 (자동)</h3>
-              <ul className="space-y-1.5">
-                {lint.checks.map((c) => {
-                  const warn = c.blocking === false; // 실패해도 발행 안 막는 경고
-                  return (
-                    <li key={c.id} className="flex items-start gap-2 text-xs">
-                      {c.passed ? (
-                        <CheckCircle2 className="h-3.5 w-3.5 text-green-600 mt-0.5 shrink-0" />
-                      ) : (
-                        <AlertCircle
-                          className={cn('h-3.5 w-3.5 mt-0.5 shrink-0', warn ? 'text-amber-500' : 'text-red-500')}
-                        />
-                      )}
-                      <span className={c.passed ? 'text-ink/60' : warn ? 'text-amber-600' : 'text-red-600 font-medium'}>
-                        {c.label}
-                        {c.detail && <span className="block text-[10px] mt-0.5">{c.detail}</span>}
-                      </span>
-                    </li>
-                  );
-                })}
-              </ul>
             </section>
 
             <section className="card p-5">
@@ -472,8 +491,127 @@ export function TrackForm({ initial, onSaved, startInPreview }: Props) {
           )}
         </div>
 
-        {/* AI 제안 패널 — 지정 부분(선택/필드)에 수정 각도 → 후보 택1 */}
-        <aside>
+        {/* 우측 레일: 발행 준비 신호등(필수 입력 인라인) + AI 제안 패널 */}
+        <aside className="space-y-6">
+          {/* 발행 준비 — 필수값을 여기서 바로 채우면 신호등이 초록으로 바뀌고 발행이 활성화된다 */}
+          <section className="card p-5 xl:sticky xl:top-4">
+            <div className="mb-4 flex items-center gap-2.5">
+              <span
+                className={cn(
+                  'h-3.5 w-3.5 shrink-0 rounded-full ring-4',
+                  canPublish ? 'bg-green-500 ring-green-500/20' : 'bg-red-500 ring-red-500/20',
+                )}
+              />
+              <h2 className="text-sm font-semibold">
+                {canPublish ? '발행 준비 완료' : `발행 전 입력 ${failingCount}개`}
+              </h2>
+            </div>
+
+            <div className="space-y-3">
+              {/* 읽기 시간 — 본문 길이로 자동 산출(수동 입력 시 자동 해제) */}
+              <RailField ok={readMin >= 1} label="읽기 시간 (분)">
+                <div className="mt-1 flex items-center gap-2">
+                  <Input
+                    className="h-8 w-20"
+                    type="number"
+                    min={1}
+                    value={readMin}
+                    onChange={(e) => onReadMinInput(+e.target.value)}
+                  />
+                  {readMinAuto ? (
+                    <span className="inline-flex items-center gap-1 rounded-full bg-green-500/10 px-2 py-0.5 text-[11px] font-medium text-green-700">
+                      <Sparkles className="h-3 w-3" /> 본문 기준 자동
+                    </span>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setReadMinAuto(true)}
+                      className="inline-flex items-center gap-1 rounded-full border border-border px-2 py-0.5 text-[11px] text-ink/60 hover:bg-muted"
+                    >
+                      <Sparkles className="h-3 w-3" /> 자동 ({estReadMin}분)
+                    </button>
+                  )}
+                </div>
+              </RailField>
+
+              {/* 적용 시간·직무 태그 — 사례만 필수(트렌드는 게이트에서 제외) */}
+              {!isTrend && (
+                <RailField ok={applyMin >= 1} label="적용 시간 (분)">
+                  <Input
+                    className="mt-1 h-8"
+                    type="number"
+                    min={1}
+                    value={applyMin}
+                    onChange={(e) => setApplyMin(+e.target.value)}
+                  />
+                </RailField>
+              )}
+              {!isTrend && (
+                <RailField ok={jobTags.length >= 1} label="직무 태그 ≥ 1개">
+                  <div className="mt-1.5 flex flex-wrap gap-1.5">
+                    {JOB_TAGS.map((j) => (
+                      <button
+                        type="button"
+                        key={j}
+                        onClick={() =>
+                          setJobTags((arr) => (arr.includes(j) ? arr.filter((x) => x !== j) : [...arr, j]))
+                        }
+                        className={cn('chip cursor-pointer text-[11px]', jobTags.includes(j) && 'chip-active')}
+                      >
+                        {JOB_LABELS[j]}
+                      </button>
+                    ))}
+                  </div>
+                </RailField>
+              )}
+
+              {/* 본문 내용 — 인라인 입력 불가, 미충족 시 본문 편집으로 점프 */}
+              <div className="flex items-center gap-1.5 text-xs">
+                {contentOk ? (
+                  <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-green-600" />
+                ) : (
+                  <AlertCircle className="h-3.5 w-3.5 shrink-0 text-red-500" />
+                )}
+                <span className={contentOk ? 'text-ink/60' : 'font-medium text-red-600'}>본문 내용 ≥ 1섹션</span>
+                {!contentOk && (
+                  <button
+                    type="button"
+                    onClick={() => setPreviewOpen(false)}
+                    className="ml-auto text-[11px] text-ink/50 underline"
+                  >
+                    본문 편집 →
+                  </button>
+                )}
+              </div>
+
+              {/* 비차단 경고(화이트리스트 밖 외부 링크 등) — 발행은 막지 않음 */}
+              {warnings.map((w) => (
+                <p key={w.id} className="flex items-start gap-1.5 text-[11px] text-amber-600">
+                  <AlertCircle className="mt-px h-3.5 w-3.5 shrink-0" />
+                  <span>
+                    {w.label}
+                    {w.detail && <span className="block text-[10px]">{w.detail}</span>}
+                  </span>
+                </p>
+              ))}
+            </div>
+
+            <div className="mt-4 space-y-2">
+              <Button
+                variant="accent"
+                className="w-full"
+                onClick={() => save('published')}
+                disabled={pending || !canPublish}
+              >
+                <Send className="h-4 w-4" /> {canPublish ? '발행' : '입력 후 발행'}
+              </Button>
+              <Button variant="outline" className="w-full" onClick={() => save('draft')} disabled={pending}>
+                <Save className="h-4 w-4" /> 초안 저장
+              </Button>
+            </div>
+          </section>
+
+          {/* AI 제안 패널 — 지정 부분(선택/필드)에 수정 각도 → 후보 택1 */}
           <RefinePanel />
         </aside>
       </div>
