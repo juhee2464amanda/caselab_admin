@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { createSupabaseAdminClient } from '@/lib/supabase/admin';
-import { buildSlidePlan, type ContentRowLite } from '@/lib/cardpress/mapping';
+import { buildSeedSlidePlan, buildSlidePlan, type ContentRowLite, type SeedRowLite } from '@/lib/cardpress/mapping';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -26,18 +26,30 @@ export async function GET(req: NextRequest) {
   }
 
   const sourceId = req.nextUrl.searchParams.get('sourceId');
+  const sourceType = req.nextUrl.searchParams.get('sourceType') ?? 'content';
   if (!sourceId) return NextResponse.json({ error: 'sourceId 필요' }, { status: 400 });
 
   const admin = createSupabaseAdminClient();
-  const { data: content, error } = await admin
-    .from('contents')
-    .select('id, track, title, summary, slug, thumbnail_url, read_min, apply_min, body')
-    .eq('id', sourceId)
-    .maybeSingle();
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  if (!content) return NextResponse.json({ error: '콘텐츠 없음' }, { status: 404 });
-
-  const plan = buildSlidePlan(content as unknown as ContentRowLite);
+  let plan;
+  if (sourceType === 'seed') {
+    const { data: seed, error } = await admin
+      .from('content_seeds')
+      .select('id, title, raw_text, lane, suggested_angle, note, essence, source_url')
+      .eq('id', sourceId)
+      .maybeSingle();
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    if (!seed) return NextResponse.json({ error: '씨앗 없음' }, { status: 404 });
+    plan = buildSeedSlidePlan(seed as unknown as SeedRowLite);
+  } else {
+    const { data: content, error } = await admin
+      .from('contents')
+      .select('id, track, title, summary, slug, thumbnail_url, read_min, apply_min, body')
+      .eq('id', sourceId)
+      .maybeSingle();
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    if (!content) return NextResponse.json({ error: '콘텐츠 없음' }, { status: 404 });
+    plan = buildSlidePlan(content as unknown as ContentRowLite);
+  }
   return NextResponse.json({
     slides: plan.slides.map((s) => ({
       template: s.template,

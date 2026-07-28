@@ -8,9 +8,12 @@ import {
   type CardTemplateId,
 } from '@/types/cardpress';
 import {
+  buildSeedSlidePlan,
   buildSlidePlan,
   contentUrl,
+  seedTitle,
   type ContentRowLite,
+  type SeedRowLite,
   type SlidePlan,
   type SlidePlanItem,
 } from '@/lib/cardpress/mapping';
@@ -20,6 +23,26 @@ import {
 // 규격 위반 시 위반 목록을 피드백으로 재압축 루프(최대 2회 추가 호출).
 
 export type CardCtaType = 'info_save' | 'comment_dm';
+
+/** 카드 소스 2원화 — 본가 발행 콘텐츠 또는 씨앗 아카이브 원석 */
+export type CardSource =
+  | { kind: 'content'; row: ContentRowLite }
+  | { kind: 'seed'; seed: SeedRowLite };
+
+function sourcePlan(src: CardSource): SlidePlan {
+  return src.kind === 'content' ? buildSlidePlan(src.row) : buildSeedSlidePlan(src.seed);
+}
+
+function sourceTitle(src: CardSource): string {
+  return src.kind === 'content' ? src.row.title : seedTitle(src.seed);
+}
+
+/** planPrompt 등 프롬프트 헤더의 한 줄 표기 */
+function sourceLabel(src: CardSource): string {
+  return src.kind === 'content'
+    ? `${src.row.track === 'case' ? '실전 케이스' : 'AI 트렌드'} · ${src.row.title}`
+    : `씨앗 원석 · ${seedTitle(src.seed)}`;
+}
 
 export type CoverCandidate = { thumb: string; full: string; credit: string; creditLink: string };
 
@@ -277,7 +300,7 @@ ${TEMPLATE_SPECS}
 슬라이드 배열의 순서·개수는 계획과 1:1 동일해야 합니다(선정 제외는 skip 객체로 자리를 지킬 것).`;
 
 function planPrompt(
-  row: ContentRowLite,
+  source: CardSource,
   plan: SlidePlan,
   operatorEdge?: string,
   ctaType: CardCtaType = 'comment_dm'
@@ -295,10 +318,16 @@ function planPrompt(
     optCount > 0 && plan.selectTarget
       ? `\n(선정) 후보 ${optCount}개 중 대표 ${plan.selectTarget}개만 작성하고 나머지는 skip.`
       : '';
+  const header =
+    source.kind === 'content'
+      ? `트랙: ${source.row.track === 'case' ? '실전 케이스' : 'AI 트렌드'}
+제목: ${source.row.title}
+요약: ${source.row.summary ?? '(없음)'}`
+      : `소재: 씨앗 아카이브 원석 (미발행 수집 글 — 재료가 거칠 수 있음. 재료에 실제로 있는 사실만 사용)
+제목: ${seedTitle(source.seed)}
+추천 각도: ${source.seed.suggested_angle ?? '(없음)'}`;
   return `[콘텐츠]
-트랙: ${row.track === 'case' ? '실전 케이스' : 'AI 트렌드'}
-제목: ${row.title}
-요약: ${row.summary ?? '(없음)'}
+${header}
 CTA 유형: ${ctaType}${operatorEdge ? `\n\n[운영자 지정 엣지 — 최우선] ${operatorEdge}` : ''}
 
 [슬라이드 계획 — ${plan.slides.length}장]${selectLine}
@@ -442,16 +471,16 @@ function finalizeSlides(
 /** 단일 슬라이드 재작성 — 검수 UI의 템플릿 교체(B2↔B7 등)·"AI로 다시 쓰기"용.
  *  재료는 저장하지 않으므로 소스 콘텐츠에서 매핑 계획을 다시 만들어 찾는다. */
 export async function rewriteSlide(
-  row: ContentRowLite,
+  source: CardSource,
   sourceSection: string,
   targetTemplate: CardTemplateId,
   instruction?: string
 ): Promise<{ template: CardTemplateId; props: Record<string, unknown> }> {
-  const plan = buildSlidePlan(row);
+  const plan = sourcePlan(source);
   const item = plan.slides.find((s) => s.sourceSection === sourceSection);
   if (!item) throw new Error(`sourceSection "${sourceSection}"에 해당하는 재료가 없어요`);
 
-  const base = `[콘텐츠] ${row.track === 'case' ? '실전 케이스' : 'AI 트렌드'} · ${row.title}
+  const base = `[콘텐츠] ${sourceLabel(source)}
 
 [슬라이드 1장만 작성]
 template=${targetTemplate} · sourceSection=${sourceSection}
@@ -507,16 +536,16 @@ ${item.material}${instruction ? `\n\n[운영자 요청] ${instruction}` : ''}
 /** 슬라이드 AI 수정 초안 N개 — 운영자 수정 방향(instruction)을 받아 서로 다른 접근의 후보를 제안.
  *  (검수 UI: 방향 입력 → 초안 3개 썸네일 비교 → 적용) */
 export async function rewriteSlideVariants(
-  row: ContentRowLite,
+  source: CardSource,
   sourceSection: string,
   template: CardTemplateId,
   opts: { instruction?: string; currentProps?: Record<string, unknown>; count?: number }
 ): Promise<Array<Record<string, unknown>>> {
-  const plan = buildSlidePlan(row);
+  const plan = sourcePlan(source);
   const item = plan.slides.find((s) => s.sourceSection === sourceSection);
   const count = Math.min(3, Math.max(2, opts.count ?? 3));
 
-  const prompt = `[콘텐츠] ${row.track === 'case' ? '실전 케이스' : 'AI 트렌드'} · ${row.title}
+  const prompt = `[콘텐츠] ${sourceLabel(source)}
 
 [슬라이드 수정 — template=${template} · sourceSection=${sourceSection}]
 원본 재료:
@@ -562,7 +591,7 @@ ${opts.instruction ? `\n[운영자 수정 방향 — 최우선] ${opts.instructi
       for (const k of ['page', 'ctaLine', 'coverImage', 'media', 'shot'])
         if (opts.currentProps?.[k] && !merged[k]) merged[k] = opts.currentProps[k];
       if (COVER_TEMPLATES.includes(template)) {
-        const coverIssues = lintCover(merged as Record<string, string>, row.title);
+        const coverIssues = lintCover(merged as Record<string, string>, sourceTitle(source));
         if (coverIssues.length) {
           allIssues.push(...coverIssues);
           continue;
@@ -577,12 +606,12 @@ ${opts.instruction ? `\n[운영자 수정 방향 — 최우선] ${opts.instructi
 }
 
 export async function generateCardSet(
-  row: ContentRowLite,
+  source: CardSource,
   opts?: { edge?: string; ctaType?: CardCtaType; ctaKeyword?: string }
 ): Promise<CardSetDraft> {
   const ctaType: CardCtaType = opts?.ctaType ?? 'comment_dm';
-  const plan = buildSlidePlan(row);
-  const userPrompt = planPrompt(row, plan, opts?.edge, ctaType);
+  const plan = sourcePlan(source);
+  const userPrompt = planPrompt(source, plan, opts?.edge, ctaType);
 
   let lastRaw: z.infer<typeof GenOutputSchema> | null = null;
   let lastIssues: string[] = [];
@@ -630,7 +659,7 @@ ${lastIssues.map((i) => `- ${i}`).join('\n')}`;
       continue;
     }
     lastRaw = parsed.data;
-    const result = validateSlides(parsed.data.slides, plan, row.title);
+    const result = validateSlides(parsed.data.slides, plan, sourceTitle(source));
     if (result.issues.length === 0) {
       slides = result.parsed;
       break;
@@ -645,10 +674,12 @@ ${lastIssues.map((i) => `- ${i}`).join('\n')}`;
   }
 
   const tags = [...FIXED_TAGS, ...CATEGORY_TAGS[plan.accent]];
-  const url = contentUrl(row);
-  const threads = lastRaw.threadsText.includes(url)
-    ? lastRaw.threadsText
-    : `${lastRaw.threadsText.trim()}\n\n👉 전체 과정: ${url}`;
+  // 씨앗 소스는 본가 페이지가 없음 — 스레드에 URL을 붙이지 않는다
+  const url = source.kind === 'content' ? contentUrl(source.row) : null;
+  const threads =
+    !url || lastRaw.threadsText.includes(url)
+      ? lastRaw.threadsText.trim()
+      : `${lastRaw.threadsText.trim()}\n\n👉 전체 과정: ${url}`;
   const ctaKeyword = opts?.ctaKeyword?.trim() || lastRaw.ctaKeyword?.trim() || '프롬프트';
   const metaphorQueries = lastRaw.metaphorQueries ?? [];
 

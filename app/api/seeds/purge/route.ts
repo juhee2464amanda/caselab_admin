@@ -45,15 +45,25 @@ async function purge() {
       .is('content_id', null)
       .is('tool_id', null);
 
+  // 카드뉴스 소스가 된 씨앗은 보존(폴리모픽이라 FK 없음 — 여기서 제외)
+  const { data: carded } = await admin
+    .from('content_cards')
+    .select('source_id')
+    .eq('source_type', 'seed');
+  const cardedIds = new Set((carded ?? []).map((r) => r.source_id as string));
+
   // ① 나이 기반
   const cutoff = new Date(Date.now() - RETENTION_DAYS * 86_400_000).toISOString();
   const { data: aged } = await unused().lt('created_at', cutoff);
-  const agedIds = (aged ?? []).map((r) => r.id as string);
+  const agedIds = (aged ?? []).map((r) => r.id as string).filter((id) => !cardedIds.has(id));
   await deleteByIds(admin, agedIds);
 
   // ② 용량 기반(나이 삭제 후 남은 미사용이 상한 초과면 오래된 것부터)
   const { data: rest } = await unused().order('created_at', { ascending: false });
-  const overflow = (rest ?? []).map((r) => r.id as string).slice(MAX_UNUSED_SEEDS);
+  const overflow = (rest ?? [])
+    .map((r) => r.id as string)
+    .filter((id) => !cardedIds.has(id))
+    .slice(MAX_UNUSED_SEEDS);
   await deleteByIds(admin, overflow);
 
   return { deletedByAge: agedIds.length, deletedByCapacity: overflow.length };

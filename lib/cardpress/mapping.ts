@@ -311,6 +311,90 @@ function planTrend(row: ContentRowLite, body: TrendBody, images: string[]): Slid
   return slides;
 }
 
+// ── 씨앗(content_seeds) 소스 — 미발행 원석(raw_text)에서 바로 카드뉴스 ──────────
+
+export type SeedRowLite = {
+  id: string;
+  title: string;
+  raw_text: string;
+  lane: string | null;
+  suggested_angle: string | null;
+  note: string | null;
+  /** 채점 시 적재되는 핵심 요약 { headline, what/whyNow/pain … } */
+  essence: Record<string, string> | null;
+  source_url: string | null;
+};
+
+/** 씨앗 표시 제목 — essence.headline 우선, 없으면 "[lane] " 태그 벗긴 원제목 */
+export function seedTitle(seed: Pick<SeedRowLite, 'title' | 'essence'>): string {
+  return seed.essence?.headline?.trim() || seed.title.replace(/^\s*\[[^\]]*\]\s*/, '');
+}
+
+/** raw_text → 문단 세그먼트 (빈 줄 기준, 너무 짧은 조각은 앞 문단에 흡수) */
+function splitSeedSegments(rawText: string): string[] {
+  const paras = rawText
+    .split(/\n{2,}/)
+    .map((p) => p.trim())
+    .filter(Boolean);
+  const segs: string[] = [];
+  for (const p of paras) {
+    if (p.length < 40 && segs.length > 0) segs[segs.length - 1] += `\n${p}`;
+    else segs.push(p);
+  }
+  return segs;
+}
+
+/** 씨앗 → 슬라이드 계획. 구조화 본문이 없으므로 문단 단위로 후보를 깔고 AI가 대표를 선정한다. */
+export function buildSeedSlidePlan(seed: SeedRowLite): SlidePlan {
+  const title = seedTitle(seed);
+  const essenceLines = Object.entries(seed.essence ?? {})
+    .filter(([k, v]) => k !== 'headline' && v)
+    .map(([k, v]) => `${k}: ${v}`)
+    .join('\n');
+  const angle = seed.suggested_angle?.trim();
+  const segments = splitSeedSegments(seed.raw_text);
+
+  const coverMat = [
+    `제목: ${title}`,
+    angle ? `추천 각도: ${angle}` : '',
+    essenceLines,
+    segments[0] ? `도입: ${segments[0]}` : '',
+  ]
+    .filter(Boolean)
+    .join('\n');
+
+  const slides: SlidePlanItem[] = [
+    { template: 'C2', sourceSection: 'seed:cover', material: coverMat, alternatives: ['C1', 'C5'] },
+  ];
+
+  if (segments.length === 0) {
+    slides.push({ template: 'B4', sourceSection: 'seed:body', material: seed.raw_text, alternatives: ['B2', 'B3'] });
+  } else {
+    // 문단당 슬라이드 후보 — 3개 초과면 (선정)으로 AI가 대표만 작성
+    const optional = segments.length > 3;
+    segments.slice(0, 6).forEach((seg, i) => {
+      slides.push({
+        template: 'B2',
+        sourceSection: `seed:seg#${String(i + 1).padStart(2, '0')}`,
+        material: seg,
+        alternatives: ['B7', 'B4', 'B3'],
+        optional,
+      });
+    });
+  }
+
+  slides.push({
+    template: 'O1',
+    sourceSection: 'seed:outro',
+    material: [angle ? `핵심 각도: ${angle}` : '', `제목: ${title}`, segments.at(-1) ?? ''].filter(Boolean).join('\n'),
+  });
+
+  const optCount = slides.filter((s) => s.optional).length;
+  const selectTarget = optCount > 0 ? Math.min(6, Math.max(3, Math.round(optCount / 2))) : undefined;
+  // 씨앗은 대부분 트렌드성 소식/발견 — 트렌드 액센트, 이미지는 없음(커버 후보는 메타포 검색으로)
+  return { accent: 'cat-trend', slides, images: [], selectTarget };
+}
+
 /** 발행 콘텐츠 → 슬라이드 계획. 섹션이 없으면 해당 슬라이드가 빠진다(장수 가변이 정상). */
 export function buildSlidePlan(row: ContentRowLite): SlidePlan {
   const accent: CardAccent = row.track === 'case' ? 'cat-case' : 'cat-trend';
