@@ -94,7 +94,7 @@ export function estimateReadMin(body: ContentBody): number {
 }
 
 export function lintContent(
-  row: Pick<ContentRow, 'read_min' | 'apply_min' | 'job_tags' | 'persona_coverage' | 'body'>
+  row: Pick<ContentRow, 'read_min' | 'apply_min' | 'job_tags' | 'persona_coverage' | 'body' | 'thumbnail_url'>
 ): LintResult {
   const checks: LintResult['checks'] = [];
   const body = row.body as ContentBody;
@@ -115,6 +115,14 @@ export function lintContent(
   });
 
   // (페르소나 커버리지 게이트 제거 — 본가에서 미노출·미사용인 죽은 필드라 발행을 막지 않는다)
+
+  // 3. 썸네일 — 홈 히어로·목록 카드·관련 캐러셀이 모두 thumbnail_url을 쓴다.
+  //    없이 발행하면 본가에 빈 카드가 그대로 걸려서 차단 항목으로 둔다.
+  checks.push({
+    id: 'thumbnail',
+    label: '썸네일 이미지',
+    passed: (row.thumbnail_url ?? '').trim().length > 0,
+  });
 
   // 4. 본문 내용 ≥ 1섹션 (트랙 공통) — D70 우선, legacy 폴백.
   //    구조 보장이 사라진 D70에서 "빈 본문 발행"을 막는 최소 게이트.
