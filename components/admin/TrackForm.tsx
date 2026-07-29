@@ -16,7 +16,7 @@ import { slugify, cn } from '@/lib/utils';
 import { CaseBodyEditor } from '@/components/admin/section-editors/CaseBodyEditor';
 import { TrendBodyEditor } from '@/components/admin/section-editors/TrendBodyEditor';
 import { ContentPreview } from '@/components/admin/ContentPreview';
-import { ThumbnailField } from '@/components/admin/ThumbnailField';
+import { ThumbnailField, ThumbnailDropzone } from '@/components/admin/ThumbnailField';
 import { RefineProvider, RefinePanel } from '@/components/admin/RefinePanel';
 
 interface Props {
@@ -194,6 +194,7 @@ export function TrackForm({ initial, onSaved, startInPreview }: Props) {
     apply_min: applyMin,
     job_tags: jobTags,
     persona_coverage: personas,
+    thumbnail_url: thumbnailUrl,
     body,
   });
 
@@ -203,6 +204,7 @@ export function TrackForm({ initial, onSaved, startInPreview }: Props) {
   // 우측 발행 준비 레일용 파생값 — 신호등·남은 항목 수·본문/경고 상태.
   const isTrend = track === 'trend';
   const contentOk = lint.checks.find((c) => c.id === 'has-content')?.passed ?? false;
+  const thumbOk = lint.checks.find((c) => c.id === 'thumbnail')?.passed ?? false;
   const failingCount = lint.checks.filter((c) => c.blocking !== false && !c.passed).length;
   const warnings = lint.checks.filter((c) => c.blocking === false && !c.passed);
 
@@ -506,6 +508,9 @@ export function TrackForm({ initial, onSaved, startInPreview }: Props) {
                 {canPublish ? '발행 준비 완료' : `발행 전 입력 ${failingCount}개`}
               </h2>
             </div>
+
+            {/* 썸네일 — 설정 패널의 칸과 같은 값을 공유하는 지름길. 발행 게이트 항목이라 신호등 바로 밑에 둔다. */}
+            <ThumbnailDropzone value={thumbnailUrl} onChange={setThumbnailUrl} ok={thumbOk} />
 
             <div className="space-y-3">
               {/* 읽기 시간 — 본문 길이로 자동 산출(수동 입력 시 자동 해제) */}
