@@ -162,6 +162,11 @@ export function collectImages(row: ContentRowLite): string[] {
   return Array.from(new Set(urls.filter((u) => u.startsWith('http'))));
 }
 
+// 개요(오버뷰) 역할 표시 — 이 표시가 붙은 재료는 generate.ts가 B2 개요 모드(lead=핵심 한 줄 + 번호 목록)로 쓴다.
+// 개요는 스토리의 지도라서, 나열이면 독자가 "무엇이 중요한지"를 못 잡고 그냥 넘긴다.
+const OVERVIEW_ROLE =
+  '(역할: 개요 — 이 글에서 딱 하나만 가져간다면 그것을 lead 한 줄로, 나머지는 그것을 뒷받침하는 사실 2~3개로. 뒤에 나올 개별 항목 슬라이드와 표현·내용이 겹치지 않게)';
+
 function coverMaterial(row: ContentRowLite): string {
   // 읽기/적용 시간은 본가 웹 개념 — 인스타 커버에선 무의미해서 재료에서 제외 (운영자 결정 2026-07-21)
   return `제목: ${row.title}\n요약: ${row.summary ?? ''}`;
@@ -185,9 +190,9 @@ function planCase(row: ContentRowLite, body: CaseBody, images: string[]): SlideP
     slides.push({
       template: 'B2',
       sourceSection: 'painPoints',
-      material: body.painPoints
+      material: `${OVERVIEW_ROLE}\n(이 장의 lead: 가장 뼈아픈 문제 하나. 나머지는 그 문제를 뒷받침하는 증상)\n${body.painPoints
         .map((p) => `${p.num}. ${p.title} — 증상: ${p.symptom} / 근본 원인: ${p.rootCause}`)
-        .join('\n'),
+        .join('\n')}`,
       alternatives: ['B7'],
     });
   }
@@ -272,8 +277,9 @@ function planTrend(row: ContentRowLite, body: TrendBody, images: string[]): Slid
     slides.push({
       template: 'B2',
       sourceSection: 'keyPoints',
-      material: `(역할: 전체 오버뷰/목차 — 뒤에 나올 개별 항목 슬라이드와 표현·내용이 겹치지 않게)\n${body.keyPoints.map((k) => `- ${k}`).join('\n')}`,
+      material: `${OVERVIEW_ROLE}\n${body.keyPoints.map((k) => `- ${k}`).join('\n')}`,
       alternatives: ['B7'],
+      required: '개요 — 스토리의 지도 (커버 다음으로 이탈이 갈리는 자리)',
     });
   }
 
@@ -366,6 +372,23 @@ export function buildSeedSlidePlan(seed: SeedRowLite): SlidePlan {
   const slides: SlidePlanItem[] = [
     { template: 'C2', sourceSection: 'seed:cover', material: coverMat, alternatives: ['C1', 'C5'] },
   ];
+
+  // 커버 다음은 개요 — 씨앗은 문단을 그대로 슬라이드로 깔기만 해서 "무슨 일인지 한눈에"가 없었다.
+  // (커버에서 미룬 답을 여기서 밝히고, 이어지는 문단 슬라이드가 근거가 되는 구조)
+  slides.push({
+    template: 'B2',
+    sourceSection: 'seed:overview',
+    material: [
+      OVERVIEW_ROLE,
+      `제목: ${title}`,
+      angle ? `추천 각도: ${angle}` : '',
+      essenceLines,
+      segments.slice(0, 2).join('\n'),
+    ]
+      .filter(Boolean)
+      .join('\n'),
+    required: '개요 — 스토리의 지도 (커버 다음으로 이탈이 갈리는 자리)',
+  });
 
   if (segments.length === 0) {
     slides.push({ template: 'B4', sourceSection: 'seed:body', material: seed.raw_text, alternatives: ['B2', 'B3'] });

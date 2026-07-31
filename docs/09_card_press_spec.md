@@ -27,12 +27,14 @@
 |---|---|
 | title+summary+thumbnail | C1/C2/C3 커버 (track별) |
 | caseIntro / what | B4 인용·선언 |
-| painPoints / keyPoints | B2 불릿 (또는 B7 숫자) |
+| painPoints / keyPoints | B2 **개요**(lead 핵심 한 줄 + 번호 목록) 또는 B7 숫자 |
 | frameworkReference+stepCards 순서 | B1 타임라인 |
 | stepCards{human,ai} | B2 / B6 스텝 |
 | stepCards.prompt / prompt 블록 | B8 복사용 프롬프트 |
 | goodResult/badResult · pros/cons · result-compare | B5 잘된것/별로였던것 ★ |
 | takingPoints / soWhat | O1 마무리·CTA |
+
+씨앗(content_seeds) 소스는 커버 다음에 **개요 슬라이드**(`seed:overview`)를 항상 깐다 — 문단을 그대로 나열하면 "무슨 일인지 한눈에"가 없어 커버 다음에서 이탈한다.
 
 ### ② AI 슬라이드용 재작성 (자동화의 핵심)
 - 웹 본문을 그대로 넣지 않고 Claude API로 슬라이드 규격에 맞게 압축: 커버 제목 ≤17자 · 불릿 1줄 · B5 요약.
@@ -51,6 +53,8 @@
 - **슬라이드**: 캐러셀 템플릿 시스템 그대로 — 다크+볼드+형광펜, Pretendard, 1080×1350(4:5).
 - **컬러**: 카테고리 자동 적용 — cat-case #2F6BFF(블루) · cat-trend #7C3AED(바이올렛) · cat-tool #0E9F6E(에메랄드) · Bad #E11D48(레드).
 - **원칙**: 핵심 단어 형광펜 1개 · 솔직 후기(B5) 필수 · CTA는 저장 유도(팔로우 구걸 ❌).
+- **가시성(폰 기준)**: 본문 글자 크기는 고정값이 아니라 **내용량으로 역산**(`lib/cardpress/templates.tsx`의 `fitBlock`) — 남는 공간에 들어가는 최대 크기를 쓰고 넘치면 단계적으로 줄인다. 본문 블록은 세로 가운데 정렬해 아래만 텅 비지 않게 한다. 불릿 32px 고정이던 시절엔 짧은 슬라이드가 카드 절반을 비우고도 글씨가 작았다(2026-07-31).
+- **개요 위계**: 개요 슬라이드는 나열이 아니라 위계 — 가장 중요한 사실 1개를 `lead`(큰 패널), 나머지는 번호 목록 2~3개. 같은 굵기 불릿만 4개면 무엇이 중요한지 안 보인다.
 
 ## 5. 데이터 구조
 ```json

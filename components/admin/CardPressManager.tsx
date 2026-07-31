@@ -170,6 +170,12 @@ const FIELDS: Record<CardTemplateId, FieldDef[]> = {
   ],
   B2: [
     { key: 'banner', label: '배너', kind: 'input' },
+    {
+      key: 'lead',
+      label: '핵심 한 줄 (개요)',
+      kind: 'textarea',
+      hint: '채우면 개요 모드 — 큰 패널 + 번호 목록으로 렌더 · ≤32자 · 비우면 일반 불릿',
+    },
     { key: 'bullets', label: '불릿 (줄마다 1개)', kind: 'lines', hint: '**강조** 마커, ≤30자' },
     { key: 'media', label: '이미지 URL', kind: 'input' },
   ],

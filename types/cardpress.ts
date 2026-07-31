@@ -44,6 +44,9 @@ export const B2PropsSchema = z.object({
   ...StyleOverrideFields,
   page: z.string().optional(),       // "4 / 8"
   banner: z.string().min(1),         // "✓ AI에게 시킨 것"
+  // 개요(오버뷰) 슬라이드의 핵심 한 줄 — 있으면 큰 패널 + 번호 목록으로 렌더(개요 모드).
+  // 모든 항목이 같은 굵기의 불릿이면 "무엇이 제일 중요한지"가 안 보여서 도입한 위계 필드.
+  lead: z.string().optional(),       // **강조** 마커 지원
   bullets: z.array(z.string().min(1)).min(1).max(5), // **강조** 마커 지원
   media: z.string().url().optional(),// 본문 추출 스크린샷 url (없으면 미디어 영역 생략)
 });

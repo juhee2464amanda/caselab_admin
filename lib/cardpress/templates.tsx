@@ -37,6 +37,76 @@ function mixWithWhite(hex: string, ratio: number): string {
 
 const FONT = 'Pretendard';
 
+// ── 가시성 자동 맞춤 ─────────────────────────────────────────
+// 카드 크기(1080×1350)는 고정인데 슬라이드마다 텍스트 양은 제각각이다. 고정 폰트 크기를 쓰면
+// 짧은 슬라이드는 아래가 절반씩 비어 글씨가 상대적으로 작아 보이고, 긴 슬라이드는 넘친다.
+// → "남은 공간에 들어가는 가장 큰 크기"를 역산하고, 그래도 남는 여백은 항목 간격으로 흡수한다.
+// Satori는 측정 API가 없으므로 폭은 em 근사로 계산한다(넉넉히 잡아 넘침보다 여백 쪽으로 실수).
+
+const PAD_X = 72; // 흰 본문 카드 좌우 패딩
+const PAD_Y = 80; // 상하 패딩
+const BODY_W = CARD_W - PAD_X * 2; // 936
+const TOPBAR_H = 44; // caselab 로고 줄 높이
+
+const CJK_RE = /[ᄀ-ᇿ⺀-鿿가-힣豈-﫿＀-｠]/;
+
+/** **강조** 마커는 렌더에서 사라지므로 측정에서도 뺀다 */
+function stripMarks(text: string): string {
+  return text.replace(/\*\*/g, '');
+}
+
+/** 텍스트의 em 폭 — 한글·한자·전각은 1em, 라틴·숫자·공백은 0.55em (Pretendard 실측 근사) */
+function emWidth(text: string): number {
+  let w = 0;
+  for (const ch of text) w += CJK_RE.test(ch) ? 1 : 0.55;
+  return w;
+}
+
+/** fontSize로 width 안에 렌더할 때 차지하는 줄 수 ('\n' 줄바꿈 + 자동 줄바꿈) */
+function lineCount(text: string, fontSize: number, width: number): number {
+  return stripMarks(text)
+    .split('\n')
+    .reduce((n, line) => n + Math.max(1, Math.ceil((emWidth(line) * fontSize * 1.04) / width)), 0);
+}
+
+/** 항목 목록을 height 안에 담는 최대 폰트 크기 + 그때의 항목 간격.
+ *  max에서 1px씩 낮추며 처음 들어가는 크기를 쓰고, 남는 공간은 간격으로 (상한까지) 분배한다. */
+function fitBlock(
+  texts: string[],
+  o: {
+    width: number;
+    height: number;
+    max: number;
+    min: number;
+    lineHeight: number;
+    /** 기본 간격 = size × gapRatio */
+    gapRatio: number;
+    /** 여백 흡수 상한 = size × gapMaxRatio (기본: gapRatio의 2배) */
+    gapMaxRatio?: number;
+    /** 항목마다 텍스트 외에 더 붙는 높이(패딩·헤더 등) */
+    extraPerItem?: number;
+  }
+): { size: number; gap: number; height: number } {
+  const extra = o.extraPerItem ?? 0;
+  const textH = (f: number) =>
+    texts.reduce((s, t) => s + lineCount(t, f, o.width) * f * o.lineHeight + extra, 0);
+  const gaps = Math.max(0, texts.length - 1);
+  let size = o.min;
+  for (let f = Math.round(o.max); f >= Math.round(o.min); f -= 1) {
+    if (textH(f) + f * o.gapRatio * gaps <= o.height) {
+      size = f;
+      break;
+    }
+  }
+  const base = size * o.gapRatio;
+  const leftover = o.height - textH(size) - base * gaps;
+  const gap =
+    gaps > 0
+      ? Math.round(Math.min(size * (o.gapMaxRatio ?? o.gapRatio * 2), base + Math.max(0, leftover) / gaps))
+      : Math.round(base);
+  return { size, gap, height: Math.round(textH(size) + gap * gaps) };
+}
+
 // 형광펜 배경색 — hlColor 오버라이드(가이드 팔레트: 블루·바이올렛·에메랄드·레드·골드), 기본은 포인트색
 function hlBg(props: { hlColor?: string }, fallback: string): string {
   return props.hlColor && /^#[0-9a-fA-F]{6}$/.test(props.hlColor) ? props.hlColor : fallback;
@@ -50,18 +120,24 @@ function accentOf(accent: CardAccent, props: { accentColor?: string }): string {
 }
 
 // **강조** 마커 → 포인트색 볼드 스팬. pre-wrap: 세그먼트 경계의 공백 유지 + 내부 줄바꿈 허용.
+// 낱말 단위로 쪼개 담는다 — flexWrap 컨테이너에서 스팬은 하나의 아이템이라, 통으로 두면
+// 강조 뒤 문장 전체가 다음 줄로 밀려 "effort / 를 올리면…" 같은 어색한 줄바꿈이 난다.
 function em(text: string, accent: string, base: CSSProperties = {}): ReactNode[] {
-  return text.split(/\*\*(.+?)\*\*/g).map((seg, i) =>
-    i % 2 === 1 ? (
-      <span key={i} style={{ ...base, whiteSpace: 'pre-wrap', color: accent, fontWeight: 700 }}>
-        {seg}
-      </span>
-    ) : (
-      <span key={i} style={{ ...base, whiteSpace: 'pre-wrap' }}>
-        {seg}
-      </span>
-    )
-  );
+  const nodes: ReactNode[] = [];
+  text.split(/\*\*(.+?)\*\*/g).forEach((seg, i) => {
+    if (!seg) return;
+    const style: CSSProperties =
+      i % 2 === 1
+        ? { ...base, whiteSpace: 'pre-wrap', color: accent, fontWeight: 700 }
+        : { ...base, whiteSpace: 'pre-wrap' };
+    for (const word of seg.match(/\S+\s*|\s+/g) ?? [seg])
+      nodes.push(
+        <span key={`${i}-${nodes.length}`} style={style}>
+          {word}
+        </span>
+      );
+  });
+  return nodes;
 }
 
 // '\n' 줄바꿈 + hl 부분 문자열 형광펜. 각 줄은 flex row(세그먼트 스팬)로 조립.
@@ -111,9 +187,9 @@ function Topbar({
 }) {
   return (
     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-      <span style={{ fontSize: 26, fontWeight: 700, letterSpacing: '-0.01em', color }}>caselab</span>
+      <span style={{ fontSize: 28, fontWeight: 700, letterSpacing: '-0.01em', color }}>caselab</span>
       {right ? (
-        <span style={{ fontSize: 24, fontWeight: 600, color: MUTED, ...rightStyle }}>{right}</span>
+        <span style={{ fontSize: 26, fontWeight: 600, color: MUTED, ...rightStyle }}>{right}</span>
       ) : null}
     </div>
   );
@@ -219,10 +295,10 @@ function C1({ accent, props }: Extract<RenderSlideInput, { template: 'C1' }>) {
             <div
               style={{
                 display: 'flex',
-                fontSize: 28,
+                fontSize: 32,
                 fontWeight: 700,
-                color: 'rgba(255,255,255,0.85)',
-                marginBottom: 20,
+                color: 'rgba(255,255,255,0.88)',
+                marginBottom: 22,
               }}
             >
               {props.kicker}
@@ -252,7 +328,7 @@ function C1({ accent, props }: Extract<RenderSlideInput, { template: 'C1' }>) {
             )}
           </div>
           {props.sub ? (
-            <div style={{ fontSize: 30, fontWeight: 600, opacity: 0.9, marginTop: 22 }}>
+            <div style={{ fontSize: 34, fontWeight: 600, opacity: 0.92, marginTop: 24 }}>
               {props.sub}
             </div>
           ) : null}
@@ -260,10 +336,10 @@ function C1({ accent, props }: Extract<RenderSlideInput, { template: 'C1' }>) {
             <div
               style={{
                 display: 'flex',
-                fontSize: 20,
+                fontSize: 24,
                 fontWeight: 700,
                 letterSpacing: '0.12em',
-                color: 'rgba(255,255,255,0.55)',
+                color: 'rgba(255,255,255,0.62)',
                 marginTop: 30,
               }}
             >
@@ -301,7 +377,7 @@ function C5({ accent, props }: Extract<RenderSlideInput, { template: 'C5' }>) {
           }}
         >
           {props.kicker ? (
-            <div style={{ display: 'flex', fontSize: 32, fontWeight: 600, color: 'rgba(255,255,255,0.8)' }}>
+            <div style={{ display: 'flex', fontSize: 34, fontWeight: 600, color: 'rgba(255,255,255,0.85)' }}>
               {props.kicker}
             </div>
           ) : null}
@@ -340,10 +416,10 @@ function C5({ accent, props }: Extract<RenderSlideInput, { template: 'C5' }>) {
           <div
             style={{
               display: 'flex',
-              fontSize: 20,
+              fontSize: 24,
               fontWeight: 700,
               letterSpacing: '0.12em',
-              color: 'rgba(255,255,255,0.5)',
+              color: 'rgba(255,255,255,0.58)',
             }}
           >
             {props.footer}
@@ -354,68 +430,179 @@ function C5({ accent, props }: Extract<RenderSlideInput, { template: 'C5' }>) {
   );
 }
 
-// ---------- B2 · 이미지 + 배너 + 불릿 ----------
+// ---------- B2 · 배너 + 불릿 (lead가 있으면 '개요' 모드) ----------
+// 개요 모드: 이 장에서 가장 중요한 사실 한 줄(lead)이 큰 패널로 먼저 서고, 나머지는 번호 목록으로
+// 뒷받침한다. 오버뷰 슬라이드가 모두 같은 굵기의 불릿이면 "무엇이 중요한지"가 안 보이기 때문.
+const B2_BANNER = 48;
+const B2_BANNER_H = Math.round(B2_BANNER * 1.3) + 26; // 상하 패딩 13*2
+
 function B2({ accent, props }: Extract<RenderSlideInput, { template: 'B2' }>) {
   const color = accentOf(accent, props);
+  const lead = props.lead?.trim();
+  const mediaH = props.media ? 372 : 0;
+
+  // 세로 예산 — 패딩·톱바·이미지·배너를 뺀 나머지를 lead → 불릿 순으로 나눠 쓴다
+  let rest = CARD_H - PAD_Y * 2 - TOPBAR_H - (mediaH ? mediaH + 40 : 0) - (40 + B2_BANNER_H) - 52;
+  const leadFit = lead
+    ? fitBlock([lead], {
+        width: BODY_W - 96, // 좌측 바 8 + 좌우 패딩 44
+        height: Math.min(rest * 0.46, 330),
+        max: 58,
+        min: 34,
+        lineHeight: 1.3,
+        gapRatio: 0,
+      })
+    : null;
+  if (leadFit) rest -= leadFit.height + 68 + 36; // 패널 상하 패딩 34*2 + 아래 여백
+
+  // 불릿 — 남은 공간을 채우는 최대 크기로. 개요 모드는 lead가 주인공이라 한 단계 작게.
+  const gutter = lead ? 88 : 44; // 번호 칩 / 점 + 여백
+  const fit = fitBlock(props.bullets, {
+    width: BODY_W - gutter,
+    height: Math.max(rest, 200),
+    max: lead ? 40 : 48,
+    min: 26,
+    lineHeight: 1.5,
+    gapRatio: 0.6,
+    gapMaxRatio: 1.5,
+  });
+  const chip = Math.round(fit.size * 1.4);
+
   return (
-    <div style={{ ...cardBase, background: '#fff', color: INK, padding: '80px 72px' }}>
+    <div style={{ ...cardBase, background: '#fff', color: INK, padding: `${PAD_Y}px ${PAD_X}px` }}>
       <Topbar color={INK} right={props.page} />
       {props.media ? (
         <div
           style={{
             display: 'flex',
-            marginTop: 44,
+            marginTop: 40,
             width: '100%',
-            height: 420,
+            height: mediaH,
             borderRadius: 20,
             overflow: 'hidden',
             background: '#EEF1F6',
+            flexShrink: 0,
           }}
         >
           <img
             src={props.media}
             alt=""
-            width={CARD_W - 144}
-            height={420}
+            width={BODY_W}
+            height={mediaH}
             style={{ objectFit: 'cover', width: '100%', height: '100%' }}
           />
         </div>
       ) : null}
-      <div style={{ display: 'flex', marginTop: 44 }}>
-        <span
-          style={{
-            background: color,
-            color: '#fff',
-            fontSize: 44,
-            fontWeight: 800,
-            letterSpacing: '-0.02em',
-            lineHeight: 1.3,
-            padding: '12px 24px',
-            borderRadius: 10,
-          }}
-        >
-          {props.banner}
-        </span>
-      </div>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 32, marginTop: 44 }}>
-        {props.bullets.map((b, i) => (
-          <div key={i} style={{ display: 'flex', gap: 20, alignItems: 'flex-start' }}>
+      {/* 배너~불릿을 한 덩어리로 묶어 남는 공간을 위아래로 나눠 갖는다 (아래만 텅 비던 문제) */}
+      <div
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          flexGrow: 1,
+          justifyContent: 'center',
+          marginTop: 40,
+        }}
+      >
+        <div style={{ display: 'flex', flexShrink: 0 }}>
+          <span
+            style={{
+              background: color,
+              color: '#fff',
+              fontSize: B2_BANNER,
+              fontWeight: 800,
+              letterSpacing: '-0.02em',
+              lineHeight: 1.3,
+              padding: '13px 26px',
+              borderRadius: 12,
+            }}
+          >
+            {props.banner}
+          </span>
+        </div>
+        {leadFit ? (
+          <div
+            style={{
+              display: 'flex',
+              marginTop: 36,
+              flexShrink: 0,
+              background: mixWithWhite(color, 0.07),
+              borderLeft: `8px solid ${color}`,
+              borderTopRightRadius: 18,
+              borderBottomRightRadius: 18,
+              padding: '34px 44px',
+            }}
+          >
             <div
               style={{
                 display: 'flex',
-                width: 14,
-                height: 14,
-                marginTop: 16,
-                borderRadius: 7,
-                background: color,
-                flexShrink: 0,
+                flexWrap: 'wrap',
+                fontSize: leadFit.size,
+                fontWeight: 800,
+                lineHeight: 1.3,
+                letterSpacing: '-0.025em',
               }}
-            />
-            <div style={{ fontSize: 32, lineHeight: 1.5, display: 'flex', flexWrap: 'wrap' }}>
-              {em(b, color)}
+            >
+              {em(lead!, color)}
             </div>
           </div>
-        ))}
+        ) : null}
+        <div
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            gap: fit.gap,
+            marginTop: 52,
+          }}
+        >
+          {props.bullets.map((b, i) => (
+            <div key={i} style={{ display: 'flex', gap: lead ? 26 : 22, alignItems: 'flex-start' }}>
+              {lead ? (
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    width: chip,
+                    height: chip,
+                    borderRadius: 12,
+                    background: mixWithWhite(color, 0.12),
+                    color,
+                    fontSize: Math.round(fit.size * 0.62),
+                    fontWeight: 800,
+                    flexShrink: 0,
+                  }}
+                >
+                  {String(i + 1).padStart(2, '0')}
+                </div>
+              ) : (
+                <div
+                  style={{
+                    display: 'flex',
+                    width: 16,
+                    height: 16,
+                    marginTop: Math.round(fit.size * 0.55),
+                    borderRadius: 8,
+                    background: color,
+                    flexShrink: 0,
+                  }}
+                />
+              )}
+              {/* 폭을 명시 — Satori는 앞의 점·번호 칩을 빼지 않고 줄바꿈 폭을 잡아 오른쪽으로 삐져나간다 */}
+              <div
+                style={{
+                  width: BODY_W - gutter,
+                  fontSize: fit.size,
+                  lineHeight: 1.5,
+                  fontWeight: 500,
+                  display: 'flex',
+                  flexWrap: 'wrap',
+                }}
+              >
+                {em(b, color)}
+              </div>
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   );
@@ -426,10 +613,14 @@ function ProCon({
   tone,
   label,
   items,
+  size,
+  gap,
 }: {
   tone: 'good' | 'bad';
   label: string;
   items: string[];
+  size: number;
+  gap: number;
 }) {
   const color = tone === 'good' ? GOOD : BAD;
   const mixBg = tone === 'good' ? 0.08 : 0.07;
@@ -450,10 +641,10 @@ function ProCon({
           display: 'flex',
           alignItems: 'center',
           gap: 16,
-          fontSize: 38,
+          fontSize: 42,
           fontWeight: 800,
           color,
-          marginBottom: 20,
+          marginBottom: 22,
         }}
       >
         {/* ✓·✕ 글리프는 twemoji로 치환돼 톤이 깨짐 → CSS 도형으로 직접 그림 */}
@@ -515,9 +706,9 @@ function ProCon({
         </div>
         <span>{label}</span>
       </div>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap }}>
         {items.map((t, i) => (
-          <div key={i} style={{ fontSize: 29, lineHeight: 1.55, color: BODY_TEXT, display: 'flex' }}>
+          <div key={i} style={{ fontSize: size, lineHeight: 1.55, color: BODY_TEXT, display: 'flex' }}>
             <span>{t}</span>
           </div>
         ))}
@@ -526,24 +717,54 @@ function ProCon({
   );
 }
 
+const B5_HEADING = 54;
+
 function B5({ props }: Extract<RenderSlideInput, { template: 'B5' }>) {
+  // 두 패널의 항목을 한 번에 재서 같은 크기로 — 패널마다 글씨 크기가 달라지면 비교가 흐려진다
+  const shell = 80 + Math.round(42 * 1.3) + 22; // 패널 패딩 40*2 + 라벨 줄 + 라벨 아래 여백
+  const fit = fitBlock([...props.good, ...props.bad], {
+    width: BODY_W - 84, // 패널 좌우 패딩 42*2
+    height:
+      CARD_H - PAD_Y * 2 - TOPBAR_H - (44 + Math.round(B5_HEADING * 1.3)) - 44 - 28 - shell * 2,
+    max: 40,
+    min: 25,
+    lineHeight: 1.55,
+    gapRatio: 0.4,
+    gapMaxRatio: 0.8,
+  });
   return (
-    <div style={{ ...cardBase, background: '#fff', color: INK, padding: '80px 72px' }}>
+    <div style={{ ...cardBase, background: '#fff', color: INK, padding: `${PAD_Y}px ${PAD_X}px` }}>
       <Topbar color={INK} right={props.page} />
+      {/* 제목~패널을 한 덩어리로 묶어 남는 공간을 위아래로 나눠 갖는다 */}
       <div
-        style={{
-          display: 'flex',
-          marginTop: 44,
-          fontSize: 52,
-          fontWeight: 800,
-          letterSpacing: '-0.035em',
-        }}
+        style={{ display: 'flex', flexDirection: 'column', flexGrow: 1, justifyContent: 'center' }}
       >
-        {props.heading ?? '솔직 후기'}
-      </div>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 28, marginTop: 44 }}>
-        <ProCon tone="good" label={props.goodLabel ?? '잘된 것'} items={props.good} />
-        <ProCon tone="bad" label={props.badLabel ?? '별로였던 것'} items={props.bad} />
+        <div
+          style={{
+            display: 'flex',
+            fontSize: B5_HEADING,
+            fontWeight: 800,
+            letterSpacing: '-0.035em',
+          }}
+        >
+          {props.heading ?? '솔직 후기'}
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 28, marginTop: 44 }}>
+          <ProCon
+            tone="good"
+            label={props.goodLabel ?? '잘된 것'}
+            items={props.good}
+            size={fit.size}
+            gap={fit.gap}
+          />
+          <ProCon
+            tone="bad"
+            label={props.badLabel ?? '별로였던 것'}
+            items={props.bad}
+            size={fit.size}
+            gap={fit.gap}
+          />
+        </div>
       </div>
     </div>
   );
@@ -566,7 +787,7 @@ function O1({ accent, props }: Extract<RenderSlideInput, { template: 'O1' }>) {
           marginTop: 48, // 본문 눈높이 통일
         }}
       >
-        <div style={{ fontSize: 26, fontWeight: 600, color: 'rgba(255,255,255,0.85)' }}>
+        <div style={{ fontSize: 30, fontWeight: 600, color: 'rgba(255,255,255,0.88)' }}>
           {props.eyebrow ?? '오늘의 정리'}
         </div>
         <div
@@ -590,10 +811,10 @@ function O1({ accent, props }: Extract<RenderSlideInput, { template: 'O1' }>) {
           <div
             style={{
               display: 'flex',
-              marginTop: 28,
-              fontSize: 32,
-              lineHeight: 1.6,
-              color: 'rgba(255,255,255,0.92)',
+              marginTop: 30,
+              fontSize: 36,
+              lineHeight: 1.55,
+              color: 'rgba(255,255,255,0.94)',
             }}
           >
             <span>{props.body}</span>
@@ -611,8 +832,8 @@ function O1({ accent, props }: Extract<RenderSlideInput, { template: 'O1' }>) {
               background: 'rgba(255,255,255,0.12)',
               border: '1.5px solid rgba(255,255,255,0.3)',
               borderRadius: 16,
-              padding: '26px 30px',
-              fontSize: 30,
+              padding: '28px 32px',
+              fontSize: 34,
               fontWeight: 600,
             }}
           >
@@ -626,7 +847,7 @@ function O1({ accent, props }: Extract<RenderSlideInput, { template: 'O1' }>) {
           display: 'flex',
           justifyContent: 'center',
           marginTop: 36,
-          fontSize: 26,
+          fontSize: 30,
           fontWeight: 700,
           opacity: 0.95,
         }}
@@ -648,8 +869,8 @@ function pillStyle(): CSSProperties {
     background: 'rgba(255,255,255,0.12)',
     border: '1.5px solid rgba(255,255,255,0.28)',
     borderRadius: 999,
-    padding: '8px 18px',
-    fontSize: 22,
+    padding: '9px 20px',
+    fontSize: 25,
     fontWeight: 600,
     color: '#fff',
   };
@@ -678,9 +899,9 @@ function C2({ accent, props }: Extract<RenderSlideInput, { template: 'C2' }>) {
           <div
             style={{
               display: 'flex',
-              fontSize: 26,
+              fontSize: 30,
               fontWeight: 600,
-              color: 'rgba(255,255,255,0.7)',
+              color: 'rgba(255,255,255,0.78)',
               marginBottom: 24,
             }}
           >
@@ -705,7 +926,7 @@ function C2({ accent, props }: Extract<RenderSlideInput, { template: 'C2' }>) {
         </div>
       </div>
       {props.sub ? (
-        <div style={{ display: 'flex', fontSize: 32, lineHeight: 1.6, color: 'rgba(255,255,255,0.6)' }}>
+        <div style={{ display: 'flex', fontSize: 36, lineHeight: 1.55, color: 'rgba(255,255,255,0.72)' }}>
           {props.sub}
         </div>
       ) : null}
@@ -771,9 +992,9 @@ function C3({ accent, props }: Extract<RenderSlideInput, { template: 'C3' }>) {
           style={{
             display: 'flex',
             justifyContent: 'center',
-            fontSize: 32,
-            lineHeight: 1.6,
-            color: 'rgba(255,255,255,0.6)',
+            fontSize: 36,
+            lineHeight: 1.55,
+            color: 'rgba(255,255,255,0.72)',
           }}
         >
           {props.sub}
@@ -814,9 +1035,9 @@ function C4({ accent, props }: Extract<RenderSlideInput, { template: 'C4' }>) {
             style={{
               display: 'flex',
               justifyContent: 'center',
-              fontSize: 26,
+              fontSize: 30,
               fontWeight: 600,
-              color: 'rgba(255,255,255,0.7)',
+              color: 'rgba(255,255,255,0.78)',
               marginBottom: 40,
             }}
           >
@@ -847,7 +1068,7 @@ function C4({ accent, props }: Extract<RenderSlideInput, { template: 'C4' }>) {
                   ))}
                 </div>
                 {side.by ? (
-                  <div style={{ fontSize: 26, color: 'rgba(255,255,255,0.6)', marginTop: 10 }}>
+                  <div style={{ fontSize: 30, color: 'rgba(255,255,255,0.7)', marginTop: 10 }}>
                     {side.by}
                   </div>
                 ) : null}
@@ -861,9 +1082,9 @@ function C4({ accent, props }: Extract<RenderSlideInput, { template: 'C4' }>) {
           style={{
             display: 'flex',
             justifyContent: 'center',
-            fontSize: 32,
-            lineHeight: 1.6,
-            color: 'rgba(255,255,255,0.6)',
+            fontSize: 36,
+            lineHeight: 1.55,
+            color: 'rgba(255,255,255,0.72)',
           }}
         >
           {props.sub}
@@ -874,19 +1095,33 @@ function C4({ accent, props }: Extract<RenderSlideInput, { template: 'C4' }>) {
 }
 
 // ---------- B1 · 개요·타임라인 리스트 ----------
+const B1_ROW_H = 90; // 점(40)·term(44*1.3)·상하 패딩 16*2 기준 한 줄 높이
+
 function B1({ accent, props }: Extract<RenderSlideInput, { template: 'B1' }>) {
   const color = accentOf(accent, props);
+  // 항목 간격만 남는 공간에서 (상한까지) 키우고, 덩어리 전체는 세로 가운데로.
+  // Satori는 space-evenly를 모르므로 간격을 직접 계산한다.
+  const leadH = props.lead ? 52 + lineCount(props.lead, 34, BODY_W) * 34 * 1.55 : 0;
+  const listH = CARD_H - PAD_Y * 2 - TOPBAR_H - leadH - (36 + 75) - 40;
+  const rowGap = Math.max(
+    0,
+    Math.min(30, (listH - B1_ROW_H * props.rows.length) / Math.max(1, props.rows.length - 1))
+  );
   return (
     <div style={{ ...cardBase, background: '#fff', color: INK, padding: '80px 72px' }}>
       <Topbar color={INK} right={props.page} />
+      {/* 도입~타임라인을 한 덩어리로 — 선이 카드 바닥까지 늘어지지 않게 목록은 내용만큼만 차지한다 */}
+      <div
+        style={{ display: 'flex', flexDirection: 'column', flexGrow: 1, justifyContent: 'center' }}
+      >
       {props.lead ? (
         <div
           style={{
             display: 'flex',
             flexWrap: 'wrap',
-            marginTop: 56,
-            fontSize: 30,
-            lineHeight: 1.6,
+            marginTop: 0,
+            fontSize: 34,
+            lineHeight: 1.55,
             color: MUTED,
           }}
         >
@@ -911,7 +1146,13 @@ function B1({ accent, props }: Extract<RenderSlideInput, { template: 'B1' }>) {
         )}
       </div>
       <div
-        style={{ position: 'relative', display: 'flex', flexDirection: 'column', marginTop: 44 }}
+        style={{
+          position: 'relative',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: Math.round(rowGap),
+          marginTop: 40,
+        }}
       >
         <div
           style={{
@@ -928,7 +1169,7 @@ function B1({ accent, props }: Extract<RenderSlideInput, { template: 'B1' }>) {
         {props.rows.map((r, i) => (
           <div
             key={i}
-            style={{ display: 'flex', alignItems: 'center', gap: 28, padding: '20px 0' }}
+            style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 26, padding: '16px 0' }}
           >
             <div
               style={{
@@ -941,10 +1182,11 @@ function B1({ accent, props }: Extract<RenderSlideInput, { template: 'B1' }>) {
                 flexShrink: 0,
               }}
             />
-            <span style={{ fontSize: 38, fontWeight: 800 }}>{r.term}</span>
-            {r.desc ? <span style={{ fontSize: 28, color: MUTED }}>{r.desc}</span> : null}
+            <span style={{ fontSize: 44, fontWeight: 800, letterSpacing: '-0.02em' }}>{r.term}</span>
+            {r.desc ? <span style={{ fontSize: 32, color: MUTED }}>{r.desc}</span> : null}
           </div>
         ))}
+      </div>
       </div>
     </div>
   );
@@ -960,7 +1202,8 @@ function B3({ accent, props }: Extract<RenderSlideInput, { template: 'B3' }>) {
         style={{
           display: 'flex',
           flexDirection: 'column',
-          marginTop: 48, // 본문 눈높이 통일 — B2·B8과 같은 상단 시작
+          flexGrow: 1,
+          justifyContent: 'center', // 본문 블록 세로 가운데 — B2·B5·B6과 동일 규칙
         }}
       >
         <div style={{ display: 'flex' }}>
@@ -968,7 +1211,7 @@ function B3({ accent, props }: Extract<RenderSlideInput, { template: 'B3' }>) {
             style={{
               background: color,
               color: '#fff',
-              fontSize: 24,
+              fontSize: 26,
               fontWeight: 800,
               letterSpacing: '0.06em',
               padding: '10px 22px',
@@ -992,7 +1235,7 @@ function B3({ accent, props }: Extract<RenderSlideInput, { template: 'B3' }>) {
           {props.term}
         </div>
         {props.termEn ? (
-          <div style={{ display: 'flex', fontSize: 34, color: MUTED, marginTop: 12 }}>
+          <div style={{ display: 'flex', fontSize: 36, color: MUTED, marginTop: 12 }}>
             {props.termEn}
           </div>
         ) : null}
@@ -1010,7 +1253,7 @@ function B3({ accent, props }: Extract<RenderSlideInput, { template: 'B3' }>) {
         <div
           style={{
             display: 'flex',
-            fontSize: 44,
+            fontSize: 50,
             fontWeight: 800,
             lineHeight: 1.35,
             letterSpacing: '-0.02em',
@@ -1019,14 +1262,15 @@ function B3({ accent, props }: Extract<RenderSlideInput, { template: 'B3' }>) {
           {props.lead}
         </div>
         {props.body ? (
+          /* 부연은 흐린 회색 32px이라 폰에서 거의 안 읽혔다 — 본문색·36px로 */
           <div
             style={{
               display: 'flex',
               flexWrap: 'wrap',
-              marginTop: 28,
-              fontSize: 32,
+              marginTop: 30,
+              fontSize: 36,
               lineHeight: 1.6,
-              color: MUTED,
+              color: BODY_TEXT,
             }}
           >
             {em(props.body, color)}
@@ -1075,7 +1319,7 @@ function B4({ accent, props }: Extract<RenderSlideInput, { template: 'B4' }>) {
           )}
         </div>
         {props.attribution ? (
-          <div style={{ display: 'flex', fontSize: 30, fontWeight: 600, opacity: 0.75, marginTop: 36 }}>
+          <div style={{ display: 'flex', fontSize: 34, fontWeight: 600, opacity: 0.8, marginTop: 36 }}>
             {props.attribution}
           </div>
         ) : null}
@@ -1090,11 +1334,14 @@ function B6({ accent, props }: Extract<RenderSlideInput, { template: 'B6' }>) {
   return (
     <div style={{ ...cardBase, background: '#fff', color: INK, padding: '80px 72px' }}>
       <Topbar color={INK} right={props.page} />
+      {/* 제목~스텝을 한 덩어리로 묶어 남는 공간을 위아래로 나눠 갖는다 */}
+      <div
+        style={{ display: 'flex', flexDirection: 'column', flexGrow: 1, justifyContent: 'center' }}
+      >
       <div
         style={{
           display: 'flex',
           flexDirection: 'column',
-          marginTop: 44,
           fontSize: 54,
           fontWeight: 800,
           letterSpacing: '-0.035em',
@@ -1107,17 +1354,24 @@ function B6({ accent, props }: Extract<RenderSlideInput, { template: 'B6' }>) {
           { background: hlBg(props, color), color: '#fff', padding: '2px 16px', borderRadius: 8 }
         )}
       </div>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 22, marginTop: 44 }}>
+      <div
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 24,
+          marginTop: 44,
+        }}
+      >
         {props.steps.map((s, i) => (
           <div
             key={i}
             style={{
               display: 'flex',
               alignItems: 'center',
-              gap: 26,
+              gap: 28,
               background: '#F5F7FB',
               borderRadius: 18,
-              padding: '30px 34px',
+              padding: '32px 36px',
             }}
           >
             <div
@@ -1125,12 +1379,12 @@ function B6({ accent, props }: Extract<RenderSlideInput, { template: 'B6' }>) {
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                width: 70,
-                height: 70,
-                borderRadius: 18,
+                width: 78,
+                height: 78,
+                borderRadius: 20,
                 background: color,
                 color: '#fff',
-                fontSize: 34,
+                fontSize: 38,
                 fontWeight: 800,
                 flexShrink: 0,
               }}
@@ -1138,13 +1392,16 @@ function B6({ accent, props }: Extract<RenderSlideInput, { template: 'B6' }>) {
               {i + 1}
             </div>
             <div style={{ display: 'flex', flexDirection: 'column' }}>
-              <span style={{ fontSize: 36, fontWeight: 800 }}>{s.title}</span>
+              <span style={{ fontSize: 42, fontWeight: 800, letterSpacing: '-0.02em' }}>
+                {s.title}
+              </span>
               {s.desc ? (
-                <span style={{ fontSize: 26, color: MUTED, marginTop: 6 }}>{s.desc}</span>
+                <span style={{ fontSize: 31, color: BODY_TEXT, marginTop: 8 }}>{s.desc}</span>
               ) : null}
             </div>
           </div>
         ))}
+      </div>
       </div>
     </div>
   );
@@ -1159,7 +1416,8 @@ function B7({ props }: Extract<RenderSlideInput, { template: 'B7' }>) {
         style={{
           display: 'flex',
           flexDirection: 'column',
-          marginTop: 48, // 본문 눈높이 통일
+          flexGrow: 1,
+          justifyContent: 'center', // 본문 블록 세로 가운데 — B2·B5·B6과 동일 규칙
         }}
       >
         <div style={{ display: 'flex', alignItems: 'baseline' }}>
@@ -1193,10 +1451,10 @@ function B7({ props }: Extract<RenderSlideInput, { template: 'B7' }>) {
           <div
             style={{
               display: 'flex',
-              marginTop: 16,
-              fontSize: 30,
-              lineHeight: 1.6,
-              color: 'rgba(255,255,255,0.72)',
+              marginTop: 18,
+              fontSize: 34,
+              lineHeight: 1.55,
+              color: 'rgba(255,255,255,0.8)',
             }}
           >
             {props.sub}
@@ -1286,7 +1544,7 @@ function B8({ accent, props }: Extract<RenderSlideInput, { template: 'B8' }>) {
               {props.patternEn}
             </div>
             {props.patternName ? (
-              <div style={{ display: 'flex', marginTop: 14, fontSize: 32, fontWeight: 700, color: 'rgba(20,22,28,0.72)' }}>
+              <div style={{ display: 'flex', marginTop: 14, fontSize: 35, fontWeight: 700, color: 'rgba(20,22,28,0.78)' }}>
                 {props.patternName}
               </div>
             ) : null}
@@ -1306,7 +1564,7 @@ function B8({ accent, props }: Extract<RenderSlideInput, { template: 'B8' }>) {
           </div>
         )}
         {props.when ? (
-          <div style={{ display: 'flex', marginTop: 18, fontSize: 30, lineHeight: 1.5, color: MUTED }}>
+          <div style={{ display: 'flex', marginTop: 20, fontSize: 33, lineHeight: 1.5, color: BODY_TEXT }}>
             <span>{`"${props.when}"`}</span>
           </div>
         ) : null}
@@ -1317,8 +1575,8 @@ function B8({ accent, props }: Extract<RenderSlideInput, { template: 'B8' }>) {
               display: 'flex',
               alignItems: 'center',
               gap: 14,
-              marginTop: 22,
-              fontSize: 29,
+              marginTop: 24,
+              fontSize: 33,
               fontWeight: 700,
               color,
             }}
@@ -1338,7 +1596,7 @@ function B8({ accent, props }: Extract<RenderSlideInput, { template: 'B8' }>) {
             <span>{props.effect}</span>
           </div>
         ) : null}
-        {promptBox(27)}
+        {promptBox(30)}
         {props.ctaLine ? (
           <div
             style={{
@@ -1349,8 +1607,8 @@ function B8({ accent, props }: Extract<RenderSlideInput, { template: 'B8' }>) {
               background: mixWithWhite(color, 0.08),
               border: `2px solid ${mixWithWhite(color, 0.3)}`,
               borderRadius: 16,
-              padding: '22px 28px',
-              fontSize: 28,
+              padding: '24px 30px',
+              fontSize: 31,
               fontWeight: 700,
               color: INK,
             }}
@@ -1383,14 +1641,14 @@ function B8({ accent, props }: Extract<RenderSlideInput, { template: 'B8' }>) {
           { background: hlBg(props, color), color: '#fff', padding: '2px 16px', borderRadius: 8 }
         )}
       </div>
-      {promptBox(28)}
+      {promptBox(31)}
       <div
         style={{
           display: 'flex',
           alignItems: 'center',
           gap: 14,
           marginTop: 26,
-          fontSize: 26,
+          fontSize: 30,
           fontWeight: 600,
           color,
         }}
@@ -1420,21 +1678,22 @@ function B9({ accent, props }: Extract<RenderSlideInput, { template: 'B9' }>) {
             display: 'flex',
             flexWrap: 'wrap',
             marginTop: 44,
-            fontSize: 30,
-            lineHeight: 1.6,
-            color: MUTED,
+            fontSize: 34,
+            lineHeight: 1.55,
+            color: BODY_TEXT,
           }}
         >
           {em(props.lead, INK)}
         </div>
       ) : null}
+      {/* 스크린샷은 남는 세로를 다 쓴다 — 작게 박아두면 폰에서 아무것도 안 보인다 */}
       <div
         style={{
           position: 'relative',
           display: 'flex',
           marginTop: 36,
           width: '100%',
-          height: 720,
+          flexGrow: 1,
           borderRadius: 22,
           overflow: 'hidden',
           background: '#E9EDF4',
@@ -1443,8 +1702,8 @@ function B9({ accent, props }: Extract<RenderSlideInput, { template: 'B9' }>) {
         <img
           src={props.shot}
           alt=""
-          width={CARD_W - 144}
-          height={720}
+          width={BODY_W}
+          height={860}
           style={{ objectFit: 'cover', width: '100%', height: '100%' }}
         />
         {(props.callouts ?? []).map((c, i) => (
@@ -1456,9 +1715,9 @@ function B9({ accent, props }: Extract<RenderSlideInput, { template: 'B9' }>) {
               display: 'flex',
               background: color,
               color: '#fff',
-              fontSize: 26,
+              fontSize: 30,
               fontWeight: 700,
-              padding: '14px 22px',
+              padding: '16px 24px',
               borderRadius: 14,
               boxShadow: '0 12px 30px rgba(0,0,0,0.25)',
             }}
