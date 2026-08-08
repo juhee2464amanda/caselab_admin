@@ -2,7 +2,7 @@
 
 import { useState, useTransition, useEffect, useMemo, type ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
-import { Sparkles, Save, Send, AlertCircle, CheckCircle2, Eye, PenLine, SlidersHorizontal, ChevronDown } from 'lucide-react';
+import { Sparkles, Save, Send, AlertCircle, CheckCircle2, Eye, EyeOff, PenLine, SlidersHorizontal, ChevronDown } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
@@ -98,6 +98,14 @@ export function TrackForm({ initial, onSaved, startInPreview }: Props) {
   const [previewOpen, setPreviewOpen] = useState(startInPreview ?? !!initial?.id);
   // 설정·발행은 상단 접이 바로 이동 — 우측은 AI 제안 패널 전용. 새 콘텐츠(메타 미입력)는 열고 시작.
   const [settingsOpen, setSettingsOpen] = useState(!initial?.id);
+
+  // 본가 노출 상태 — 저장 후에도 prop(initial)은 안 바뀌므로 별도 상태로 추적한다.
+  // published_at은 "최초 발행 시각" 의미. 한 번 찍히면 재발행·초안 회귀에도 보존한다
+  //  → 본가 최신 발행순 정렬이 편집할 때마다 흔들리지 않는다.
+  const [live, setLive] = useState({
+    published: initial?.status === 'published',
+    publishedAt: initial?.published_at ?? null,
+  });
 
   // 자동 슬러그
   useEffect(() => {
@@ -233,9 +241,27 @@ export function TrackForm({ initial, onSaved, startInPreview }: Props) {
     return true;
   }
 
-  function save(status: 'draft' | 'published') {
+  // 저장 의도 3종 — 상태 전이를 버튼이 아니라 여기서 결정한다.
+  //  'draft'     초안으로 저장(미발행 글에만 노출). 발행 글은 이 경로로 못 온다.
+  //  'publish'   초안 → 발행. 게이트 통과 필수. 카드프레스·씨앗 마감이 여기서만 돈다.
+  //  'update'    이미 발행된 글의 내용 수정. status/published_at 그대로 두고 본가만 갱신.
+  //  'unpublish' 본가에서 내리기. 명시적 확인을 거친 경우에만.
+  type SaveIntent = 'draft' | 'publish' | 'update' | 'unpublish';
+
+  function save(intent: SaveIntent) {
     if (bodyError) return alert('본문 JSON 오류: ' + bodyError);
-    if (status === 'published' && !canPublish) return alert('발행 게이트 통과 필요');
+    if (intent === 'publish' && !canPublish) return alert('발행 게이트 통과 필요');
+    // 이미 본가에 나가 있는 글은 게이트 미충족이어도 저장을 막지 않는다(고치러 들어온 건데
+    // 저장을 막으면 편집이 갇힌다). 대신 지금 상태가 그대로 나간다는 걸 알린다.
+    if (intent === 'update' && !canPublish) {
+      const miss = lint.checks.filter((c) => c.blocking !== false && !c.passed).map((c) => c.label);
+      if (!confirm(`발행 게이트 미충족 ${miss.length}건(${miss.join(', ')})이 있어요.\n이 글은 이미 본가에 나가 있어서, 저장하면 이 상태 그대로 반영됩니다. 계속할까요?`)) return;
+    }
+    if (intent === 'unpublish') {
+      if (!confirm('본가에서 내립니다.\n\n· /cases · /trends 목록과 상세 페이지에서 즉시 사라져요.\n· 카드뉴스에 이미 만든 카드가 있으면 캡션·스레드의 본가 링크가 404가 됩니다.\n\n계속할까요?')) return;
+    }
+
+    const status: 'draft' | 'published' = intent === 'publish' || intent === 'update' ? 'published' : 'draft';
     startTransition(async () => {
       const payload = {
         slug: slug || slugify(title),
@@ -250,9 +276,11 @@ export function TrackForm({ initial, onSaved, startInPreview }: Props) {
         author_quote: authorQuote || null,
         thumbnail_url: thumbnailUrl || null,
         status,
-        published_at: status === 'published' ? new Date().toISOString() : null,
+        // 최초 발행 때만 찍고 이후엔 보존 — 초안 저장이 발행 이력을 지우지 않는다.
+        published_at: live.publishedAt ?? (status === 'published' ? new Date().toISOString() : null),
       };
-      const verb = status === 'published' ? '발행' : '초안 저장';
+      const verb =
+        intent === 'publish' ? '발행' : intent === 'update' ? '변경사항 저장' : intent === 'unpublish' ? '발행 취소' : '초안 저장';
       let id = initial?.id;
       if (id) {
         const { error } = await supabase.from('contents').update(payload).eq('id', id);
@@ -263,7 +291,10 @@ export function TrackForm({ initial, onSaved, startInPreview }: Props) {
         id = data?.id;
         if (!id) return alert(`${verb} 실패: 저장된 콘텐츠 ID를 받지 못했습니다.`);
       }
-      if (id && status === 'published') {
+      setLive({ published: status === 'published', publishedAt: payload.published_at });
+
+      // 본가 캐시 갱신은 노출 상태가 바뀌거나 내용이 바뀐 모든 경우에 필요하다(내릴 때 포함).
+      if (id && (status === 'published' || intent === 'unpublish')) {
         try {
           const res = await fetch('/api/revalidate', {
             method: 'POST',
@@ -272,9 +303,13 @@ export function TrackForm({ initial, onSaved, startInPreview }: Props) {
           });
           if (!res.ok) throw new Error(`revalidate ${res.status}`);
         } catch (e) {
-          // 저장은 성공했으나 캐시 갱신 실패 — 발행 자체는 유효하므로 경고만.
-          alert(`발행은 저장됐지만 본가 캐시 갱신에 실패했습니다. 잠시 후 반영될 수 있습니다.\n(${(e as Error).message})`);
+          // 저장은 성공했으나 캐시 갱신 실패 — 상태 변경 자체는 유효하므로 경고만.
+          alert(`${verb}은 저장됐지만 본가 캐시 갱신에 실패했습니다. 잠시 후 반영될 수 있습니다.\n(${(e as Error).message})`);
         }
+      }
+      // 씨앗 마감·카드프레스 생성은 '최초 발행' 1회만. 'update'에서 다시 돌면
+      // content_cards가 upsert로 덮여 검수·편집해 둔 슬라이드가 날아간다.
+      if (id && intent === 'publish') {
         // HERMES 씨앗에서 생성된 콘텐츠면 씨앗도 발행됨으로 닫기(연결 없으면 no-op)
         const { error: seedError } = await supabase
           .from('content_seeds')
@@ -313,12 +348,26 @@ export function TrackForm({ initial, onSaved, startInPreview }: Props) {
             {previewOpen ? <PenLine className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
             {previewOpen ? '구조 편집' : '초안 편집'}
           </Button>
-          <Button variant="outline" onClick={() => save('draft')} disabled={pending}>
-            <Save className="h-4 w-4" /> 초안 저장
-          </Button>
-          <Button variant="accent" onClick={() => save('published')} disabled={pending || !canPublish}>
-            <Send className="h-4 w-4" /> 발행
-          </Button>
+          {/* 본가에 나가 있는 글은 '초안 저장'이 곧 발행 취소였다 → 수정 저장과 내리기를 분리. */}
+          {live.published ? (
+            <>
+              <Button variant="outline" onClick={() => save('unpublish')} disabled={pending}>
+                <EyeOff className="h-4 w-4" /> 발행 취소
+              </Button>
+              <Button variant="accent" onClick={() => save('update')} disabled={pending}>
+                <Save className="h-4 w-4" /> 변경사항 저장
+              </Button>
+            </>
+          ) : (
+            <>
+              <Button variant="outline" onClick={() => save('draft')} disabled={pending}>
+                <Save className="h-4 w-4" /> 초안 저장
+              </Button>
+              <Button variant="accent" onClick={() => save('publish')} disabled={pending || !canPublish}>
+                <Send className="h-4 w-4" /> 발행
+              </Button>
+            </>
+          )}
         </div>
       </header>
 
@@ -602,17 +651,33 @@ export function TrackForm({ initial, onSaved, startInPreview }: Props) {
             </div>
 
             <div className="mt-4 space-y-2">
-              <Button
-                variant="accent"
-                className="w-full"
-                onClick={() => save('published')}
-                disabled={pending || !canPublish}
-              >
-                <Send className="h-4 w-4" /> {canPublish ? '발행' : '입력 후 발행'}
-              </Button>
-              <Button variant="outline" className="w-full" onClick={() => save('draft')} disabled={pending}>
-                <Save className="h-4 w-4" /> 초안 저장
-              </Button>
+              {live.published ? (
+                <>
+                  <p className="text-[11px] text-green-700">
+                    본가에 나가 있는 글이에요{live.publishedAt ? ` · ${live.publishedAt.slice(0, 10)} 발행` : ''}
+                  </p>
+                  <Button variant="accent" className="w-full" onClick={() => save('update')} disabled={pending}>
+                    <Save className="h-4 w-4" /> 변경사항 저장
+                  </Button>
+                  <Button variant="outline" className="w-full" onClick={() => save('unpublish')} disabled={pending}>
+                    <EyeOff className="h-4 w-4" /> 발행 취소
+                  </Button>
+                </>
+              ) : (
+                <>
+                  <Button
+                    variant="accent"
+                    className="w-full"
+                    onClick={() => save('publish')}
+                    disabled={pending || !canPublish}
+                  >
+                    <Send className="h-4 w-4" /> {canPublish ? '발행' : '입력 후 발행'}
+                  </Button>
+                  <Button variant="outline" className="w-full" onClick={() => save('draft')} disabled={pending}>
+                    <Save className="h-4 w-4" /> 초안 저장
+                  </Button>
+                </>
+              )}
             </div>
           </section>
 
