@@ -1,12 +1,13 @@
 import Anthropic from '@anthropic-ai/sdk';
-import { ContentBodySchema, type ContentBody, JOB_TAGS, JOB_LABELS, type JobTag } from '@/types/content';
+import { z } from 'zod';
+import { BlockSchema, ContentBodySchema, type ContentBody, JOB_TAGS, JOB_LABELS, type JobTag } from '@/types/content';
 import { runClaudeSubscription, extractJson } from '@/lib/claude-cli';
 import { BUCKETS, bucketProfile, isSeedBucket, type SeedBucket } from '@/lib/seed-curation';
 import { lintToolBody } from '@/lib/tool-body';
 import { sourceProfile } from '@/lib/seed-sources';
 import type { SeedTrack } from '@/lib/seed-tracks';
 import { trackEdge } from '@/lib/track-edges';
-import { sectionSpec, isEmptySection } from '@/lib/content-sections';
+import { sectionSpec, isEmptySection, FREE_SECTION_EXAMPLE } from '@/lib/content-sections';
 
 // 본문(블록 배열) 작성 규칙 — D70 스키마의 BlockSchema는 "type" 판별자가 필수다.
 // 초안 단계에선 가장 안전한 두 블록만 쓰게 강제(운영자가 폼에서 다른 블록 추가).
@@ -170,7 +171,28 @@ interface CallOpts {
   allowedTools?: string[];
   /** 모델. 기본 opus. 채점 등 가벼운 분류는 sonnet로 속도↑. */
   model?: string;
+  /** 사고량. 미지정 시 래퍼가 'medium' 고정(개인 effortLevel 상속 차단 — lib/claude-cli.ts 참고). */
+  effort?: 'low' | 'medium' | 'high' | 'xhigh';
   timeoutMs?: number;
+}
+
+/**
+ * 포맷 복구(JSON 깨짐·스키마 불일치) 전용 호출 옵션.
+ * 복구는 "이미 받은 본문을 규격에 맞게 고치는" 작업이라 리서치가 전혀 필요 없다.
+ * 기존엔 기본값(opus + WebSearch/WebFetch + 240s)으로 돌아 리서치를 통째로 재실행했고,
+ * 최악 3회(최초+JSON복구+스키마복구)면 라우트 maxDuration을 넘겨 복구 도중 죽었다.
+ */
+const REPAIR_OPTS: CallOpts = { allowedTools: [], model: 'sonnet', effort: 'low', timeoutMs: 60_000 };
+
+/** 복구 프롬프트 — 직전 원문을 그대로 주고 "다시 만들지 말고 고치라"고 지시(리서치 재실행 방지). */
+function repairPrompt(prevRaw: string, issue: string): string {
+  return `아래는 직전에 생성된 출력입니다. ${issue}
+
+[중요] 웹 리서치를 다시 하지 마세요. 아래 내용의 사실·문장은 그대로 두고, 형식만 고쳐서
+설명·코드펜스 없이 유효한 JSON 객체 하나만 반환하세요. 문자열 값 안의 줄바꿈은 \\n으로 이스케이프하세요.
+
+[직전 출력]
+${prevRaw.slice(0, 60000)}`;
 }
 
 /** 시스템+유저 프롬프트로 모델을 호출해 응답 텍스트를 반환. 프로바이더에 따라 구독 CLI / API키 분기.
@@ -265,24 +287,27 @@ export async function generateDraft(input: DraftInput): Promise<ContentBody> {
     outlineBlock(input.outline) +
     `\n\n위 주제로 초안 JSON만 반환하세요.`;
 
-  let raw = await callModel(systemPrompt, userPrompt);
+  const raw = await callModel(systemPrompt, userPrompt);
   let obj = parseModelJson(raw);
 
-  // JSON 자체가 깨진 경우(문자열 내 미이스케이프 줄바꿈 등) → 유효 JSON만 다시 요청
+  // JSON 자체가 깨진 경우(문자열 내 미이스케이프 줄바꿈 등) → 직전 원문을 고쳐서 받기(리서치 재실행 X)
   if (obj == null) {
-    raw = await callModel(
-      systemPrompt,
-      `${userPrompt}\n\n[중요] 직전 출력이 유효한 JSON이 아니었습니다. 문자열 값 안의 줄바꿈은 반드시 \\n으로 이스케이프하고, 설명·코드펜스 없이 JSON 객체 하나만 반환하세요.`
+    obj = parseModelJson(
+      await callModel(systemPrompt, repairPrompt(raw, '유효한 JSON이 아니었습니다.'), REPAIR_OPTS)
     );
-    obj = parseModelJson(raw);
   }
   if (obj == null) throw new Error('AI 응답을 JSON으로 읽지 못했어요(파싱 실패). 다시 생성해 주세요.');
 
   let result = ContentBodySchema.safeParse(obj);
   if (!result.success) {
-    // repair: 스키마에 정확히 맞는 JSON만 다시 받기
-    const repairPrompt = `${userPrompt}\n\n[중요] 직전 출력이 스키마 검증에 실패했습니다. 설명 없이 스키마에 정확히 일치하는 JSON 객체 하나만 반환하세요.`;
-    const repaired = parseModelJson(await callModel(systemPrompt, repairPrompt));
+    // repair: 스키마에 정확히 맞는 JSON만 다시 받기 — 역시 직전 결과를 고치는 방식
+    const repaired = parseModelJson(
+      await callModel(
+        systemPrompt,
+        repairPrompt(JSON.stringify(obj), `스키마 검증에 실패했습니다(${result.error.message.slice(0, 500)}).`),
+        REPAIR_OPTS
+      )
+    );
     if (repaired != null) result = ContentBodySchema.safeParse(repaired);
   }
 
@@ -333,8 +358,13 @@ export async function generateToolDraft(input: LibraryDraftInput): Promise<ToolD
     const bodyIssue = lintToolBody(body);
     if (bodyIssue) {
       // repair: 본가 상세가 렌더 못 하는 body → 계약에 맞는 JSON만 다시 받기 (generateDraft와 동일 패턴)
-      const repairPrompt = `${userPrompt}\n\n[중요] 직전 출력의 body가 상세페이지 스키마 검증에 실패했습니다(${bodyIssue}). 시스템 프롬프트의 body 스키마에 정확히 일치하는 JSON 객체 하나만 다시 반환하세요.`;
-      const repaired = (parseModelJson(await callModel(systemPrompt, repairPrompt)) ?? {}) as Record<string, unknown>;
+      const repaired = (parseModelJson(
+        await callModel(
+          systemPrompt,
+          repairPrompt(raw, `body가 상세페이지 스키마 검증에 실패했습니다(${bodyIssue}).`),
+          REPAIR_OPTS
+        )
+      ) ?? {}) as Record<string, unknown>;
       const repairedBody = (repaired.body && typeof repaired.body === 'object' ? repaired.body : {}) as Record<string, unknown>;
       if (!lintToolBody(repairedBody)) {
         parsed = repaired;
@@ -793,27 +823,60 @@ export interface RefineSectionInput {
   body: Record<string, unknown>;
   /** body의 섹션 키(예: "forWho", "painPoints", "what"). */
   sectionKey: string;
+  /**
+   * 화면에선 한 섹션인데 body 키가 여러 개인 복합 섹션(예: "좋았던 점·아쉬웠던 점" = pros + cons).
+   * 주면 현재 값·후보를 { pros:…, cons:… } 꼴의 객체로 다루고, 검증은 {...body, ...후보}로 한다.
+   * 이게 없어서 복합 섹션만 '섹션 수정' 버튼을 못 달고 있었다(2026-08-07).
+   */
+  sectionKeys?: string[];
   /** 사람이 읽는 섹션 이름(예: "누구한테 중요해요"). */
   sectionLabel: string;
   instruction: string;
   /** 추가 참고자료(.md 등). 선택. */
   reference?: string;
   count?: number;
+  /**
+   * 자유 섹션(body.sections[i].blocks) 전용. 고정 스펙 밖이라 sectionKey로 body에서 현재 값을
+   * 찾을 수 없으므로 currentValue로 직접 받고, 후보는 Block[]으로 검증한다.
+   */
+  freeBlocks?: boolean;
+  /** freeBlocks일 때의 현재 값(Block[]). 비면 '생성' 모드로 새 섹션을 쓴다. */
+  currentValue?: unknown;
 }
 
 /**
  * 섹션(카드/항목 배열 또는 객체) 전체를 '수정 각도'대로 자유 재구성한 후보를 반환.
  * 항목 추가·병합·분할·순서변경 허용. content면 {...body, [key]:후보}를 스키마 검증해 유효 후보만 남긴다(렌더 안전).
  */
-export async function refineSection(input: RefineSectionInput): Promise<{ candidates: RefineCandidate<unknown>[] }> {
+export async function refineSection(
+  input: RefineSectionInput,
+): Promise<{ candidates: RefineCandidate<unknown>[]; note?: string }> {
   const instruction = input.instruction?.trim();
-  const current = input.body?.[input.sectionKey]; // 생성 시 키가 아예 없을 수 있음(undefined)
+  // 복합 섹션(pros+cons처럼 키 여러 개)이면 키별 값을 한 객체로 묶어 다룬다.
+  const keys = input.sectionKeys?.length ? input.sectionKeys : null;
+  // 자유 섹션은 body에서 찾을 수 없으므로 currentValue를 쓴다. 고정 섹션은 생성 시 키가 아예 없을 수 있음(undefined).
+  const current = input.freeBlocks
+    ? input.currentValue
+    : keys
+      ? Object.fromEntries(keys.map((k) => [k, input.body?.[k]]))
+      : input.body?.[input.sectionKey];
   if (!instruction) return { candidates: [] };
   const count = Math.min(4, Math.max(1, input.count ?? 3));
 
   // 빈 섹션(또는 키 없음)이면 "생성" 모드 — 섹션 정의(content-sections)의 예시를 형태 힌트로 삼아 새로 작성.
-  const empty = isEmptySection(current);
-  const example = empty && input.track ? sectionSpec(input.track, input.sectionKey)?.example : undefined;
+  // 복합 섹션은 래퍼 객체가 항상 키를 갖고 있어 isEmptySection이 false가 되므로, 멤버가 모두 비었는지로 판단한다.
+  const empty = keys
+    ? keys.every((k) => isEmptySection(input.body?.[k]))
+    : isEmptySection(current);
+  const example = !empty
+    ? undefined
+    : input.freeBlocks
+      ? FREE_SECTION_EXAMPLE
+      : input.track
+        ? keys
+          ? Object.fromEntries(keys.map((k) => [k, sectionSpec(input.track!, k)?.example]))
+          : sectionSpec(input.track, input.sectionKey)?.example
+        : undefined;
   const shapeRef = empty && example !== undefined ? example : current;
   if (shapeRef === undefined || shapeRef === null) return { candidates: [] }; // 형태 힌트 없음(생성 불가)
   const isArr = Array.isArray(shapeRef);
@@ -826,6 +889,9 @@ export async function refineSection(input: RefineSectionInput): Promise<{ candid
 - 아래 "형태 예시"와 같은 JSON 형태(${isArr ? '배열' : '객체'} + 같은 키 이름·타입)로 작성하세요. 항목 개수는 내용에 맞게 정하면 됩니다.
 - 키 이름/타입은 예시와 동일하게(새 키 발명 금지). 값은 예시 문구를 쓰지 말고 실제 내용으로 채우세요.
 - 운영자가 준 핵심 내용·참고자료에 있는 사실만 쓰고, 수치·이름·URL을 새로 지어내지 마세요.
+- [중요] 정보가 부족해 보여도 되묻지 말고 반드시 JSON으로 답하세요. 확인된 범위까지만 쓰고,
+  모르는 수치·이름·URL은 그 문장을 통째로 빼세요(빈칸·"미확인" 같은 표기도 쓰지 말 것).
+  운영자가 초안을 보고 채우는 구조라, 짧더라도 뼈대가 있는 편이 빈손보다 낫습니다.
 - 한국어, 담백한 1인칭 운영자 톤. 이모지 금지.
 - 서로 뚜렷이 다른 방향의 후보 ${count}개(구성 재탕 금지).
 - 각 후보에 방향을 요약한 짧은 label(8자 내외, 예: "핵심 압축형", "사례 중심형"). 후보끼리 다르게.
@@ -850,14 +916,17 @@ export async function refineSection(input: RefineSectionInput): Promise<{ candid
     ? `[새 섹션] ${input.sectionLabel}\n[넣을 핵심 내용·방향·주의사항] ${instruction}${ref}\n\n[형태 예시]\n${shapeJson.slice(0, 12000)}\n\n위 요청 내용을 예시 형태로 담은 후보 ${count}개를 JSON으로 반환하세요(각 후보에 label 포함).`
     : `[섹션] ${input.sectionLabel}\n[수정 각도] ${instruction}${ref}\n\n[현재 섹션 JSON]\n${shapeJson.slice(0, 12000)}\n\n위 섹션을 수정 각도대로 다시 구성한 후보 ${count}개를 JSON으로 반환하세요(각 후보에 label 포함).`;
 
-  const raw = await callModel(system, userPrompt, { allowedTools: [], model: 'sonnet', timeoutMs: 90_000 });
+  // 섹션 통째 생성은 실측 50~60초라 90초는 여유가 거의 없다. 라우트 maxDuration(120초) 안에서 상한을 올린다.
+  const raw = await callModel(system, userPrompt, { allowedTools: [], model: 'sonnet', timeoutMs: 105_000 });
   const parsed = (parseModelJson(raw) ?? {}) as Record<string, unknown>;
   const list = Array.isArray(parsed.candidates) ? parsed.candidates : [];
 
   // 전체 body 검증은 "원본 body가 이미 스키마를 통과할 때"만 후보 판별자로 쓴다.
   // 원본이 이미 스키마 밖이면(예: 아직 스키마에 없는 신블록 포함) 전체 검증이 후보와 무관하게 늘 실패하므로,
   // 그럴 땐 형태 가드(배열↔배열)만으로 통과시킨다(운영자가 검토 후 적용).
-  const strict = !!input.track && ContentBodySchema.safeParse(input.body).success;
+  // 자유 섹션은 body 경로가 단순 키가 아니라 전체 body 검증을 못 쓴다 → Block[] 스키마로 직접 검증.
+  const strict = !input.freeBlocks && !!input.track && ContentBodySchema.safeParse(input.body).success;
+  const blockArr = z.array(BlockSchema);
 
   const out: RefineCandidate<unknown>[] = [];
   for (const c of list) {
@@ -871,14 +940,36 @@ export async function refineSection(input: RefineSectionInput): Promise<{ candid
     }
     if (isArr !== Array.isArray(value)) continue; // 형태 가드
     if (value === null || typeof value !== 'object') continue;
-    if (strict) {
-      const res = ContentBodySchema.safeParse({ ...input.body, [input.sectionKey]: value });
+    if (input.freeBlocks) {
+      const res = blockArr.safeParse(value);
+      if (!res.success || res.data.length === 0) continue;
+      out.push({ label, value: res.data });
+    } else if (strict) {
+      // 복합 섹션은 후보 객체를 body에 통째로 펼쳐 검증하고, 되돌려줄 때도 그 키들만 추려 담는다.
+      const merged = keys
+        ? { ...input.body, ...(value as Record<string, unknown>) }
+        : { ...input.body, [input.sectionKey]: value };
+      const res = ContentBodySchema.safeParse(merged);
       if (!res.success) continue;
-      out.push({ label, value: (res.data as Record<string, unknown>)[input.sectionKey] });
+      const parsedBody = res.data as Record<string, unknown>;
+      out.push({
+        label,
+        value: keys ? Object.fromEntries(keys.map((k) => [k, parsedBody[k]])) : parsedBody[input.sectionKey],
+      });
     } else {
       out.push({ label, value });
     }
     if (out.length >= count) break;
+  }
+
+  // 후보가 하나도 안 남았는데 모델이 산문으로 답했으면(예: "자료를 더 주세요" 되물음),
+  // 그 문장을 그대로 올려보낸다. 운영자에게 "각도를 바꿔보라"는 일반 안내보다
+  // 모델이 실제로 무엇을 요구하는지 보여주는 편이 다음 행동을 정해준다.
+  if (out.length === 0) {
+    const prose = raw.trim();
+    if (prose && !prose.startsWith('{') && !prose.startsWith('[')) {
+      return { candidates: [], note: prose.slice(0, 600) };
+    }
   }
   return { candidates: out };
 }

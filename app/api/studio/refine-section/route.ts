@@ -22,10 +22,14 @@ export async function POST(req: NextRequest) {
     track?: 'case' | 'trend';
     body?: Record<string, unknown>;
     sectionKey?: string;
+    /** 복합 섹션(pros+cons처럼 body 키 여러 개) — 있으면 이 키들을 한 섹션으로 다룬다. */
+    sectionKeys?: string[];
     sectionLabel?: string;
     instruction?: string;
     reference?: string;
     count?: number;
+    freeBlocks?: boolean;
+    currentValue?: unknown;
   };
   const instruction = b.instruction?.trim();
   if (!b.body || !b.sectionKey || !instruction) {
@@ -37,10 +41,13 @@ export async function POST(req: NextRequest) {
       track: b.track,
       body: b.body,
       sectionKey: b.sectionKey,
+      sectionKeys: b.sectionKeys,
       sectionLabel: b.sectionLabel ?? b.sectionKey,
       instruction,
       reference: b.reference,
       count: b.count,
+      freeBlocks: b.freeBlocks,
+      currentValue: b.currentValue,
     });
     return NextResponse.json(result);
   } catch (e) {

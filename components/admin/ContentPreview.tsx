@@ -1,8 +1,8 @@
 'use client';
 
-import { useState, useRef } from 'react';
-import { ArrowUpRight, Copy, Check, User, Bot, Plus, Trash2, Sparkles, ChevronUp, ChevronDown, AlignLeft, AlignCenter, AlignRight, PenLine, Paperclip } from 'lucide-react';
-import type { Block, ContentBody, JobTag, PainPoint, StepCard, TakingPoint } from '@/types/content';
+import { useState, useRef, type ReactNode } from 'react';
+import { ArrowUpRight, Copy, Check, User, Bot, Plus, Trash2, Sparkles, ChevronUp, ChevronDown, AlignLeft, AlignCenter, AlignRight, PenLine, Paperclip, Terminal } from 'lucide-react';
+import type { Block, ContentBody, JobTag, PainPoint, RichSection, StepCard, TakingPoint } from '@/types/content';
 import { JOB_LABELS, HEADING_TAG, HEADING_CLASS, HEADING_LEVELS } from '@/types/content';
 import { Editable } from '@/components/admin/Editable';
 import { useRefine, sectionToLines } from '@/components/admin/RefinePanel';
@@ -102,10 +102,22 @@ function PromptBlockView({ label, prompt, onCommit }: { label?: string; prompt: 
     }
   };
   return (
-    <div className="my-4 rounded-md border border-border bg-ink text-white overflow-hidden">
-      <header className="flex items-center justify-between px-4 py-2 bg-white/5 border-b border-white/10">
-        <span className="text-xs font-semibold uppercase tracking-wider text-white/60">{label ?? '프롬프트'}</span>
-        <button type="button" onClick={copy} className="inline-flex items-center gap-1 text-xs text-white/70 hover:text-white">
+    // 본가 PromptInline/PromptBlock 정합 — 어두운 면 + 흰 복사 버튼(프롬프트 영역임을 명시)
+    <div className="my-4 overflow-hidden rounded-xl bg-ink text-white">
+      <header className="flex items-center justify-between gap-3 border-b border-white/10 bg-white/[0.04] px-4 py-2.5">
+        <span className="inline-flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-[0.08em] text-white/50">
+          <Terminal className="h-3.5 w-3.5" aria-hidden />
+          {label ?? '프롬프트'}
+        </span>
+        <button
+          type="button"
+          onClick={copy}
+          aria-label="프롬프트 복사"
+          className={cn(
+            'inline-flex shrink-0 items-center gap-1.5 rounded-lg px-3.5 py-1.5 font-sans text-[13px] font-bold transition-colors',
+            copied ? 'bg-accent text-white' : 'bg-white text-ink hover:bg-white/85'
+          )}
+        >
           {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
           {copied ? '복사됨' : '복사'}
         </button>
@@ -116,7 +128,7 @@ function PromptBlockView({ label, prompt, onCommit }: { label?: string; prompt: 
         value={prompt}
         placeholder={onCommit ? '클릭해서 프롬프트를 입력하세요' : undefined}
         onCommit={onCommit}
-        className="px-4 py-3 text-sm whitespace-pre-wrap font-sans leading-relaxed hover:bg-white/10"
+        className="overflow-x-auto whitespace-pre-wrap px-4 py-4 font-mono text-[13px] leading-[1.75] text-white/85 hover:bg-white/10"
       />
     </div>
   );
@@ -657,6 +669,98 @@ function renderBlocks(blocks: Block[] | undefined, prefix: string, onBlocks?: (n
   return nodes;
 }
 
+// 자유 섹션(body.sections) — 고정 스펙 밖에서 운영자가 직접 만든 섹션.
+// 본가 components/content/RichSections.tsx와 동일 마크업(라벨 eyebrow → h2 → 블록).
+// 케이스는 본문 맨 끝, 트렌드는 '출처·더 보기' 바로 위에 순서대로 렌더된다.
+function FreeSections({
+  sections,
+  onSections,
+  onRefine,
+}: {
+  sections: RichSection[];
+  onSections?: (next: RichSection[]) => void;
+  onRefine?: (index: number) => void;
+}) {
+  // 읽기 모드는 본가와 동일하게 블록 없는 섹션을 건너뛴다(편집 모드는 채울 수 있게 보여줌).
+  const list = onSections ? sections : sections.filter((s) => s.blocks?.length);
+  if (list.length === 0) return null;
+  const setAt = (i: number, next: RichSection) => onSections?.(upd(sections, i, next));
+  const move = (i: number, dir: -1 | 1) => {
+    const j = i + dir;
+    if (!onSections || j < 0 || j >= sections.length) return;
+    const next = [...sections];
+    [next[i], next[j]] = [next[j], next[i]];
+    onSections(next);
+  };
+  return (
+    <>
+      {list.map((s, i) => {
+        // 첫 블록이 소제목이면 그게 사실상 섹션 제목 → 빈 label/heading 슬롯을 띄우지 않는다(중복 제목 방지).
+        const ownTitle = s.blocks?.[0]?.type === 'heading';
+        return (
+        <section key={i} className="pt-11 mt-11 border-t border-border">
+          {(s.label || (onSections && !ownTitle)) && (
+            <Editable
+              value={s.label ?? ''}
+              placeholder={onSections ? '라벨 (선택)' : undefined}
+              onCommit={onSections && ((v) => setAt(i, { ...s, label: v.trim() || undefined }))}
+              className="text-xs font-bold text-ink/40 tracking-[0.08em] mb-0.5 block"
+            />
+          )}
+          <div className={cn('flex items-center gap-2', (s.heading || (onSections && !ownTitle)) ? 'mb-5' : 'mb-2')}>
+            {(s.heading || (onSections && !ownTitle)) && (
+              <Editable
+                as="h2"
+                value={s.heading ?? ''}
+                placeholder={onSections ? '섹션 제목 (선택)' : undefined}
+                onCommit={onSections && ((v) => setAt(i, { ...s, heading: v.trim() || undefined }))}
+                className="text-[22px] md:text-2xl font-extrabold tracking-[-0.025em] break-keep"
+              />
+            )}
+            {onRefine && (
+              <button
+                type="button"
+                onClick={() => onRefine(i)}
+                title="이 섹션 내용을 AI로 쓰기·다시 쓰기"
+                className="shrink-0 inline-flex items-center gap-1 rounded-full border border-accent/30 px-2 py-0.5 text-[11px] font-semibold text-accent hover:bg-accent-50"
+              >
+                <Sparkles className="h-3 w-3" /> {s.blocks?.length ? '섹션 수정' : 'AI 초안'}
+              </button>
+            )}
+            {onSections && (
+              <>
+                <button type="button" onClick={() => move(i, -1)} disabled={i === 0} title="위 섹션과 순서 바꾸기" className="shrink-0 rounded-full border border-border p-1 text-ink/45 hover:text-ink disabled:opacity-25">
+                  <ChevronUp className="h-3 w-3" />
+                </button>
+                <button type="button" onClick={() => move(i, 1)} disabled={i === sections.length - 1} title="아래 섹션과 순서 바꾸기" className="shrink-0 rounded-full border border-border p-1 text-ink/45 hover:text-ink disabled:opacity-25">
+                  <ChevronDown className="h-3 w-3" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (confirm('이 섹션을 삭제할까요? (블록까지 함께 지워져요)')) onSections(sections.filter((_, k) => k !== i));
+                  }}
+                  title="이 섹션 삭제"
+                  className="shrink-0 inline-flex items-center gap-1 rounded-full border border-border px-2 py-0.5 text-[11px] font-medium text-ink/45 hover:border-red-300 hover:text-red-500"
+                >
+                  <Trash2 className="h-3 w-3" /> 삭제
+                </button>
+              </>
+            )}
+          </div>
+          {onSections && !s.blocks?.length && (
+            <p className="mb-2 rounded-md border border-dashed border-border px-3 py-2 text-[11px] text-ink/45">
+              블록이 하나도 없어요. 아래 &lsquo;삽입&rsquo;으로 내용을 넣어야 라이브에 보여요.
+            </p>
+          )}
+          {renderBlocks(s.blocks ?? [], `free-${i}`, onSections && ((next) => setAt(i, { ...s, blocks: next })))}
+        </section>
+        );
+      })}
+    </>
+  );
+}
+
 function PreviewHeader({ track, title, summary, jobTags, readMin, applyMin, onPatch }: ContentPreviewProps) {
   const primaryJob = jobTags?.[0];
   const trackLabel = track === 'case' ? '실전 케이스' : 'AI 트렌드';
@@ -690,10 +794,12 @@ function PreviewHeader({ track, title, summary, jobTags, readMin, applyMin, onPa
   );
 }
 
-function CasePreviewBody({ body, onBody, onSectionRefine, onSectionDelete }: { body: CaseBodyT; onBody?: (next: ContentBody) => void; onSectionRefine?: (key: string, label: string) => void; onSectionDelete?: (key: string) => void }) {
+function CasePreviewBody({ body, onBody, onSectionRefine, onSectionDelete, onFreeRefine, addBar }: { body: CaseBodyT; onBody?: (next: ContentBody) => void; onSectionRefine?: (key: string, label: string, keys?: string[]) => void; onSectionDelete?: (key: string, keys?: string[]) => void; onFreeRefine?: (index: number) => void; addBar?: ReactNode }) {
   const set = onBody && ((patch: Partial<CaseBodyT>) => onBody({ ...body, ...patch }));
-  const sh = (key: string, label: string) => (onSectionRefine ? () => onSectionRefine(key, label) : undefined);
-  const del = (key: string) => (onSectionDelete ? () => onSectionDelete(key) : undefined);
+  // keys = 복합 섹션(화면상 한 섹션인데 body 키가 여럿). 안 주면 key 하나짜리 일반 섹션.
+  const sh = (key: string, label: string, keys?: string[]) =>
+    onSectionRefine ? () => onSectionRefine(key, label, keys) : undefined;
+  const del = (key: string, keys?: string[]) => (onSectionDelete ? () => onSectionDelete(key, keys) : undefined);
   // 소제목·리드 오버라이드 — 기본 문구를 클릭 편집으로 덮어씀(비우면 기본 복귀).
   const h = (key: string, def: string) => body.headings?.[key]?.trim() || def;
   const setH = (key: string) =>
@@ -796,7 +902,14 @@ function CasePreviewBody({ body, onBody, onSectionRefine, onSectionDelete }: { b
 
       {body.pros && body.cons && (body.pros.length > 0 || body.cons.length > 0) && (
         <section className="pt-11 mt-11 border-t border-border">
-          <SectionHeader num="06" title={h('prosCons', '좋았던 점 · 아쉬웠던 점')} onTitle={setH('prosCons')} />
+          {/* 복합 섹션 — 화면상 한 섹션이지만 body는 pros·cons 두 키다. 둘을 함께 재구성/삭제한다. */}
+          <SectionHeader
+            num="06"
+            title={h('prosCons', '좋았던 점 · 아쉬웠던 점')}
+            onTitle={setH('prosCons')}
+            onRefine={sh('pros', '좋았던 점 · 아쉬웠던 점', ['pros', 'cons'])}
+            onDelete={del('pros', ['pros', 'cons'])}
+          />
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-2">
             {(
               [
@@ -861,6 +974,16 @@ function CasePreviewBody({ body, onBody, onSectionRefine, onSectionDelete }: { b
           </div>
         </section>
       )}
+
+      {/* 자유 섹션 — 본가 케이스 상세도 고정 섹션 뒤에 이어서 렌더 */}
+      <FreeSections
+        sections={body.sections ?? []}
+        onSections={set && ((next) => set({ sections: next }))}
+        onRefine={onFreeRefine}
+      />
+
+      {/* 섹션 추가 바 — 케이스는 출처 섹션이 없어 본문 맨 끝이 곧 삽입 지점 */}
+      {addBar}
     </div>
   );
 }
@@ -887,8 +1010,9 @@ function StepCardView({ step, onStep }: { step: StepCard; onStep?: (next: StepCa
           <Editable as="p" multiline rich value={step.ai} onCommit={set && ((v) => set({ ai: v }))} className="text-sm text-ink/80 leading-[1.6] block" />
         </div>
       </div>
+      {/* 본가 StepCard는 헤더에 스텝 제목이 아니라 '프롬프트' 고정 라벨 — label 안 넘긴다 */}
       {step.prompt !== undefined && (
-        <PromptBlockView label={step.label} prompt={step.prompt} onCommit={set && ((v) => set({ prompt: v }))} />
+        <PromptBlockView prompt={step.prompt} onCommit={set && ((v) => set({ prompt: v }))} />
       )}
       {(step.goodResult || step.badResult) && (
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
@@ -910,10 +1034,12 @@ function StepCardView({ step, onStep }: { step: StepCard; onStep?: (next: StepCa
   );
 }
 
-function TrendPreviewBody({ body, onBody, onSectionRefine, onSectionDelete }: { body: TrendBodyT; onBody?: (next: ContentBody) => void; onSectionRefine?: (key: string, label: string) => void; onSectionDelete?: (key: string) => void }) {
+function TrendPreviewBody({ body, onBody, onSectionRefine, onSectionDelete, onFreeRefine, addBar }: { body: TrendBodyT; onBody?: (next: ContentBody) => void; onSectionRefine?: (key: string, label: string, keys?: string[]) => void; onSectionDelete?: (key: string, keys?: string[]) => void; onFreeRefine?: (index: number) => void; addBar?: ReactNode }) {
   const set = onBody && ((patch: Partial<TrendBodyT>) => onBody({ ...body, ...patch }));
-  const sh = (key: string, label: string) => (onSectionRefine ? () => onSectionRefine(key, label) : undefined);
-  const del = (key: string) => (onSectionDelete ? () => onSectionDelete(key) : undefined);
+  // keys = 복합 섹션(화면상 한 섹션인데 body 키가 여럿). 안 주면 key 하나짜리 일반 섹션.
+  const sh = (key: string, label: string, keys?: string[]) =>
+    onSectionRefine ? () => onSectionRefine(key, label, keys) : undefined;
+  const del = (key: string, keys?: string[]) => (onSectionDelete ? () => onSectionDelete(key, keys) : undefined);
   // 소제목 오버라이드 — 기본 문구를 클릭 편집으로 덮어씀(비우면 기본 복귀).
   const h = (key: string, def: string) => body.headings?.[key]?.trim() || def;
   const setH = (key: string) =>
@@ -1005,6 +1131,17 @@ function TrendPreviewBody({ body, onBody, onSectionRefine, onSectionDelete }: { 
         </section>
       )}
 
+      {/* 자유 섹션 — 고정 6섹션 뒤, '출처·더 보기' 앞(본가 트렌드 상세와 동일 순서) */}
+      <FreeSections
+        sections={body.sections ?? []}
+        onSections={set && ((next) => set({ sections: next }))}
+        onRefine={onFreeRefine}
+      />
+
+      {/* 섹션 추가 바도 출처 위 — 출처는 언제나 본문 맨 끝이고, 새 섹션은 그 위에 쌓인다.
+          (바가 출처 아래 있으면 "여기 누르면 여기 생긴다"는 위치 감각이 어긋난다) */}
+      {addBar}
+
       {body.sources && body.sources.length > 0 && (
         <section className="pt-11 mt-11 border-t border-border">
           <Editable
@@ -1032,9 +1169,23 @@ function TrendPreviewBody({ body, onBody, onSectionRefine, onSectionDelete }: { 
   );
 }
 
-// 빈 섹션을 골라 AI 초안으로 채우는 "섹션 추가" 바 — 본문 맨 아래.
-function AddSectionBar({ specs, onAdd }: { specs: SectionSpec[]; onAdd: (s: SectionSpec) => void }) {
+// 섹션 추가 바 — 본문 맨 아래. 항상 노출된다(고정 섹션이 다 차 있어도 자유 섹션은 계속 추가 가능).
+//  1) 비어있는 고정 섹션 → AI 초안으로 채우기
+//  2) 새 자유 섹션 → AI 초안으로 통째 쓰기
+//  3) 새 자유 섹션 → 콘텐츠 타입(문단·이미지·갤러리…)을 골라 빈 블록으로 시작
+function AddSectionBar({
+  specs,
+  onFillEmpty,
+  onAddFree,
+  onAddFreeAi,
+}: {
+  specs: SectionSpec[];
+  onFillEmpty: (s: SectionSpec) => void;
+  onAddFree: (type: AddType) => void;
+  onAddFreeAi: () => void;
+}) {
   const [open, setOpen] = useState(false);
+  const close = () => setOpen(false);
   return (
     <div className="mt-8 border-t border-dashed border-border pt-5">
       <div className="relative flex justify-center">
@@ -1047,20 +1198,51 @@ function AddSectionBar({ specs, onAdd }: { specs: SectionSpec[]; onAdd: (s: Sect
         </button>
         {open && (
           <>
-            <div className="fixed inset-0 z-20" onClick={() => setOpen(false)} />
-            <div className="absolute top-10 z-30 w-64 overflow-hidden rounded-lg border border-border bg-white py-1 shadow-lg">
-              <div className="px-3 py-1.5 text-[11px] text-ink/45">빈 섹션을 골라 AI 초안으로 채워요</div>
-              {specs.map((s) => (
+            <div className="fixed inset-0 z-20" onClick={close} />
+            <div className="absolute top-10 z-30 max-h-[60vh] w-72 overflow-y-auto rounded-lg border border-border bg-white py-1 shadow-lg">
+              {specs.length > 0 && (
+                <>
+                  <div className="px-3 py-1.5 text-[11px] font-semibold text-ink/45">빈 섹션 채우기 · AI 초안</div>
+                  {specs.map((s) => (
+                    <button
+                      key={s.key}
+                      type="button"
+                      onClick={() => {
+                        onFillEmpty(s);
+                        close();
+                      }}
+                      className="block w-full whitespace-nowrap px-3 py-1.5 text-left text-sm hover:bg-muted"
+                    >
+                      {s.label}
+                    </button>
+                  ))}
+                  <div className="my-1 border-t border-border" />
+                </>
+              )}
+
+              <div className="px-3 py-1.5 text-[11px] font-semibold text-ink/45">새 섹션 추가</div>
+              <button
+                type="button"
+                onClick={() => {
+                  onAddFreeAi();
+                  close();
+                }}
+                className="flex w-full items-center gap-1.5 whitespace-nowrap px-3 py-1.5 text-left text-sm font-medium text-accent hover:bg-accent-50"
+              >
+                <Sparkles className="h-3.5 w-3.5" /> AI 초안으로 새 섹션
+              </button>
+              <div className="px-3 pb-1 pt-1.5 text-[11px] text-ink/45">직접 만들기 — 콘텐츠 타입 선택</div>
+              {INSERT_ITEMS.map((it) => (
                 <button
-                  key={s.key}
+                  key={it.type}
                   type="button"
                   onClick={() => {
-                    onAdd(s);
-                    setOpen(false);
+                    onAddFree(it.type);
+                    close();
                   }}
                   className="block w-full whitespace-nowrap px-3 py-1.5 text-left text-sm hover:bg-muted"
                 >
-                  {s.label}
+                  {it.label}
                 </button>
               ))}
             </div>
@@ -1079,9 +1261,11 @@ export function ContentPreview(props: ContentPreviewProps) {
   bodyRef.current = body;
 
   // 섹션 수정(refine) / 빈 섹션 새로 생성(generate) 공용 — 우측 패널에 요청 등록.
-  const openSection = (sectionKey: string, sectionLabel: string, mode: 'refine' | 'generate') => {
+  // keys를 주면 복합 섹션(화면상 한 섹션인데 body 키가 여럿, 예: pros+cons)으로 다룬다.
+  const openSection = (sectionKey: string, sectionLabel: string, mode: 'refine' | 'generate', keys?: string[]) => {
     if (!onBody || !refine) return;
-    const cur = (body as unknown as Record<string, unknown>)[sectionKey];
+    const b = body as unknown as Record<string, unknown>;
+    const cur = keys ? Object.fromEntries(keys.map((k) => [k, b[k]])) : b[sectionKey];
     refine.open({
       target: mode === 'refine' ? sectionToLines(cur) : '',
       scope: 'section',
@@ -1091,28 +1275,98 @@ export function ContentPreview(props: ContentPreviewProps) {
       context: `${track === 'case' ? '실전 케이스' : 'AI 트렌드'} · ${sectionLabel}`,
       section: {
         track: body.kind === 'case' || body.kind === 'trend' ? body.kind : undefined,
-        body: body as unknown as Record<string, unknown>,
+        body: b,
         sectionKey,
+        sectionKeys: keys,
         sectionLabel,
       },
-      apply: (chosen) => onBody({ ...(bodyRef.current as object), [sectionKey]: chosen } as ContentBody),
+      // 복합 섹션의 후보는 { pros:…, cons:… } 꼴이라 body에 통째로 펼친다.
+      apply: (chosen) =>
+        onBody({
+          ...(bodyRef.current as object),
+          ...(keys ? (chosen as Record<string, unknown>) : { [sectionKey]: chosen }),
+        } as ContentBody),
       onClose: () => {},
     });
   };
-  const onSectionRefine = onBody && refine ? (k: string, l: string) => openSection(k, l, 'refine') : undefined;
+  const onSectionRefine =
+    onBody && refine ? (k: string, l: string, keys?: string[]) => openSection(k, l, 'refine', keys) : undefined;
 
   // 섹션 삭제 — 내용을 비워 미리보기·라이브에서 사라지게(배열→[], 객체→undefined).
+  // 복합 섹션은 구성 키를 모두 비워야 섹션이 사라진다(하나만 비우면 반쪽이 남는다).
   const onSectionDelete = onBody
-    ? (sectionKey: string) => {
+    ? (sectionKey: string, keys?: string[]) => {
         const b = bodyRef.current as unknown as Record<string, unknown>;
-        const empty = Array.isArray(b[sectionKey]) ? [] : undefined;
-        onBody({ ...(bodyRef.current as object), [sectionKey]: empty } as unknown as ContentBody);
+        const blank = (k: string) => (Array.isArray(b[k]) ? [] : undefined);
+        const patch = Object.fromEntries((keys ?? [sectionKey]).map((k) => [k, blank(k)]));
+        onBody({ ...(bodyRef.current as object), ...patch } as unknown as ContentBody);
       }
     : undefined;
 
-  // 추가 가능한(현재 비어있는) 섹션 목록.
+  // ── 자유 섹션(body.sections) — 고정 스펙이 다 차 있어도 계속 추가할 수 있는 확장 슬롯.
+  const setFreeSections = (next: RichSection[]) =>
+    onBody?.({ ...(bodyRef.current as object), sections: next } as ContentBody);
+
+  // 콘텐츠 타입을 골라 새 자유 섹션 추가 — 해당 타입 블록 하나로 시작.
+  const addFreeSection = (type: AddType) => {
+    const cur = ((bodyRef.current as unknown as { sections?: RichSection[] }).sections ?? []) as RichSection[];
+    setFreeSections([...cur, { blocks: [newBlock(type)] }]);
+  };
+
+  // 새 자유 섹션을 AI 초안으로 통째 생성(먼저 빈 섹션을 붙이고, 그 blocks를 후보로 채운다).
+  const addFreeSectionAi = () => {
+    const cur = ((bodyRef.current as unknown as { sections?: RichSection[] }).sections ?? []) as RichSection[];
+    const index = cur.length;
+    setFreeSections([...cur, { blocks: [] }]);
+    openFreeSection(index);
+  };
+
+  // 자유 섹션 blocks 생성/수정 — 고정 섹션과 달리 body 경로가 단순 키가 아니라 currentValue로 넘긴다.
+  const openFreeSection = (index: number) => {
+    if (!onBody || !refine) return;
+    const cur = ((bodyRef.current as unknown as { sections?: RichSection[] }).sections ?? []) as RichSection[];
+    const blocks = cur[index]?.blocks ?? [];
+    const empty = blocks.length === 0;
+    const label = cur[index]?.heading?.trim() || '새 섹션';
+    refine.open({
+      target: empty ? '' : sectionToLines(blocks),
+      scope: 'section',
+      kind: 'section',
+      mode: empty ? 'generate' : 'refine',
+      rich: false,
+      context: `${track === 'case' ? '실전 케이스' : 'AI 트렌드'} · ${label}`,
+      section: {
+        track: body.kind === 'case' || body.kind === 'trend' ? body.kind : undefined,
+        body: body as unknown as Record<string, unknown>,
+        sectionKey: 'sections',
+        sectionLabel: label,
+        freeBlocks: true,
+        currentValue: empty ? undefined : blocks,
+      },
+      apply: (chosen) => {
+        const list = ((bodyRef.current as unknown as { sections?: RichSection[] }).sections ?? []) as RichSection[];
+        if (!list[index]) return;
+        setFreeSections(upd(list, index, { ...list[index], blocks: chosen as Block[] }));
+      },
+      onClose: () => {},
+    });
+  };
+  const onFreeRefine = onBody && refine ? openFreeSection : undefined;
+
+  // 추가 가능한(현재 비어있는) 고정 섹션 목록. 없어도 바 자체는 계속 노출된다(자유 섹션 추가용).
   const emptySpecs =
     onBody && refine ? sectionSpecs(track).filter((s) => isEmptySection((body as unknown as Record<string, unknown>)[s.key])) : [];
+
+  // 섹션 추가 바 — 렌더 위치는 각 트랙 본문이 정한다(트렌드는 출처 위, 케이스는 맨 끝).
+  const addBar =
+    onBody && refine ? (
+      <AddSectionBar
+        specs={emptySpecs}
+        onFillEmpty={(s) => openSection(s.key, s.label, 'generate')}
+        onAddFree={addFreeSection}
+        onAddFreeAi={addFreeSectionAi}
+      />
+    ) : null;
 
   return (
     <div className="rounded-xl border border-border bg-bg">
@@ -1136,15 +1390,11 @@ export function ContentPreview(props: ContentPreviewProps) {
         )}
         <div className="mt-4">
           {body.kind === 'case' ? (
-            <CasePreviewBody body={body} onBody={onBody} onSectionRefine={onSectionRefine} onSectionDelete={onSectionDelete} />
+            <CasePreviewBody body={body} onBody={onBody} onSectionRefine={onSectionRefine} onSectionDelete={onSectionDelete} onFreeRefine={onFreeRefine} addBar={addBar} />
           ) : body.kind === 'trend' ? (
-            <TrendPreviewBody body={body} onBody={onBody} onSectionRefine={onSectionRefine} onSectionDelete={onSectionDelete} />
+            <TrendPreviewBody body={body} onBody={onBody} onSectionRefine={onSectionRefine} onSectionDelete={onSectionDelete} onFreeRefine={onFreeRefine} addBar={addBar} />
           ) : null}
         </div>
-
-        {emptySpecs.length > 0 && (
-          <AddSectionBar specs={emptySpecs} onAdd={(s) => openSection(s.key, s.label, 'generate')} />
-        )}
       </article>
     </div>
   );

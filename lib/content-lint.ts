@@ -142,10 +142,13 @@ export function lintContent(
     [body.what, body.why, body.forWho, body.keyPoints, body.deepDive, body.soWhat, body.whats_new].some(
       (s) => (s?.length ?? 0) > 0
     );
+  // 자유 섹션(body.sections)도 본문으로 친다 — 고정 섹션 없이 자유 섹션만으로 구성한 콘텐츠가
+  // "본문 없음"으로 발행이 막히지 않도록. 블록이 있는 섹션만 유효(본가 RichSections가 빈 섹션은 건너뜀).
+  const freeHasContent = (body.sections ?? []).some((s) => (s.blocks?.length ?? 0) > 0);
   checks.push({
     id: 'has-content',
     label: '본문 내용 ≥ 1섹션',
-    passed: body.kind === 'case' ? caseHasContent : trendHasContent,
+    passed: (body.kind === 'case' ? caseHasContent : trendHasContent) || freeHasContent,
   });
 
   // 5. 의도 라벨 — legacy framework가 있을 때만 적용 (D70 stepCards는 해당 없음)
