@@ -40,6 +40,15 @@ export const TREND_SECTIONS: SectionSpec[] = [
   { key: 'sources', label: '출처·더 보기', example: [{ label: '출처 이름', url: 'https://...' }] },
 ];
 
+/**
+ * 자유 섹션(body.sections[i]) 생성용 형태 힌트 — 고정 스펙 밖이라 SectionSpec이 없다.
+ * 값은 Block[](본가 RichSections가 렌더). 소제목 블록을 포함시켜 섹션 제목까지 AI가 쓰게 한다.
+ */
+export const FREE_SECTION_EXAMPLE: unknown = [
+  { type: 'heading', level: 2, text: '섹션 제목' },
+  { type: 'text', markdown: '이 섹션에서 다룰 내용 2~3문단.' },
+];
+
 export function sectionSpecs(track: 'case' | 'trend'): SectionSpec[] {
   return track === 'case' ? CASE_SECTIONS : TREND_SECTIONS;
 }

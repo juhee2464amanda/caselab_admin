@@ -27,8 +27,18 @@ export interface RefineRequest {
   rich: boolean;
   /** 편집 위치 힌트(grounding) */
   context?: string;
-  /** section kind 전용 — 백엔드로 넘길 섹션 페이로드 */
-  section?: { track?: 'case' | 'trend'; body: Record<string, unknown>; sectionKey: string; sectionLabel: string };
+  /** section kind 전용 — 백엔드로 넘길 섹션 페이로드.
+   *  freeBlocks=자유 섹션(body.sections[i].blocks) — 현재 값을 currentValue로 직접 넘긴다. */
+  section?: {
+    track?: 'case' | 'trend';
+    body: Record<string, unknown>;
+    sectionKey: string;
+    /** 화면상 한 섹션이지만 body 키가 여러 개일 때(예: 좋았던 점·아쉬웠던 점 = pros + cons). */
+    sectionKeys?: string[];
+    sectionLabel: string;
+    freeBlocks?: boolean;
+    currentValue?: unknown;
+  };
   /** 고른 후보 적용(text=string, section=구조값) */
   apply: (chosen: unknown) => void;
   /** 적용 없이 닫을 때(편집 상태 복원·정리) */
@@ -117,6 +127,8 @@ function RefineForm({ request, onApply }: { request: RefineRequest; onApply: (ch
   const [error, setError] = useState<string | null>(null);
   const [candidates, setCandidates] = useState<{ label?: string; value: unknown }[] | null>(null);
   const fileRef = useRef<HTMLInputElement | null>(null);
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  const instructionRef = useRef<HTMLTextAreaElement | null>(null);
 
   const attach = async (file?: File) => {
     if (!file) return;
@@ -125,9 +137,15 @@ function RefineForm({ request, onApply }: { request: RefineRequest; onApply: (ch
     setRefName(file.name);
   };
 
-  // "파일로 초안" 진입 — 패널이 뜨자마자 파일 선택창을 연다(막히면 아래 첨부 버튼으로).
+  // 요청이 열릴 때(= key 교체로 이 폼이 새로 마운트될 때) 패널을 화면 안으로 데려온다.
+  // TrackForm 그리드가 xl(1280px) 이상에서만 2단이라, 그 미만 창에서는 우측 레일이 본문 미리보기
+  // '아래로' 쌓인다. 스크롤을 옮기지 않으면 지시 입력란이 화면 밖에 남아 "수정을 눌러도 아무 일도
+  // 안 일어난다"로 보인다(2026-08-07). 넓은 창에서는 이미 보이는 위치라 스크롤이 사실상 무해.
+  // "파일로 초안" 진입은 파일 선택창을 바로 열어야 하므로 포커스를 뺏지 않는다.
   useEffect(() => {
+    rootRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
     if (draftSource === 'file') fileRef.current?.click();
+    else instructionRef.current?.focus({ preventScroll: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -147,12 +165,23 @@ function RefineForm({ request, onApply }: { request: RefineRequest; onApply: (ch
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
-      const data = (await res.json()) as { candidates?: { label?: string; value: unknown }[]; error?: string };
+      const data = (await res.json()) as {
+        candidates?: { label?: string; value: unknown }[];
+        error?: string;
+        note?: string;
+      };
       if (!res.ok) throw new Error(data.error || '제안 생성 실패');
       const list = (data.candidates ?? []).filter(
         (c) => c && c.value !== null && c.value !== undefined && !(typeof c.value === 'string' && !c.value.trim()),
       );
-      if (list.length === 0) throw new Error('후보를 만들지 못했어요. 각도를 다르게 적어보세요.');
+      // 모델이 초안 대신 되물음을 보냈으면 그 문장을 그대로 보여준다(무엇을 더 줘야 하는지 알 수 있게).
+      if (list.length === 0) {
+        throw new Error(
+          data.note
+            ? `AI가 초안 대신 이렇게 답했어요 —\n\n"${data.note}"\n\n필요한 내용을 지시문에 적거나 참고자료(.md)를 첨부해 주세요.`
+            : '후보를 만들지 못했어요. 각도를 다르게 적어보세요.',
+        );
+      }
       setCandidates(list);
     } catch (e) {
       setError((e as Error).message);
@@ -165,7 +194,7 @@ function RefineForm({ request, onApply }: { request: RefineRequest; onApply: (ch
   const scopeLabel = generate ? (draftText ? '새 문단 초안' : '새 섹션 생성') : scope === 'selection' ? '선택 구간' : scope === 'section' ? '이 섹션 전체' : '이 문단·필드';
 
   return (
-    <div className="space-y-2.5">
+    <div ref={rootRef} className="space-y-2.5 scroll-mt-4">
       <div className="flex items-center gap-1.5 text-[11px] font-medium text-ink/50">
         <span className={cn('rounded px-1.5 py-0.5', generate ? 'bg-green-100 text-green-700' : scope === 'selection' ? 'bg-amber-100 text-amber-700' : scope === 'section' ? 'bg-violet-100 text-violet-700' : 'bg-accent-50 text-accent')}>
           {scopeLabel}
@@ -201,6 +230,7 @@ function RefineForm({ request, onApply }: { request: RefineRequest; onApply: (ch
           </div>
         )}
         <textarea
+          ref={instructionRef}
           value={instruction}
           onChange={(e) => setInstruction(e.target.value)}
           onKeyDown={(e) => {
@@ -269,7 +299,11 @@ function RefineForm({ request, onApply }: { request: RefineRequest; onApply: (ch
         </div>
       </div>
 
-      {error && <div className="rounded-md bg-red-50 px-2.5 py-1.5 text-[12px] text-red-600">{error}</div>}
+      {error && (
+        <div className="whitespace-pre-wrap break-keep rounded-md bg-red-50 px-2.5 py-1.5 text-[12px] leading-relaxed text-red-600">
+          {error}
+        </div>
+      )}
 
       {candidates && (
         <div className="space-y-1.5 border-t border-border pt-2.5">
