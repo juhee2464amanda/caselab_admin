@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { ArrowLeft, Loader2, CheckCircle2, Home, Sparkles, ExternalLink } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { createSupabaseBrowserClient } from '@/lib/supabase/client';
+import { placeAsHero, placeAsSub } from '@/lib/featured-slots';
 import { SeedCuration, type CurSeed } from '@/components/admin/SeedCuration';
 import { TrackForm } from '@/components/admin/TrackForm';
 import { ToolForm } from '@/components/admin/ToolForm';
@@ -140,38 +141,28 @@ export function Studio({ seeds, pending }: { seeds: CurSeed[]; pending: number }
   );
 }
 
-// 발행된 콘텐츠를 홈 대표 영역(featured_contents)에 바로 배치. 빈 슬롯 자동 선택.
-// MD 직행 레인(MdImport)의 발행 단계에서도 재사용.
+// 발행된 콘텐츠를 홈 히어로에 바로 배치. MD 직행 레인(MdImport)의 발행 단계에서도 재사용.
+// 배치 어휘·로직은 큐레이션 화면과 동일(lib/featured-slots) — 두 화면이 갈라지면 유령 슬롯이 생긴다.
 export function FeaturedPlacer({ contentId, title }: { contentId: string; title: string }) {
   const router = useRouter();
   const supabase = createSupabaseBrowserClient();
-  const [busy, setBusy] = useState<'hero' | 'highlight' | null>(null);
+  const [busy, setBusy] = useState<'hero' | 'sub' | null>(null);
   const [done, setDone] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const place = async (slotType: 'hero' | 'highlight') => {
-    setBusy(slotType);
+  const place = async (where: 'hero' | 'sub') => {
+    setBusy(where);
     setError(null);
     try {
-      // 해당 영역의 빈 슬롯(1~5) 찾기
-      const { data: existing } = await supabase
-        .from('featured_contents')
-        .select('slot')
-        .eq('slot_type', slotType);
-      const used = new Set((existing ?? []).map((e) => e.slot as number));
-      const free = [1, 2, 3, 4, 5].find((n) => !used.has(n));
-      if (!free) {
-        setError(`${slotType} 슬롯(1~5)이 가득 찼어요. 큐레이션에서 정리 후 배치하세요.`);
+      const target = { kind: 'content' as const, id: contentId };
+      const res = where === 'hero'
+        ? await placeAsHero(supabase, target)
+        : await placeAsSub(supabase, target);
+      if (!res.ok) {
+        setError(res.message);
         return;
       }
-      const { error: err } = await supabase
-        .from('featured_contents')
-        .insert({ content_id: contentId, slot_type: slotType, slot: free, active: true });
-      if (err) {
-        setError(/duplicate|unique/i.test(err.message) ? '이미 배치된 슬롯이에요.' : err.message);
-        return;
-      }
-      setDone(`${slotType === 'hero' ? 'Hero' : 'Highlight'} #${free}에 배치됨`);
+      setDone(res.message);
       router.refresh();
     } finally {
       setBusy(null);
@@ -182,21 +173,28 @@ export function FeaturedPlacer({ contentId, title }: { contentId: string; title:
     <div className="rounded-xl border border-border bg-white p-4 space-y-3">
       <div className="flex items-center gap-2">
         <Home className="h-4 w-4 text-ink/50" />
-        <h2 className="text-sm font-semibold">홈 대표 배치</h2>
+        <h2 className="text-sm font-semibold">홈 히어로 배치</h2>
       </div>
-      <p className="text-xs text-ink/50">{title ? `"${title}"를 ` : ''}메인 노출 영역에 바로 올립니다. 빈 슬롯에 자동 배치돼요.</p>
+      <p className="text-xs text-ink/50">
+        {title ? `"${title}"를 ` : ''}홈 최상단 캐러셀에 올립니다. 대표(#1)는 첫 화면, Sub는 그다음 순서로 노출돼요.
+      </p>
       {error && <p className="text-xs text-red-600">{error}</p>}
       {done ? (
-        <p className="inline-flex items-center gap-1 text-sm text-emerald-700">
-          <CheckCircle2 className="h-3.5 w-3.5" /> {done}
+        <p className="flex flex-wrap items-center gap-2 text-sm text-emerald-700">
+          <span className="inline-flex items-center gap-1">
+            <CheckCircle2 className="h-3.5 w-3.5" /> {done}
+          </span>
+          <Link href="/admin/contents/curation" className="text-xs text-ink/50 hover:underline">
+            큐레이션에서 순서 바꾸기 →
+          </Link>
         </p>
       ) : (
         <div className="flex items-center gap-2">
           <Button size="sm" variant="accent" disabled={!!busy} onClick={() => place('hero')}>
-            {busy === 'hero' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : '📌'} Hero에 배치
+            {busy === 'hero' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : '⭐'} 대표로 배치
           </Button>
-          <Button size="sm" variant="outline" disabled={!!busy} onClick={() => place('highlight')}>
-            {busy === 'highlight' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : '📌'} Highlight에 배치
+          <Button size="sm" variant="outline" disabled={!!busy} onClick={() => place('sub')}>
+            {busy === 'sub' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : '📌'} Sub로 추가
           </Button>
         </div>
       )}
