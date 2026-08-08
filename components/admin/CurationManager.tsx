@@ -5,12 +5,14 @@ import { useRouter } from 'next/navigation';
 import { ArrowUp, ArrowDown, Star, Pin } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { createSupabaseBrowserClient } from '@/lib/supabase/client';
+import { MAX_SUB, SLOT_TYPE, SUB_SLOTS, placeAsHero, placeAsSub, type Kind } from '@/lib/featured-slots';
 
 // 홈 히어로 큐레이션 — 대표 1개 + Sub(추가 노출).
 //   · 본가 홈은 featured_contents(slot_type='hero')를 slot 순서대로 캐러셀 렌더. slot=1이 대표.
 //   · 콘텐츠(content_id) / 도구·프롬프트(tool_id) 폴리모픽 배치.
 //   · 재정렬은 slot 번호 고정 + 페이로드(content_id/tool_id) 스왑 → unique(slot_type,slot) 충돌 없음.
-export type Kind = 'content' | 'tool' | 'prompt';
+//   · 배치(대표/Sub) 로직은 스튜디오 발행 화면과 공유(lib/featured-slots).
+export type { Kind };
 export type Slot = {
   id: string;
   slot: number;
@@ -21,6 +23,8 @@ export type Slot = {
   badge: string;
   title: string;
 };
+// 홈이 렌더하지 않는 slot_type에 남아 있는 행 — 배치해도 어디에도 안 보이는 유령.
+export type Orphan = Slot & { slot_type: string };
 export type RankItem = {
   key: string;
   kind: Kind;
@@ -32,12 +36,6 @@ export type RankItem = {
   likes: number;
 };
 
-const MAX_SUB = 4; // 대표 1 + Sub 4 = 슬롯 5개 (본가 캐러셀 limit 5)
-const SUB_SLOTS = [2, 3, 4, 5];
-
-function payload(kind: Kind, id: string) {
-  return kind === 'content' ? { content_id: id, tool_id: null } : { content_id: null, tool_id: id };
-}
 function represents(e: Slot, item: RankItem): boolean {
   return item.kind === 'content' ? e.content_id === item.target_id : e.tool_id === item.target_id;
 }
@@ -49,11 +47,13 @@ function badgeTone(kind: Kind): string {
 
 export function CurationManager({
   entries,
+  orphans = [],
   rankViews,
   rankSaves,
   pool,
 }: {
   entries: Slot[];
+  orphans?: Orphan[];
   rankViews: RankItem[];
   rankSaves: RankItem[];
   pool: RankItem[];
@@ -70,13 +70,6 @@ export function CurationManager({
   const placedKeys = new Set(entries.map((e) => (e.tool_id ? `t:${e.tool_id}` : `c:${e.content_id}`)));
 
   const fc = () => supabase.from('featured_contents');
-  function usedSlots(exceptId?: string): Set<number> {
-    return new Set(entries.filter((e) => e.id !== exceptId).map((e) => e.slot));
-  }
-  function nextFreeSub(exceptId?: string): number | null {
-    const used = usedSlots(exceptId);
-    return SUB_SLOTS.find((n) => !used.has(n)) ?? null;
-  }
 
   async function run(fn: () => Promise<Array<{ error: { message: string } | null }> | void>) {
     setError(null);
@@ -91,46 +84,48 @@ export function CurationManager({
     }
   }
 
-  // 대표(slot 1)로 지정 — 기존 대표는 Sub로 밀고, 이 아이템이 다른 슬롯에 있었으면 제거 후 대표 배치
+  // 대표(slot 1)로 지정 / Sub(추가 노출)로 배치 — 스튜디오 발행 화면과 같은 로직을 쓴다.
   function setHero(item: RankItem) {
     void run(async () => {
-      const dup = entries.find((e) => represents(e, item));
-      const slot1 = entries.find((e) => e.slot === 1);
-      if (dup && dup.slot === 1) return; // 이미 대표
-      if (dup) await fc().delete().eq('id', dup.id);
-      if (slot1) {
-        const free = nextFreeSub(dup?.id);
-        if (free) await fc().update({ slot: free }).eq('id', slot1.id);
-        else await fc().delete().eq('id', slot1.id); // 슬롯 꽉 참 → 기존 대표는 빠짐
-      }
-      const { error } = await fc().insert({ slot_type: 'hero', slot: 1, ...payload(item.kind, item.target_id), active: true });
-      return [{ error }];
+      const res = await placeAsHero(supabase, { kind: item.kind, id: item.target_id });
+      if (!res.ok) setError(res.message);
     });
   }
 
-  // Sub(추가 노출)로 배치
   function addSub(item: RankItem) {
     void run(async () => {
-      const dup = entries.find((e) => represents(e, item));
-      if (dup) {
-        if (dup.slot === 1) {
-          const free = nextFreeSub(dup.id);
-          if (free) await fc().update({ slot: free }).eq('id', dup.id);
-        }
-        return;
-      }
-      const free = nextFreeSub();
-      if (!free) { setError(`Sub 슬롯이 가득 찼어요 (최대 ${MAX_SUB}개).`); return; }
-      const { error } = await fc().insert({ slot_type: 'hero', slot: free, ...payload(item.kind, item.target_id), active: true });
-      return [{ error }];
+      const res = await placeAsSub(supabase, { kind: item.kind, id: item.target_id });
+      if (!res.ok) setError(res.message);
     });
   }
 
-  function addFromSelect() {
+  function addFromSelect(where: 'hero' | 'sub') {
     const item = pool.find((p) => p.key === addId);
     if (!item) return;
     setAddId('');
-    addSub(item);
+    if (where === 'hero') setHero(item);
+    else addSub(item);
+  }
+
+  // 유령 슬롯 구제 — hero Sub로 끌어오거나 제거. (이미 hero에 같은 대상이 있으면 유령만 삭제)
+  function adoptOrphan(o: Orphan) {
+    void run(async () => {
+      const dup = entries.find((e) => (o.tool_id ? e.tool_id === o.tool_id : e.content_id === o.content_id));
+      if (dup) { await fc().delete().eq('id', o.id); return; }
+      const used = new Set(entries.map((e) => e.slot));
+      const free = SUB_SLOTS.find((n) => !used.has(n));
+      if (!free) { setError(`Sub 슬롯이 가득 찼어요 (최대 ${MAX_SUB}개). 하나 제거하고 다시 시도하세요.`); return; }
+      const { error } = await fc().update({ slot_type: SLOT_TYPE, slot: free }).eq('id', o.id);
+      return [{ error }];
+    });
+  }
+
+  function removeOrphan(o: Orphan) {
+    if (!confirm('이 슬롯을 삭제할까요? (홈에 노출되지 않는 항목이에요)')) return;
+    void run(async () => {
+      const { error } = await fc().delete().eq('id', o.id);
+      return [{ error }];
+    });
   }
 
   // 위/아래 재정렬 — 인접 슬롯끼리 페이로드 스왑 (slot 번호는 고정)
@@ -286,17 +281,61 @@ export function CurationManager({
             </div>
           </section>
 
-          {/* 랭킹 밖 콘텐츠 직접 배치 */}
-          <details className="card p-4">
-            <summary className="text-sm font-semibold cursor-pointer">랭킹 밖 콘텐츠 직접 배치</summary>
-            <div className="mt-3 flex flex-col sm:flex-row gap-2">
+          {/* 직접 추가 — 우측 Top 3에 없는 것도 여기서 올린다 */}
+          <section>
+            <h2 className="font-serif text-base font-semibold mb-1">
+              콘텐츠 추가 <span className="text-xs text-ink/40 font-normal">발행된 전체 목록에서 선택</span>
+            </h2>
+            <p className="text-xs text-ink/40 mb-3">우측 인기 Top 3에 없는 콘텐츠·도구·프롬프트도 여기서 바로 배치할 수 있어요.</p>
+            <div className="card p-4 flex flex-col sm:flex-row gap-2">
               <select className="h-10 flex-1 rounded-md border border-border bg-white px-3 text-sm" value={addId} onChange={(e) => setAddId(e.target.value)}>
                 <option value="">발행된 콘텐츠·도구·프롬프트 선택…</option>
-                {pool.map((p) => <option key={p.key} value={p.key}>[{p.badge}] {p.title}</option>)}
+                {pool.map((p) => (
+                  <option key={p.key} value={p.key}>
+                    [{p.badge}] {p.title}{placedKeys.has(p.key) ? ' · 배치됨' : ''}
+                  </option>
+                ))}
               </select>
-              <Button type="button" variant="accent" disabled={busy || !addId} onClick={addFromSelect}>Sub로 추가</Button>
+              <div className="flex gap-2">
+                <Button type="button" variant="accent" disabled={busy || !addId} onClick={() => addFromSelect('hero')}>
+                  <Star className="h-3.5 w-3.5" /> 대표로
+                </Button>
+                <Button type="button" variant="outline" disabled={busy || !addId} onClick={() => addFromSelect('sub')}>
+                  <Pin className="h-3.5 w-3.5" /> Sub로
+                </Button>
+              </div>
             </div>
-          </details>
+          </section>
+
+          {/* 유령 슬롯 — 홈이 렌더하지 않는 slot_type에 남은 행 (옛 highlight/links 배치) */}
+          {orphans.length > 0 && (
+            <section>
+              <h2 className="font-serif text-base font-semibold mb-1 text-amber-700">
+                ⚠️ 홈에 노출되지 않는 슬롯 <span className="text-xs font-normal text-ink/40">{orphans.length}건</span>
+              </h2>
+              <p className="text-xs text-ink/50 mb-3">
+                홈은 Hero 슬롯만 노출해요. 아래 항목은 지금은 없어진 배치 방식(highlight/links)으로 올라가 어디에도 보이지 않습니다.
+              </p>
+              <div className="card border-amber-300 bg-amber-50/40 divide-y divide-amber-200">
+                {orphans.map((o) => (
+                  <div key={o.id} className="flex items-center justify-between gap-3 px-4 py-3">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className="shrink-0 text-[10px] font-medium rounded px-1.5 py-0.5 bg-amber-100 text-amber-800">{o.slot_type} #{o.slot}</span>
+                      <Badge kind={o.kind} label={o.badge} />
+                      <span className="font-medium truncate">{o.title}</span>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0 text-xs">
+                      <button disabled={busy} onClick={() => adoptOrphan(o)} className="inline-flex items-center gap-1 text-accent hover:underline disabled:opacity-50">
+                        <Pin className="h-3 w-3" /> Sub로 가져오기
+                      </button>
+                      <span className="text-ink/20">·</span>
+                      <button disabled={busy} onClick={() => removeOrphan(o)} className="text-red-600 hover:underline disabled:opacity-50">삭제</button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
         </div>
 
         {/* 우측: 인기 콘텐츠 */}

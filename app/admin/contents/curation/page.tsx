@@ -1,11 +1,14 @@
 import { createSupabaseServerClient, isSupabaseConfigured } from '@/lib/supabase/server';
-import { CurationManager, type Slot, type RankItem } from '@/components/admin/CurationManager';
+import { CurationManager, type Slot, type RankItem, type Orphan } from '@/components/admin/CurationManager';
 import { CategoryQuickEdit } from '@/components/admin/CategoryQuickEdit';
+import { SLOT_TYPE } from '@/lib/featured-slots';
 
 // /admin/contents/curation — 홈 히어로 큐레이션.
 //   · Hero 대표 1개 + Sub(추가 노출) 여러 개 (본가 홈은 slot_type='hero' 슬롯을 순서대로 캐러셀 렌더)
 //   · 슬롯은 콘텐츠(케이스/트렌드) + 도구/프롬프트 모두 배치 가능 (featured_contents 폴리모픽)
 //   · 우측 '인기 콘텐츠' = 조회 Top3 / 저장 Top3 (콘텐츠+도구/프롬프트 통합)
+//   · slot_type 필터를 걸지 않는다 — hero가 아닌 행(옛 highlight/links)은 홈에 안 뜨는 유령이므로
+//     숨기지 말고 경고 섹션으로 노출해 여기서 정리할 수 있어야 한다.
 export const dynamic = 'force-dynamic';
 
 type CStat = { content_id: string; title: string; track: string; status: string; view_count: number; save_count: number; like_count: number };
@@ -25,8 +28,7 @@ export default async function AdminCuration() {
   const [featRes, statRes, toolsRes, toolSavesRes, toolLikesRes] = await Promise.all([
     supabase
       .from('featured_contents')
-      .select('id, slot, content_id, tool_id, active, contents(title, track), tools(name, category)')
-      .eq('slot_type', 'hero')
+      .select('id, slot_type, slot, content_id, tool_id, active, contents(title, track), tools(name, category)')
       .order('slot'),
     supabase.from('content_stats').select('content_id, title, track, status, view_count, save_count, like_count').eq('status', 'published'),
     supabase.from('tools').select('id, name, category').in('category', ['tool', 'prompt']).eq('status', 'published'),
@@ -35,12 +37,12 @@ export default async function AdminCuration() {
   ]);
 
   // ── 현재 슬롯 상태 ──
-  const entries: Slot[] = (
-    (featRes.data ?? []) as unknown as Array<{
-      id: string; slot: number; content_id: string | null; tool_id: string | null; active: boolean;
-      contents: { title: string; track: string } | null; tools: { name: string; category: string } | null;
-    }>
-  ).map((f) => {
+  const rows = (featRes.data ?? []) as unknown as Array<{
+    id: string; slot_type: string; slot: number; content_id: string | null; tool_id: string | null; active: boolean;
+    contents: { title: string; track: string } | null; tools: { name: string; category: string } | null;
+  }>;
+
+  const toSlot = (f: (typeof rows)[number]): Slot => {
     const isTool = !!f.tool_id;
     const kind: Slot['kind'] = isTool ? (f.tools?.category === 'prompt' ? 'prompt' : 'tool') : 'content';
     const badge = isTool
@@ -56,7 +58,13 @@ export default async function AdminCuration() {
       badge,
       title: isTool ? (f.tools?.name ?? '(삭제된 도구)') : (f.contents?.title?.trim() || '(제목 없음)'),
     };
-  });
+  };
+
+  const entries: Slot[] = rows.filter((f) => f.slot_type === SLOT_TYPE).map(toSlot);
+  // 홈이 렌더하지 않는 slot_type — 남아 있으면 유령이므로 화면에 드러낸다.
+  const orphans: Orphan[] = rows
+    .filter((f) => f.slot_type !== SLOT_TYPE)
+    .map((f) => ({ ...toSlot(f), slot_type: f.slot_type }));
 
   // ── 인기 랭킹 풀: 콘텐츠(조회/저장/좋아요) + 도구·프롬프트(저장/좋아요) ──
   const toolSaves = countBy(toolSavesRes.data as { tool_id: string | null }[] | null);
@@ -98,7 +106,7 @@ export default async function AdminCuration() {
           <CategoryQuickEdit scope={{ type: 'content_subcategory', tracks: ['case', 'trend'], title: '콘텐츠 카테고리 수정' }} />
         </div>
       </header>
-      <CurationManager entries={entries} rankViews={rankViews} rankSaves={rankSaves} pool={pool} />
+      <CurationManager entries={entries} orphans={orphans} rankViews={rankViews} rankSaves={rankSaves} pool={pool} />
     </div>
   );
 }
