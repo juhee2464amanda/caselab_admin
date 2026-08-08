@@ -38,7 +38,11 @@ export async function POST(req: NextRequest) {
 
   const primary = seeds[0];
   const mergedTitle = seeds.length === 1 ? primary.title : `${primary.title} 외 ${seeds.length - 1}건`;
-  const mergedSummary = seeds.map((s) => `# ${s.title}\n${s.raw_text ?? ''}`).join('\n\n---\n\n');
+  // 씨앗 원문 상한 — /api/seeds/generate와 같은 취지(무제한 병합 시 프롬프트 폭증 방지).
+  const PER_SEED_CHARS = 8000;
+  const mergedSummary = seeds
+    .map((s) => `# ${s.title}\n${(s.raw_text ?? '').slice(0, PER_SEED_CHARS)}`)
+    .join('\n\n---\n\n');
 
   try {
     const result = await generateOutline({
