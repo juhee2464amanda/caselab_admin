@@ -20,7 +20,13 @@ export interface ClaudeCliOptions {
   allowedTools?: string[];
   /** 모델 별칭/이름. 기본 'opus'(최신) */
   model?: string;
-  /** 타임아웃(ms). 기본 180s — 리서치 포함이라 넉넉히. 로컬이라 플랫폼 타임아웃 없음 */
+  /**
+   * 사고량. 반드시 명시적으로 넘긴다 — 안 넘기면 ~/.claude/settings.json의 개인 effortLevel을
+   * 하위 프로세스가 상속한다(예: xhigh면 같은 프롬프트가 웹서치 6회→18회, 115s→247s로 폭증해
+   * 타임아웃을 확정적으로 넘긴다). 앱 동작이 개인 설정에 좌우되지 않게 기본 'medium'을 고정.
+   */
+  effort?: 'low' | 'medium' | 'high' | 'xhigh';
+  /** 타임아웃(ms). 기본 240s — 리서치 포함이라 넉넉히. 로컬이라 플랫폼 타임아웃 없음 */
   timeoutMs?: number;
 }
 
@@ -28,7 +34,7 @@ export interface ClaudeCliOptions {
 export async function runClaudeSubscription(opts: ClaudeCliOptions): Promise<string> {
   const bin = process.env.CLAUDE_CLI_PATH || 'claude';
   const tools = opts.allowedTools ?? ['WebSearch', 'WebFetch'];
-  const timeoutMs = opts.timeoutMs ?? 180_000;
+  const timeoutMs = opts.timeoutMs ?? 240_000;
 
   const args = [
     '-p',
@@ -36,6 +42,12 @@ export async function runClaudeSubscription(opts: ClaudeCliOptions): Promise<str
     'json',
     '--model',
     opts.model ?? 'opus',
+    // 개인 settings.json의 effortLevel 상속 차단(위 effort 주석 참고).
+    '--effort',
+    opts.effort ?? 'medium',
+    // cwd를 tmpdir로 두는 것만으로는 사용자 스코프 MCP 설정이 걸릴 수 있다.
+    // --mcp-config 없이 이 플래그만 주면 MCP 서버를 하나도 안 붙인다 → 기동 지연·토큰 낭비 제거.
+    '--strict-mcp-config',
     '--append-system-prompt',
     opts.system,
     // 도구가 있을 때만 allowlist 부여. 빈 배열이면 플래그 자체를 빼서(값 없는 --allowedTools 오류 방지)
@@ -64,7 +76,11 @@ export async function runClaudeSubscription(opts: ClaudeCliOptions): Promise<str
       if (settled) return;
       settled = true;
       child.kill('SIGKILL');
-      reject(new Error(`Claude CLI 타임아웃(${timeoutMs}ms)`));
+      reject(
+        new Error(
+          `Claude CLI 타임아웃(${timeoutMs}ms · model=${opts.model ?? 'opus'} effort=${opts.effort ?? 'medium'} tools=${tools.join(',') || '없음'})`
+        )
+      );
     }, timeoutMs);
 
     child.stdout.on('data', (d) => (stdout += d.toString()));

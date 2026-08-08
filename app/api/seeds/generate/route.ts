@@ -9,7 +9,9 @@ import { slugify } from '@/lib/utils';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 // 리서치 포함 생성은 오래 걸릴 수 있음(로컬 실행 전제, 플랫폼 타임아웃 없음).
-export const maxDuration = 300;
+// 최악 시나리오(본문 240s + JSON복구 60s + 스키마복구 60s = 360s)를 담도록 여유를 둔다.
+// 이 값이 CLI 타임아웃 합보다 작으면 복구 도중 라우트가 먼저 죽어 원인 파악이 어려워진다.
+export const maxDuration = 600;
 
 export async function POST(req: NextRequest) {
   // 1) admin 인증 (app/api/ai-draft/route.ts 패턴)
@@ -65,7 +67,12 @@ export async function POST(req: NextRequest) {
   // 제목의 [출처] 태그는 벗겨서 초안·프롬프트에 새지 않게 함(구 데이터 방어).
   const primaryTitle = stripSeedTitleTag(primary.title);
   const mergedTitle = seeds.length === 1 ? primaryTitle : `${primaryTitle} 외 ${seeds.length - 1}건`;
-  const mergedSummary = seeds.map((s) => `# ${stripSeedTitleTag(s.title)}\n${s.raw_text ?? ''}`).join('\n\n---\n\n');
+  // 씨앗 원문은 씨앗당 상한을 두고 병합한다. 무제한이면 여러 건 선택 시 프롬프트가 그대로 폭증해
+  // 생성이 느려지고 타임아웃 위험이 커진다(proposeEdge의 .slice(0, 16000)와 같은 취지).
+  const PER_SEED_CHARS = 8000;
+  const mergedSummary = seeds
+    .map((s) => `# ${stripSeedTitleTag(s.title)}\n${(s.raw_text ?? '').slice(0, PER_SEED_CHARS)}`)
+    .join('\n\n---\n\n');
   const sourceType = primary.source_type ?? undefined;
   const bucket = primary.bucket ?? undefined;
 
