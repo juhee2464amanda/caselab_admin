@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { createSupabaseAdminClient } from '@/lib/supabase/admin';
 import { rewriteSlide, rewriteSlideVariants, type CardSource } from '@/lib/cardpress/generate';
-import type { ContentRowLite, SeedRowLite } from '@/lib/cardpress/mapping';
+import type { ContentRowLite, SeedRowLite, ToolRowLite } from '@/lib/cardpress/mapping';
+import { TOOL_SOURCE_SELECT } from '@/lib/cardpress/tool-source';
 import type { CardTemplateId } from '@/types/cardpress';
 
 export const runtime = 'nodejs';
@@ -29,7 +30,7 @@ export async function POST(req: NextRequest) {
   }
 
   const body = (await req.json()) as {
-    sourceType?: 'content' | 'seed';
+    sourceType?: 'content' | 'tool' | 'seed';
     sourceId?: string;
     sourceSection?: string;
     template?: CardTemplateId;
@@ -43,7 +44,16 @@ export async function POST(req: NextRequest) {
 
   const admin = createSupabaseAdminClient();
   let source: CardSource;
-  if (body.sourceType === 'seed') {
+  if (body.sourceType === 'tool') {
+    const { data: tool, error } = await admin
+      .from('tools')
+      .select(TOOL_SOURCE_SELECT)
+      .eq('id', body.sourceId)
+      .maybeSingle();
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    if (!tool) return NextResponse.json({ error: '자료 없음' }, { status: 404 });
+    source = { kind: 'tool', tool: tool as unknown as ToolRowLite };
+  } else if (body.sourceType === 'seed') {
     const { data: seed, error } = await admin
       .from('content_seeds')
       .select('id, title, raw_text, lane, suggested_angle, note, essence, source_url')

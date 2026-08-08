@@ -2,14 +2,20 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { createSupabaseAdminClient } from '@/lib/supabase/admin';
 import { generateCardSet, type CardSource } from '@/lib/cardpress/generate';
-import type { ContentRowLite, SeedRowLite } from '@/lib/cardpress/mapping';
+import type { ContentRowLite, SeedRowLite, ToolRowLite } from '@/lib/cardpress/mapping';
+import {
+  TOOL_SOURCE_SELECT,
+  toolMaterialIssue,
+  toolVisibilityIssue,
+  type ToolSourceRow,
+} from '@/lib/cardpress/tool-source';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 export const maxDuration = 300; // AI 재작성 + 재압축 루프 포함 — 구독 CLI 호출이라 넉넉히
 
-// 발행 콘텐츠 또는 씨앗 아카이브 원석 → 카드 3종 세트(auto_draft) 생성.
-// body: { sourceType: 'content' | 'seed', sourceId: uuid, dryRun?: boolean }
+// 본가 발행물(콘텐츠·자료실) 또는 씨앗 아카이브 원석 → 카드 3종 세트(auto_draft) 생성.
+// body: { sourceType: 'content' | 'tool' | 'seed', sourceId: uuid, dryRun?: boolean }
 // dryRun: DB에 안 쓰고 생성 결과만 반환 (1020 마이그레이션 적용 전 검증·미리보기용).
 export async function POST(req: NextRequest) {
   const devBypass =
@@ -39,14 +45,32 @@ export async function POST(req: NextRequest) {
     ctaType?: 'info_save' | 'comment_dm';
     ctaKeyword?: string;
   };
-  if (body.sourceType === 'tool')
-    return NextResponse.json({ error: 'tool 소스는 다음 단계에서 지원' }, { status: 501 });
-  if ((body.sourceType !== 'content' && body.sourceType !== 'seed') || !body.sourceId)
-    return NextResponse.json({ error: 'sourceType=content|seed + sourceId 필요' }, { status: 400 });
+  if (!body.sourceType || !['content', 'tool', 'seed'].includes(body.sourceType) || !body.sourceId)
+    return NextResponse.json({ error: 'sourceType=content|tool|seed + sourceId 필요' }, { status: 400 });
 
   const admin = createSupabaseAdminClient();
   let source: CardSource;
-  if (body.sourceType === 'seed') {
+  if (body.sourceType === 'tool') {
+    const { data: tool, error } = await admin
+      .from('tools')
+      .select(TOOL_SOURCE_SELECT)
+      .eq('id', body.sourceId)
+      .maybeSingle();
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    if (!tool) return NextResponse.json({ error: '자료 없음' }, { status: 404 });
+    const row = tool as unknown as ToolSourceRow;
+    // 본가 실노출 기준과 동일하게 검증 — published여도 /tools는 기능분류(subcategory_id)가
+    // 있어야 보인다. 안 보이는 자료로 카드를 만들면 스레드 링크가 404가 된다.
+    const invisible = toolVisibilityIssue(row);
+    if (invisible) return NextResponse.json({ error: invisible }, { status: 409 });
+    const thin = toolMaterialIssue(row);
+    if (thin)
+      return NextResponse.json(
+        { error: `${thin} 본가에서 본문·리치 섹션을 채운 뒤 다시 시도하세요.` },
+        { status: 422 }
+      );
+    source = { kind: 'tool', tool: row as ToolRowLite };
+  } else if (body.sourceType === 'seed') {
     const { data: seed, error } = await admin
       .from('content_seeds')
       .select('id, title, raw_text, lane, suggested_angle, note, essence, source_url, status')

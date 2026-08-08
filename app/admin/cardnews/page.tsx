@@ -1,5 +1,12 @@
 import { createSupabaseServerClient, isSupabaseConfigured } from '@/lib/supabase/server';
-import { CardPressManager, type CardRow, type SeedSourceRow, type SourceRow } from '@/components/admin/CardPressManager';
+import {
+  CardPressManager,
+  type CardRow,
+  type SeedSourceRow,
+  type SourceRow,
+  type ToolSourceItem,
+} from '@/components/admin/CardPressManager';
+import { TOOL_SOURCE_SELECT, toolSourceState, type ToolSourceRow } from '@/lib/cardpress/tool-source';
 
 // /admin/cardnews — 카드프레스 검수 스튜디오 (콘텐츠 스튜디오 탭).
 // 발행 콘텐츠에서 자동 생성된 인스타 캐러셀·캡션·스레드 3종 세트를 검수→발행. (docs/09_card_press_spec.md)
@@ -31,6 +38,20 @@ export default async function AdminCardnews() {
     .order('created_at', { ascending: false })
     .limit(30);
 
+  // 본가 자료실(tools) 발행물 — /guides · /prompts · /tools 소재.
+  // body(jsonb)까지 읽어야 "카드 재료가 있는지"를 여기서 판정할 수 있다(수십 건 규모라 부담 없음).
+  const { data: toolRows } = await supabase
+    .from('tools')
+    .select(TOOL_SOURCE_SELECT)
+    .eq('status', 'published')
+    .order('created_at', { ascending: false });
+
+  // 본가 실노출 + 재료 유무를 서버에서 판정해 UI로 넘긴다(클라이언트가 body를 다시 안 봐도 되게).
+  const toolSources: ToolSourceItem[] = ((toolRows ?? []) as unknown as ToolSourceRow[]).map((t) => {
+    const { usable, reason, kind } = toolSourceState(t);
+    return { id: t.id, name: t.name, slug: t.slug, category: t.category, kind, usable, reason };
+  });
+
   return (
     <div className="p-4 sm:p-8">
       {/* 라이브 캔버스가 실물과 같은 서체로 보이도록 Pretendard 로드 (Satori 렌더와 동일 폰트) */}
@@ -49,6 +70,7 @@ export default async function AdminCardnews() {
         initial={(cards ?? []) as CardRow[]}
         sources={(contents ?? []) as SourceRow[]}
         seeds={(seeds ?? []) as SeedSourceRow[]}
+        toolSources={toolSources}
       />
     </div>
   );
