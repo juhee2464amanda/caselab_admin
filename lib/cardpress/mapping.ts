@@ -395,6 +395,204 @@ export function buildSeedSlidePlan(seed: SeedRowLite): SlidePlan {
   return { accent: 'cat-trend', slides, images: [], selectTarget };
 }
 
+// ── 자료실(tools) 소스 — 본가 /guides · /prompts · /tools 발행물 ────────────────
+// contents와 달리 body 스키마가 category별로 다르다(가이드=링크카드+리치섹션,
+// 프롬프트=prompt 문자열, 도구=about/whenToUse/features/pricing).
+// 공통 재료 추출 → 있는 것만 슬라이드로. 재료가 없으면 planner가 빈 계획을 내고
+// 호출부가 "재료 부족"으로 막는다(카드 5장을 억지로 못 채우게).
+
+export type ToolRowLite = {
+  id: string;
+  /** tool | prompt | guide | context-card */
+  category: string;
+  name: string;
+  slug: string;
+  description: string | null;
+  url: string | null;
+  thumbnail_url: string | null;
+  body: Record<string, unknown> | null;
+};
+
+type ToolChunk = { section: string; heading: string; text: string };
+
+function asRecord(v: unknown): Record<string, unknown> | null {
+  return v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : null;
+}
+function asArray(v: unknown): unknown[] {
+  return Array.isArray(v) ? v : [];
+}
+function str(v: unknown): string {
+  return typeof v === 'string' ? v.trim() : '';
+}
+
+/** 카테고리별 body에서 "AI에 줄 원문 재료"를 순서대로 뽑는다. 없는 필드는 조용히 건너뛴다. */
+function toolChunks(row: ToolRowLite): ToolChunk[] {
+  const b = row.body ?? {};
+  const out: ToolChunk[] = [];
+
+  // 프롬프트 — 본문 = 프롬프트 원문
+  const prompt = str(b.prompt);
+  if (prompt) out.push({ section: 'tool:prompt', heading: '프롬프트 원문', text: prompt });
+
+  // 도구 — 소개 문단 / 언제 쓰나 / 주요 기능 / 가격
+  const about = asRecord(b.about);
+  const paragraphs = asArray(about?.paragraphs).map(str).filter(Boolean);
+  if (paragraphs.length) out.push({ section: 'tool:about', heading: str(about?.heading) || '소개', text: paragraphs.join('\n\n') });
+
+  const whenToUse = asArray(b.whenToUse)
+    .map(asRecord)
+    .filter(Boolean)
+    .map((w) => [str(w!.title), str(w!.desc)].filter(Boolean).join(' — '))
+    .filter(Boolean);
+  if (whenToUse.length) out.push({ section: 'tool:whenToUse', heading: '언제 쓰면 좋은가', text: whenToUse.join('\n') });
+
+  asArray(b.features)
+    .map(asRecord)
+    .filter(Boolean)
+    .slice(0, 6)
+    .forEach((f, i) => {
+      const text = [str(f!.title), str(f!.desc)].filter(Boolean).join('\n');
+      if (text) out.push({ section: `tool:feature#${String(i + 1).padStart(2, '0')}`, heading: str(f!.title) || '기능', text });
+    });
+
+  const pricing = asArray(b.pricing)
+    .map(asRecord)
+    .filter(Boolean)
+    .map((p) => [str(p!.name), str(p!.amount), str(p!.includes)].filter(Boolean).join(' · '))
+    .filter(Boolean);
+  if (pricing.length) {
+    out.push({ section: 'tool:pricing', heading: '가격', text: [...pricing, str(b.pricingNote)].filter(Boolean).join('\n') });
+  }
+
+  // 가이드 — 리치 본문(문자열)
+  const bodyRich = str(b.bodyRich);
+  if (bodyRich) out.push({ section: 'tool:bodyRich', heading: '본문', text: bodyRich });
+
+  // 설명이 한 문단 이상이면 본문 재료로도 쓴다 — 프롬프트 자료는 설명이 곧 해설이라
+  // 커버에만 쓰고 버리면 본문 슬라이드가 프롬프트 원문 한 장뿐이 된다.
+  const desc = (row.description ?? '').trim();
+  if (desc.length >= 120) out.push({ section: 'tool:description', heading: '이 자료는', text: desc });
+
+  // 공통 — 자유 리치 섹션(가이드·프롬프트·도구 모두 지원)
+  asArray(b.sections).forEach((s, i) => {
+    const sec = asRecord(s);
+    if (!sec) return;
+    const text = blocksToText(sec.blocks as Block[] | undefined);
+    if (!text.trim()) return;
+    out.push({
+      section: `tool:section#${String(i + 1).padStart(2, '0')}`,
+      heading: str(sec.heading) || str(sec.label) || '섹션',
+      text,
+    });
+  });
+
+  return out;
+}
+
+/** body 안에 흩어진 이미지(리치 섹션·기능 스크린샷) + 썸네일 */
+function toolImages(row: ToolRowLite): string[] {
+  const b = row.body ?? {};
+  const urls: string[] = [];
+  if (row.thumbnail_url) urls.push(row.thumbnail_url);
+  asArray(b.images).forEach((im) => {
+    const u = str(asRecord(im)?.url);
+    if (u) urls.push(u);
+  });
+  asArray(b.features).forEach((f) => {
+    const u = str(asRecord(asRecord(f)?.image)?.url);
+    if (u) urls.push(u);
+  });
+  asArray(b.sections).forEach((s) => {
+    urls.push(...imagesFromBlocks(asRecord(s)?.blocks as Block[] | undefined));
+  });
+  return Array.from(new Set(urls.filter((u) => /^https?:\/\//.test(u))));
+}
+
+/**
+ * 카드 재료 총량(글자 수). 본가에 발행돼 있어도 링크 카드뿐인 가이드는 100자 아래로 나온다
+ * → 호출부가 "재료 부족"으로 안내하고 억지 생성을 막는다.
+ * (설명이 짧으면 chunk에 안 들어가므로 여기서 한 번 더 더한다 — 중복 없이 총량만 본다)
+ */
+export function toolMaterialLength(row: ToolRowLite): number {
+  const chunks = toolChunks(row);
+  const total = chunks.reduce((n, c) => n + c.text.length, 0);
+  const desc = (row.description ?? '').trim();
+  return chunks.some((c) => c.section === 'tool:description') ? total : total + desc.length;
+}
+
+/** 카드 본문으로 쓸 만한 최소 재료 — 이 밑이면 커버·아웃트로밖에 못 만든다.
+ *  현 데이터 기준: 링크 카드형 가이드 ≈ 50~77자(차단), 프롬프트 ≈ 480자·도구 ≈ 1,800자(통과). */
+export const TOOL_MIN_MATERIAL = 300;
+
+const TOOL_KIND_LABEL: Record<string, string> = {
+  prompt: '프롬프트',
+  guide: '가이드',
+  'context-card': '맥락 카드',
+  tool: '도구',
+};
+
+export function toolKindLabel(category: string): string {
+  return TOOL_KIND_LABEL[category] ?? '자료실';
+}
+
+/** 본가 자료실 URL — 카테고리별 라우트가 다르다(/prompts · /guides · /tools) */
+export function toolUrl(row: Pick<ToolRowLite, 'category' | 'slug'>): string {
+  const base = (process.env.NEXT_PUBLIC_MAIN_SITE_URL ?? 'https://caselab.kr').replace(/\/$/, '');
+  const seg =
+    row.category === 'prompt' ? 'prompts' : row.category === 'tool' ? 'tools' : 'guides';
+  return `${base}/${seg}/${row.slug}`;
+}
+
+/** 자료실 발행물 → 슬라이드 계획. 재료 chunk를 순서대로 깔고, 많으면 AI가 대표를 선정한다. */
+export function buildToolSlidePlan(row: ToolRowLite): SlidePlan {
+  const kind = toolKindLabel(row.category);
+  const desc = (row.description ?? '').trim();
+  const chunks = toolChunks(row);
+  const images = toolImages(row);
+
+  const coverMat = [`${kind}: ${row.name}`, desc && `설명: ${desc}`, chunks[0] && `도입: ${chunks[0].text.slice(0, 300)}`]
+    .filter(Boolean)
+    .join('\n');
+
+  const slides: SlidePlanItem[] = [
+    { template: 'C2', sourceSection: 'tool:cover', material: coverMat, alternatives: ['C1', 'C5'], image: images[0] },
+  ];
+
+  // 프롬프트는 패턴 슬라이드(B8)가 정체성 — 원문이 있으면 반드시 한 장 낸다.
+  const promptChunk = chunks.find((c) => c.section === 'tool:prompt');
+  if (promptChunk) {
+    slides.push({
+      template: 'B8',
+      sourceSection: promptChunk.section,
+      material: promptChunk.text,
+      alternatives: ['B2', 'B3'],
+      required: '프롬프트 자료는 패턴 슬라이드가 핵심 가치',
+    });
+  }
+
+  const rest = chunks.filter((c) => c.section !== 'tool:prompt');
+  const optional = rest.length > 3;
+  rest.slice(0, 6).forEach((c) => {
+    slides.push({
+      template: c.section === 'tool:whenToUse' || c.section === 'tool:pricing' ? 'B1' : 'B2',
+      sourceSection: c.section,
+      material: `${c.heading}\n${c.text}`,
+      alternatives: ['B2', 'B7', 'B4', 'B3'],
+      optional,
+    });
+  });
+
+  slides.push({
+    template: 'O1',
+    sourceSection: 'tool:outro',
+    material: [`${kind}: ${row.name}`, desc, chunks.at(-1)?.text ?? ''].filter(Boolean).join('\n'),
+  });
+
+  const optCount = slides.filter((s) => s.optional).length;
+  const selectTarget = optCount > 0 ? Math.min(6, Math.max(3, Math.round(optCount / 2))) : undefined;
+  return { accent: 'cat-tool', slides, images, selectTarget };
+}
+
 /** 발행 콘텐츠 → 슬라이드 계획. 섹션이 없으면 해당 슬라이드가 빠진다(장수 가변이 정상). */
 export function buildSlidePlan(row: ContentRowLite): SlidePlan {
   const accent: CardAccent = row.track === 'case' ? 'cat-case' : 'cat-trend';

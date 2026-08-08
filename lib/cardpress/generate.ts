@@ -10,12 +10,16 @@ import {
 import {
   buildSeedSlidePlan,
   buildSlidePlan,
+  buildToolSlidePlan,
   contentUrl,
   seedTitle,
+  toolKindLabel,
+  toolUrl,
   type ContentRowLite,
   type SeedRowLite,
   type SlidePlan,
   type SlidePlanItem,
+  type ToolRowLite,
 } from '@/lib/cardpress/mapping';
 
 // AI 슬라이드용 재작성 (spec §3-②) — 매핑 계획(mapping.ts)의 섹션 재료를
@@ -24,24 +28,42 @@ import {
 
 export type CardCtaType = 'info_save' | 'comment_dm';
 
-/** 카드 소스 2원화 — 본가 발행 콘텐츠 또는 씨앗 아카이브 원석 */
+/**
+ * 카드 소스 3원화 — 본가에 발행돼 유저에게 보이는 것 전부 + 미발행 씨앗 원석.
+ *  content  contents(case/trend)  → 본가 /cases · /trends
+ *  tool     tools(가이드·프롬프트·도구) → 본가 /guides · /prompts · /tools
+ *  seed     content_seeds          → 미발행(본가 링크 없음)
+ */
 export type CardSource =
   | { kind: 'content'; row: ContentRowLite }
+  | { kind: 'tool'; tool: ToolRowLite }
   | { kind: 'seed'; seed: SeedRowLite };
 
 function sourcePlan(src: CardSource): SlidePlan {
-  return src.kind === 'content' ? buildSlidePlan(src.row) : buildSeedSlidePlan(src.seed);
+  if (src.kind === 'content') return buildSlidePlan(src.row);
+  if (src.kind === 'tool') return buildToolSlidePlan(src.tool);
+  return buildSeedSlidePlan(src.seed);
 }
 
 function sourceTitle(src: CardSource): string {
-  return src.kind === 'content' ? src.row.title : seedTitle(src.seed);
+  if (src.kind === 'content') return src.row.title;
+  if (src.kind === 'tool') return src.tool.name;
+  return seedTitle(src.seed);
 }
 
 /** planPrompt 등 프롬프트 헤더의 한 줄 표기 */
 function sourceLabel(src: CardSource): string {
-  return src.kind === 'content'
-    ? `${src.row.track === 'case' ? '실전 케이스' : 'AI 트렌드'} · ${src.row.title}`
-    : `씨앗 원석 · ${seedTitle(src.seed)}`;
+  if (src.kind === 'content')
+    return `${src.row.track === 'case' ? '실전 케이스' : 'AI 트렌드'} · ${src.row.title}`;
+  if (src.kind === 'tool') return `${toolKindLabel(src.tool.category)} · ${src.tool.name}`;
+  return `씨앗 원석 · ${seedTitle(src.seed)}`;
+}
+
+/** 스레드 글에 붙일 본가 URL — 씨앗은 아직 본가에 없으므로 null */
+function sourceUrl(src: CardSource): string | null {
+  if (src.kind === 'content') return contentUrl(src.row);
+  if (src.kind === 'tool') return toolUrl(src.tool);
+  return null;
 }
 
 export type CoverCandidate = { thumb: string; full: string; credit: string; creditLink: string };
@@ -323,7 +345,12 @@ function planPrompt(
       ? `트랙: ${source.row.track === 'case' ? '실전 케이스' : 'AI 트렌드'}
 제목: ${source.row.title}
 요약: ${source.row.summary ?? '(없음)'}`
-      : `소재: 씨앗 아카이브 원석 (미발행 수집 글 — 재료가 거칠 수 있음. 재료에 실제로 있는 사실만 사용)
+      : source.kind === 'tool'
+        ? `소재: 본가 자료실 ${toolKindLabel(source.tool.category)} (이미 발행돼 유저에게 보이는 자료)
+제목: ${source.tool.name}
+설명: ${source.tool.description ?? '(없음)'}
+원본 링크: ${source.tool.url ?? '(없음)'}`
+        : `소재: 씨앗 아카이브 원석 (미발행 수집 글 — 재료가 거칠 수 있음. 재료에 실제로 있는 사실만 사용)
 제목: ${seedTitle(source.seed)}
 추천 각도: ${source.seed.suggested_angle ?? '(없음)'}`;
   return `[콘텐츠]
@@ -675,7 +702,7 @@ ${lastIssues.map((i) => `- ${i}`).join('\n')}`;
 
   const tags = [...FIXED_TAGS, ...CATEGORY_TAGS[plan.accent]];
   // 씨앗 소스는 본가 페이지가 없음 — 스레드에 URL을 붙이지 않는다
-  const url = source.kind === 'content' ? contentUrl(source.row) : null;
+  const url = sourceUrl(source);
   const threads =
     !url || lastRaw.threadsText.includes(url)
       ? lastRaw.threadsText.trim()

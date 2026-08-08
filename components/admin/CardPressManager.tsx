@@ -53,6 +53,22 @@ export type SourceRow = {
   published_at?: string | null;
 };
 
+/**
+ * 카드뉴스 소스 ③ — 본가 자료실(tools) 발행물.
+ * usable/reason은 서버(lib/cardpress/tool-source)가 본가 실노출 규칙 + 재료량으로 판정해 넘긴다.
+ * 못 쓰는 자료도 목록에서 지우지 않고 사유와 함께 보여준다("있는데 안 보임"을 없애려는 것).
+ */
+export type ToolSourceItem = {
+  id: string;
+  name: string;
+  slug: string;
+  category: string;
+  /** 가이드 · 프롬프트 · 도구 · 맥락 카드 */
+  kind: string;
+  usable: boolean;
+  reason: string | null;
+};
+
 /** 씨앗 아카이브 후보 — 카드뉴스 소스 ① (미발행 원석) */
 export type SeedSourceRow = {
   id: string;
@@ -293,10 +309,12 @@ export function CardPressManager({
   initial,
   sources,
   seeds = [],
+  toolSources = [],
 }: {
   initial: CardRow[];
   sources: SourceRow[];
   seeds?: SeedSourceRow[];
+  toolSources?: ToolSourceItem[];
 }) {
   const router = useRouter();
   const supabase = createSupabaseBrowserClient();
@@ -308,14 +326,20 @@ export function CardPressManager({
   const filtered = statusFilter === 'all' ? initial : initial.filter((c) => c.status === statusFilter);
 
   // 카드 없는 발행 콘텐츠 → 수동 생성 후보 (검색·트랙 필터·조회수 정렬)
-  const withoutCard = sources.filter(
-    (s) => !initial.some((c) => c.source_type === 'content' && c.source_id === s.id)
+  const cardBySource = useMemo(
+    () => new Map(initial.filter((c) => c.source_type === 'content').map((c) => [c.source_id, c])),
+    [initial]
   );
+  const withoutCard = sources.filter((s) => !cardBySource.has(s.id));
   const [generating, setGenerating] = useState<string | null>(null);
   const [srcQuery, setSrcQuery] = useState('');
   const [srcTrack, setSrcTrack] = useState<'all' | 'case' | 'trend'>('all');
   const [srcSort, setSrcSort] = useState<'recent' | 'views'>('views');
   const [srcExpanded, setSrcExpanded] = useState(false);
+  // 카드가 이미 있는 발행 글은 후보에서 빠진다 → 목록이 비면 "본가에 글이 없다"로 오독된다.
+  // 감추지 말고 '카드 있음'으로 함께 보여주고, 눌러서 그 카드로 이동하게 한다.
+  const [showCarded, setShowCarded] = useState(false);
+  const alreadyCarded = sources.filter((s) => cardBySource.has(s.id));
   const candidates = withoutCard
     .filter((s) => (srcTrack === 'all' ? true : s.track === srcTrack))
     .filter((s) => (srcQuery.trim() ? s.title.toLowerCase().includes(srcQuery.trim().toLowerCase()) : true))
@@ -327,20 +351,37 @@ export function CardPressManager({
   // top3만 기본 노출 — 검색 중이거나 펼치면 전체
   const visibleCandidates = srcQuery.trim() || srcExpanded ? candidates : candidates.slice(0, 3);
 
+  // ③ 자료실 후보 — 카드 있는 것 제외 → 쓸 수 있는 것(usable)만 후보, 나머지는 사유와 함께 노출
+  const [toolQuery, setToolQuery] = useState('');
+  const [toolExpanded, setToolExpanded] = useState(false);
+  const [showBlocked, setShowBlocked] = useState(false);
+  const toolCarded = toolSources.filter((t) =>
+    initial.some((c) => c.source_type === 'tool' && c.source_id === t.id)
+  );
+  const toolPool = toolSources.filter(
+    (t) => !initial.some((c) => c.source_type === 'tool' && c.source_id === t.id)
+  );
+  const toolCandidates = toolPool
+    .filter((t) => t.usable)
+    .filter((t) => (toolQuery.trim() ? t.name.toLowerCase().includes(toolQuery.trim().toLowerCase()) : true));
+  const visibleToolCandidates = toolQuery.trim() || toolExpanded ? toolCandidates : toolCandidates.slice(0, 3);
+  const blockedTools = toolPool.filter((t) => !t.usable);
+
   // 씨앗 아카이브 후보 — 서버에서 최신순으로 옴. 카드가 이미 있는 씨앗 제외, top3 (맨 위=main)
   const seedCandidates = seeds
     .filter((s) => !initial.some((c) => c.source_type === 'seed' && c.source_id === s.id))
     .slice(0, 3);
   const seedMap = useMemo(() => new Map(seeds.map((s) => [s.id, s])), [seeds]);
+  const toolMap = useMemo(() => new Map(toolSources.map((t) => [t.id, t])), [toolSources]);
 
   // 만들기 씬: 소재 선택 → 기획 설정(엣지·CTA) → 생성 시작 → 완료 시 새 카드로 자동 진입
   const [composeId, setComposeId] = useState<string | null>(null);
-  const [composeKind, setComposeKind] = useState<'content' | 'seed'>('content');
+  const [composeKind, setComposeKind] = useState<'content' | 'tool' | 'seed'>('content');
   const [composeEdge, setComposeEdge] = useState('');
   const [composeCta, setComposeCta] = useState<'comment_dm' | 'info_save'>('comment_dm');
   const [composeKeyword, setComposeKeyword] = useState('프롬프트');
 
-  function startCompose(kind: 'content' | 'seed', sourceId: string) {
+  function startCompose(kind: 'content' | 'tool' | 'seed', sourceId: string) {
     setComposeKind(kind);
     setComposeId(sourceId);
     setComposeEdge('');
@@ -376,7 +417,7 @@ export function CardPressManager({
   }
 
   // 기획 설정 패널 — 두 소스 패널이 공유 (생성 전에 방향을 정하는 씬)
-  function composePanel(kind: 'content' | 'seed', id: string) {
+  function composePanel(kind: 'content' | 'tool' | 'seed', id: string) {
     if (composeKind !== kind || composeId !== id) return null;
     return (
       <div className="mt-2 mb-1 rounded-lg border border-accent/30 bg-accent/5 p-3 space-y-2.5">
@@ -447,13 +488,14 @@ export function CardPressManager({
 
   return (
     <div className="space-y-6">
-      {/* 1. 새 카드뉴스 만들기 — 소스 2원화: ① 씨앗 아카이브(최신이 main) ② 본가 발행 콘텐츠 */}
+      {/* 1. 새 카드뉴스 만들기 — 소스 3원화: ① 씨앗 아카이브 ② 본가 콘텐츠 ③ 본가 자료실.
+          본가에 발행돼 유저에게 보이는 것은 ②+③으로 전부 덮는다(케이스·트렌드 / 가이드·프롬프트·도구). */}
       <div className="card p-4 space-y-3">
         <div className="text-sm font-semibold">
           새 카드뉴스 만들기{' '}
-          <span className="text-xs text-ink/40 font-normal">씨앗 아카이브 원석 또는 본가 발행 콘텐츠에서 소재 선택</span>
+          <span className="text-xs text-ink/40 font-normal">씨앗 아카이브 원석 또는 본가 발행물에서 소재 선택</span>
         </div>
-        <div className="grid gap-4 lg:grid-cols-2">
+        <div className="grid gap-4 lg:grid-cols-3">
           {/* ① 씨앗 아카이브 top3 — 맨 위(최신)가 메인 */}
           <div className="space-y-1.5">
             <div className="flex items-center justify-between gap-2">
@@ -550,7 +592,110 @@ export function CardPressManager({
                 )}
               </>
             ) : (
-              <p className="text-xs text-ink/40">모든 발행 콘텐츠에 카드가 있어요. 새 콘텐츠를 발행하면 자동으로 여기에 대기합니다.</p>
+              <p className="text-xs text-ink/40">
+                {sources.length === 0
+                  ? '본가 /cases · /trends에 발행된 글이 아직 없어요. 콘텐츠를 발행하면 여기에 대기합니다.'
+                  : `본가 발행 글 ${sources.length}건이 모두 카드로 만들어져 있어요.`}
+              </p>
+            )}
+
+            {/* 카드가 이미 있는 발행 글 — 목록에서 사라진 이유를 드러낸다 */}
+            {alreadyCarded.length > 0 && (
+              <div className="pt-1">
+                <button onClick={() => setShowCarded(!showCarded)} className="text-[11px] text-ink/50 hover:text-ink/80">
+                  {showCarded ? '접기 ▴' : `카드 있는 발행 글 ${alreadyCarded.length}건 보기 ▾`}
+                </button>
+                {showCarded && (
+                  <div className="mt-1 space-y-1">
+                    {alreadyCarded.map((s) => (
+                      <div key={s.id} className="flex items-center justify-between gap-3 text-xs text-ink/60">
+                        <span className="truncate">
+                          <span className="badge bg-ink/10 text-ink/60 mr-1.5">카드 있음</span>
+                          {s.title}
+                        </span>
+                        <button
+                          onClick={() => setSelectedId(cardBySource.get(s.id)!.id)}
+                          className="shrink-0 text-accent hover:underline"
+                        >
+                          카드 열기 →
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+          </div>
+
+          {/* ③ 본가 자료실(가이드·프롬프트·도구) — /guides · /prompts · /tools 발행물 */}
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between gap-2">
+              <div className="text-xs font-semibold text-ink/70">
+                ③ 본가 자료실 <span className="text-ink/40 font-normal">가이드 · 프롬프트 · 도구</span>
+              </div>
+              <a href="/admin/tools" className="text-[11px] text-accent hover:underline shrink-0">자료실 관리 →</a>
+            </div>
+            {toolSources.length === 0 ? (
+              <p className="text-xs text-ink/40">본가 자료실에 발행된 자료가 아직 없어요.</p>
+            ) : (
+              <>
+                <Input value={toolQuery} onChange={(e) => setToolQuery(e.target.value)} placeholder="이름 검색" />
+                <div className="space-y-1.5 max-h-72 overflow-y-auto">
+                  {visibleToolCandidates.map((t) => (
+                    <div key={t.id}>
+                      <div className="flex items-center justify-between gap-3 text-sm">
+                        <span className="min-w-0 truncate">
+                          <span className="badge bg-ink/10 text-ink/60 mr-1.5">{t.kind}</span>
+                          {t.name}
+                        </span>
+                        <Button
+                          size="sm"
+                          variant={composeKind === 'tool' && composeId === t.id ? 'accent' : 'outline'}
+                          disabled={generating !== null}
+                          onClick={() =>
+                            composeKind === 'tool' && composeId === t.id ? setComposeId(null) : startCompose('tool', t.id)
+                          }
+                        >
+                          {composeKind === 'tool' && composeId === t.id ? '닫기' : '만들기'}
+                        </Button>
+                      </div>
+                      {composePanel('tool', t.id)}
+                    </div>
+                  ))}
+                  {toolCandidates.length === 0 && (
+                    <p className="text-xs text-ink/40">
+                      {toolQuery.trim() ? '조건에 맞는 자료가 없어요.' : '카드로 만들 수 있는 자료가 없어요.'}
+                    </p>
+                  )}
+                </div>
+                {!toolQuery.trim() && toolCandidates.length > 3 && (
+                  <button onClick={() => setToolExpanded(!toolExpanded)} className="text-[11px] text-accent hover:underline">
+                    {toolExpanded ? '접기 ▴' : `전체 ${toolCandidates.length}개 보기 ▾`}
+                  </button>
+                )}
+                {/* 못 쓰는 자료는 숨기지 않고 사유를 보여준다 — "본가엔 있는데 여기 없다"를 없애려는 것 */}
+                {blockedTools.length > 0 && (
+                  <div className="pt-1">
+                    <button onClick={() => setShowBlocked(!showBlocked)} className="text-[11px] text-amber-600 hover:underline">
+                      {showBlocked ? '접기 ▴' : `카드로 못 만드는 자료 ${blockedTools.length}건 ▾`}
+                    </button>
+                    {showBlocked && (
+                      <div className="mt-1 space-y-1">
+                        {blockedTools.map((t) => (
+                          <div key={t.id} className="text-[11px] text-ink/50">
+                            <span className="text-ink/70">{t.name}</span>
+                            <span className="block text-amber-600">{t.reason}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+                {toolCarded.length > 0 && (
+                  <p className="text-[11px] text-ink/40">카드 있는 자료 {toolCarded.length}건은 목록에서 제외됐어요.</p>
+                )}
+              </>
             )}
           </div>
         </div>
@@ -573,6 +718,7 @@ export function CardPressManager({
           {filtered.map((c) => {
             const src = c.source_type === 'content' ? sourceMap.get(c.source_id) : undefined;
             const seedSrc = c.source_type === 'seed' ? seedMap.get(c.source_id) : undefined;
+            const toolSrc = c.source_type === 'tool' ? toolMap.get(c.source_id) : undefined;
             const st = STATUS_LABEL[c.status];
             const cover =
               (c.slides[0]?.props as Record<string, unknown> | undefined)?.coverImage as string | undefined;
@@ -592,10 +738,16 @@ export function CardPressManager({
                   <div className="min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="font-medium truncate">
-                        {src?.title ?? (seedSrc ? seedDisplayTitle(seedSrc) : c.source_id)}
+                        {src?.title ?? toolSrc?.name ?? (seedSrc ? seedDisplayTitle(seedSrc) : c.source_id)}
                       </span>
                       <span className="badge bg-ink/5 text-ink/60">
-                        {c.source_type === 'seed' ? '씨앗' : src?.track === 'case' ? '실전 케이스' : 'AI 트렌드'}
+                        {c.source_type === 'seed'
+                          ? '씨앗'
+                          : c.source_type === 'tool'
+                            ? (toolSrc?.kind ?? '자료실')
+                            : src?.track === 'case'
+                              ? '실전 케이스'
+                              : 'AI 트렌드'}
                       </span>
                       <span className="text-xs text-ink/40">{c.slides.filter((s) => s.enabled).length}장</span>
                     </div>
@@ -630,7 +782,9 @@ export function CardPressManager({
                   const s = seedMap.get(card.source_id);
                   return s ? seedDisplayTitle(s) : undefined;
                 })()
-              : sourceMap.get(card.source_id)?.title
+              : card.source_type === 'tool'
+                ? toolMap.get(card.source_id)?.name
+                : sourceMap.get(card.source_id)?.title
           }
         />
       )}

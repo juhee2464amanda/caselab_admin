@@ -1,7 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { createSupabaseAdminClient } from '@/lib/supabase/admin';
-import { buildSeedSlidePlan, buildSlidePlan, type ContentRowLite, type SeedRowLite } from '@/lib/cardpress/mapping';
+import {
+  buildSeedSlidePlan,
+  buildSlidePlan,
+  buildToolSlidePlan,
+  type ContentRowLite,
+  type SeedRowLite,
+  type ToolRowLite,
+} from '@/lib/cardpress/mapping';
+import { TOOL_SOURCE_SELECT } from '@/lib/cardpress/tool-source';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -31,7 +39,16 @@ export async function GET(req: NextRequest) {
 
   const admin = createSupabaseAdminClient();
   let plan;
-  if (sourceType === 'seed') {
+  if (sourceType === 'tool') {
+    const { data: tool, error } = await admin
+      .from('tools')
+      .select(TOOL_SOURCE_SELECT)
+      .eq('id', sourceId)
+      .maybeSingle();
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    if (!tool) return NextResponse.json({ error: '자료 없음' }, { status: 404 });
+    plan = buildToolSlidePlan(tool as unknown as ToolRowLite);
+  } else if (sourceType === 'seed') {
     const { data: seed, error } = await admin
       .from('content_seeds')
       .select('id, title, raw_text, lane, suggested_angle, note, essence, source_url')
