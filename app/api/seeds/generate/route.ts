@@ -8,10 +8,11 @@ import { slugify } from '@/lib/utils';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
-// 리서치 포함 생성은 오래 걸릴 수 있음(로컬 실행 전제, 플랫폼 타임아웃 없음).
-// 최악 시나리오(본문 240s + JSON복구 60s + 스키마복구 60s = 360s)를 담도록 여유를 둔다.
-// 이 값이 CLI 타임아웃 합보다 작으면 복구 도중 라우트가 먼저 죽어 원인 파악이 어려워진다.
-export const maxDuration = 600;
+// 리서치 포함 생성은 오래 걸릴 수 있음(로컬 실행 전제 — 로컬 next dev/start는 maxDuration을
+// 아예 적용하지 않으므로 최악 시나리오 360s도 로컬에선 안 죽는다).
+// 이 값은 Vercel 배포에서만 의미가 있는데, Hobby 플랜은 300 초과 시 배포 자체가 거부된다
+// (2026-08-08 프로덕션 배포 실패 원인). 생성은 어차피 로컬 전용이라 300이면 충분하다.
+export const maxDuration = 300;
 
 export async function POST(req: NextRequest) {
   // 1) admin 인증 (app/api/ai-draft/route.ts 패턴)
