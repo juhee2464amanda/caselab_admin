@@ -17,6 +17,7 @@ import { ToolPreview } from '@/components/admin/ToolPreview';
 import { RichSectionsEditor } from '@/components/admin/section-editors/RichSectionsEditor';
 import type { RichSection } from '@/types/content';
 import { RefineProvider, RefinePanel } from '@/components/admin/RefinePanel';
+import { AiImageFill } from '@/components/admin/AiImageFill';
 
 const CATEGORIES = ['tool', 'prompt', 'guide', 'context-card'] as const;
 const CATEGORY_LABELS: Record<typeof CATEGORIES[number], string> = {
@@ -546,7 +547,19 @@ export function ToolForm({ initial, onSaved, startInPreview }: Props) {
                 </p>
               </header>
               {parsedBody ? (
-                <RichSectionsEditor value={sections} onChange={setSections} />
+                <>
+                  <AiImageFill
+                    toolUrl={url}
+                    name={name}
+                    parsedBody={parsedBody}
+                    thumbnailUrl={thumbnailUrl}
+                    onApply={(patch) => {
+                      if (patch.thumbnailUrl) setThumbnailUrl(patch.thumbnailUrl);
+                      if (patch.addSections.length) setSections([...sections, ...patch.addSections]);
+                    }}
+                  />
+                  <RichSectionsEditor value={sections} onChange={setSections} />
+                </>
               ) : (
                 <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-600">
                   본문 JSON 오류로 섹션 편집을 열 수 없어요 — 아래 JSON을 먼저 고쳐 주세요.
