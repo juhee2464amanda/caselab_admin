@@ -547,19 +547,7 @@ export function ToolForm({ initial, onSaved, startInPreview }: Props) {
                 </p>
               </header>
               {parsedBody ? (
-                <>
-                  <AiImageFill
-                    toolUrl={url}
-                    name={name}
-                    parsedBody={parsedBody}
-                    thumbnailUrl={thumbnailUrl}
-                    onApply={(patch) => {
-                      if (patch.thumbnailUrl) setThumbnailUrl(patch.thumbnailUrl);
-                      if (patch.addSections.length) setSections([...sections, ...patch.addSections]);
-                    }}
-                  />
-                  <RichSectionsEditor value={sections} onChange={setSections} />
-                </>
+                <RichSectionsEditor value={sections} onChange={setSections} />
               ) : (
                 <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-600">
                   본문 JSON 오류로 섹션 편집을 열 수 없어요 — 아래 JSON을 먼저 고쳐 주세요.
@@ -598,6 +586,18 @@ export function ToolForm({ initial, onSaved, startInPreview }: Props) {
 
         {/* 우측 레일: 발행 준비 신호등(필수 항목 인라인 수정) + AI 제안 패널 */}
         <aside className="space-y-6">
+          {/* 이미지 채우기 — 초안 편집·상세 필드 어느 모드에서든 보이도록 레일에 둔다 */}
+          <AiImageFill
+            toolUrl={url}
+            name={name}
+            parsedBody={parsedBody}
+            thumbnailUrl={thumbnailUrl}
+            onApply={(patch) => {
+              if (patch.thumbnailUrl) setThumbnailUrl(patch.thumbnailUrl);
+              if (patch.addSections.length) setSections([...sections, ...patch.addSections]);
+            }}
+          />
+
           {/* 필수값을 여기서 바로 채우면 신호등이 초록으로 바뀌고 발행이 활성화된다 */}
           <section className="card p-5 xl:sticky xl:top-4">
             <div className="mb-4 flex items-center gap-2.5">

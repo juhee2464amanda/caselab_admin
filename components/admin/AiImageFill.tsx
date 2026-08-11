@@ -93,23 +93,28 @@ export function AiImageFill({
     setResult(null);
   }
 
+  const blocked = !toolUrl ? '메타의 URL 필드를 먼저 채워주세요' : !parsedBody ? '본문 JSON 오류를 먼저 고쳐주세요' : null;
+
   return (
-    <div className="mb-3 rounded-lg border border-dashed border-border bg-muted/20 p-3">
-      <div className="flex items-center gap-2">
-        <Sparkles className="h-4 w-4 text-accent" />
-        <span className="text-xs font-semibold">이미지 채우기 (AI)</span>
-        <span className="text-[11px] text-ink/45">공식 사이트를 캡처해 기능별 이미지를 제안해요 · 로컬 전용</span>
-        <Button
-          size="sm"
-          variant="outline"
-          className="ml-auto h-7 text-xs"
-          onClick={run}
-          disabled={running || !toolUrl}
-          title={toolUrl ? undefined : '메타의 URL 필드를 먼저 채워주세요'}
-        >
-          <ImagePlus className="h-3.5 w-3.5" /> {running ? '캡처·매칭 중… (1~3분)' : '후보 만들기'}
-        </Button>
+    <section className="card p-5">
+      <div className="mb-2 flex items-center gap-2">
+        <Sparkles className="h-4 w-4 shrink-0 text-accent" />
+        <h2 className="text-sm font-semibold">이미지 채우기 (AI)</h2>
       </div>
+      <p className="mb-3 text-[11px] text-ink/45 break-keep">
+        공식 사이트를 캡처해 기능별 이미지를 제안해요. 내 컴퓨터에서만 동작합니다.
+      </p>
+      <Button
+        size="sm"
+        variant="outline"
+        className="h-8 w-full text-xs"
+        onClick={run}
+        disabled={running || Boolean(blocked)}
+        title={blocked ?? undefined}
+      >
+        <ImagePlus className="h-3.5 w-3.5" /> {running ? '캡처·매칭 중… (1~3분)' : '후보 만들기'}
+      </Button>
+      {blocked && <p className="mt-1.5 text-[11px] text-amber-600">{blocked}</p>}
 
       {err && (
         <p className="mt-2 flex items-center gap-1 text-[11px] text-red-600">
@@ -158,17 +163,17 @@ export function AiImageFill({
           ))}
 
           {(result.matches.length > 0 || result.thumbnail) && (
-            <div className="flex items-center gap-2">
-              <Button size="sm" variant="accent" className="h-7 text-xs" onClick={apply}>
+            <div>
+              <Button size="sm" variant="accent" className="h-8 w-full text-xs" onClick={apply}>
                 선택 반영
               </Button>
-              <span className="text-[11px] text-ink/45">
-                체크한 이미지가 추가 섹션(기능명 제목 + 이미지)으로 들어가요. 반영 후에도 아래 에디터에서 자유롭게 수정·삭제할 수 있어요.
-              </span>
+              <p className="mt-1.5 text-[11px] text-ink/45 break-keep">
+                체크한 이미지가 &lsquo;추가 섹션&rsquo;(기능명 제목 + 이미지)으로 들어가요. 반영 뒤에도 상세 필드에서 수정·삭제할 수 있어요.
+              </p>
             </div>
           )}
         </div>
       )}
-    </div>
+    </section>
   );
 }
