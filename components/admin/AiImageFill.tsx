@@ -16,11 +16,15 @@ interface Match {
   url: string;
   alt: string;
   caption: string;
+  origin: 'official' | 'external';
+  sourceUrl: string;
+  sourceLabel: string;
 }
 
 interface SuggestResult {
-  thumbnail: { url: string; source: 'shot' | 'og' } | null;
+  thumbnail: { url: string; source: string } | null;
   matches: Match[];
+  stats?: { candidates: number; pages: number; external: number };
 }
 
 export function AiImageFill({
@@ -42,6 +46,7 @@ export function AiImageFill({
   const [result, setResult] = useState<SuggestResult | null>(null);
   const [useThumb, setUseThumb] = useState(true);
   const [picked, setPicked] = useState<Set<number>>(new Set());
+  const [includeExternal, setIncludeExternal] = useState(false);
 
   // SSR 불일치 방지 — 마운트 후 localhost 여부로만 노출 결정
   useEffect(() => {
@@ -64,7 +69,7 @@ export function AiImageFill({
       const res = await fetch('/api/admin/suggest-images', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ url: toolUrl, name, features }),
+        body: JSON.stringify({ url: toolUrl, name, features, includeExternal }),
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error ?? `실패 (${res.status})`);
@@ -101,9 +106,22 @@ export function AiImageFill({
         <Sparkles className="h-4 w-4 shrink-0 text-accent" />
         <h2 className="text-sm font-semibold">이미지 채우기 (AI)</h2>
       </div>
-      <p className="mb-3 text-[11px] text-ink/45 break-keep">
-        공식 사이트를 캡처해 기능별 이미지를 제안해요. 내 컴퓨터에서만 동작합니다.
+      <p className="mb-2.5 text-[11px] text-ink/45 break-keep">
+        공식 사이트(랜딩·문서·기능 페이지)를 훑어 실제 사용 화면을 찾고 기능별로 매칭해요. 내 컴퓨터에서만 동작합니다.
       </p>
+      <label className="mb-2.5 flex items-start gap-2 text-[11px] text-ink/60">
+        <input
+          type="checkbox"
+          className="mt-0.5"
+          checked={includeExternal}
+          onChange={(e) => setIncludeExternal(e.target.checked)}
+          disabled={running}
+        />
+        <span className="break-keep">
+          리뷰·외부 문서까지 찾기
+          <span className="block text-ink/40">공식 사이트에 실사용 화면이 적을 때 켜세요. 더 오래 걸리고(+1~2분), 남의 글에 실린 이미지는 출처를 확인하고 쓰세요.</span>
+        </span>
+      </label>
       <Button
         size="sm"
         variant="outline"
@@ -112,8 +130,13 @@ export function AiImageFill({
         disabled={running || Boolean(blocked)}
         title={blocked ?? undefined}
       >
-        <ImagePlus className="h-3.5 w-3.5" /> {running ? '캡처·매칭 중… (1~3분)' : '후보 만들기'}
+        <ImagePlus className="h-3.5 w-3.5" /> {running ? '수집·매칭 중…' : '후보 만들기'}
       </Button>
+      {running && (
+        <p className="mt-1.5 text-[11px] text-ink/45">
+          사이트를 돌며 화면을 모으고 AI가 하나씩 열어봐요 — {includeExternal ? '3~5분' : '2~3분'} 걸려요.
+        </p>
+      )}
       {blocked && <p className="mt-1.5 text-[11px] text-amber-600">{blocked}</p>}
 
       {err && (
@@ -124,20 +147,29 @@ export function AiImageFill({
 
       {result && (
         <div className="mt-3 space-y-3">
+          {result.stats && (
+            <p className="text-[11px] text-ink/40">
+              {result.stats.pages}개 페이지에서 후보 {result.stats.candidates}장 수집 · 채택 {result.matches.length + (result.thumbnail ? 1 : 0)}장
+            </p>
+          )}
+
           {result.thumbnail && (
             <label className="flex items-center gap-2.5 rounded-md border border-border bg-white/60 p-2">
               <input type="checkbox" checked={useThumb} onChange={(e) => setUseThumb(e.target.checked)} />
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={result.thumbnail.url} alt="" className="h-12 w-20 rounded object-cover border border-border" />
-              <span className="text-xs">
-                썸네일로 사용 <span className="text-ink/45">({result.thumbnail.source === 'og' ? 'OG 이미지' : '사이트 캡처'})</span>
-                {thumbnailUrl && <span className="ml-1 text-amber-600">— 기존 썸네일을 교체합니다</span>}
+              <img src={result.thumbnail.url} alt="" className="h-12 w-20 shrink-0 rounded object-cover border border-border" />
+              <span className="min-w-0 text-xs">
+                썸네일로 사용
+                <span className="mt-0.5 block truncate text-[11px] text-ink/45">{result.thumbnail.source}</span>
+                {thumbnailUrl && <span className="text-[11px] text-amber-600">기존 썸네일을 교체합니다</span>}
               </span>
             </label>
           )}
 
           {result.matches.length === 0 && !result.thumbnail && (
-            <p className="text-[11px] text-ink/50">쓸 만한 후보를 찾지 못했어요. 사이트가 로그인 뒤에만 화면을 보여주는 경우일 수 있어요.</p>
+            <p className="text-[11px] text-ink/50">
+              기능에 맞는 실사용 화면을 찾지 못했어요. &lsquo;리뷰·외부 문서까지 찾기&rsquo;를 켜고 다시 시도해 보세요.
+            </p>
           )}
 
           {result.matches.map((m, i) => (
@@ -154,10 +186,22 @@ export function AiImageFill({
                 }}
               />
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={m.url} alt={m.alt} className="h-16 w-28 rounded object-cover object-top border border-border" />
+              <img src={m.url} alt={m.alt} className="h-16 w-28 shrink-0 rounded object-cover object-top border border-border" />
               <span className="min-w-0 text-xs">
                 <span className="font-medium">{m.title}</span>
                 <span className="mt-0.5 block text-[11px] text-ink/50">{m.caption || m.alt}</span>
+                <a
+                  href={m.sourceUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  onClick={(e) => e.stopPropagation()}
+                  className={cn(
+                    'mt-1 inline-block truncate text-[10px] underline-offset-2 hover:underline',
+                    m.origin === 'external' ? 'text-amber-700' : 'text-ink/40',
+                  )}
+                >
+                  {m.origin === 'external' ? '외부 출처 — 확인 필요' : '공식'} · {m.sourceLabel}
+                </a>
               </span>
             </label>
           ))}
