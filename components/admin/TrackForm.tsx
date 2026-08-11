@@ -85,6 +85,9 @@ export function TrackForm({ initial, onSaved, startInPreview }: Props) {
   const [thumbnailUrl, setThumbnailUrl] = useState(initial?.thumbnail_url ?? '');
   const [jobTags, setJobTags] = useState<JobTag[]>((initial?.job_tags as JobTag[]) ?? []);
   const [personas, setPersonas] = useState<Persona[]>((initial?.persona_coverage as Persona[]) ?? []);
+  // 케이스 성격 분류 — 워크플로/자동화/제작기 (categories.type='content_subcategory'). 트렌드는 미사용.
+  const [categoryId, setCategoryId] = useState(initial?.category_id ?? '');
+  const [caseCats, setCaseCats] = useState<{ id: string; slug: string; label: string }[]>([]);
   const [body, setBody] = useState<ContentBody>(
     initial?.body ?? (track === 'case' ? EMPTY_CASE : EMPTY_TREND)
   );
@@ -116,10 +119,10 @@ export function TrackForm({ initial, onSaved, startInPreview }: Props) {
   useEffect(() => {
     const draftKey = `draft-${initial?.id ?? 'new'}`;
     const t = setTimeout(() => {
-      localStorage.setItem(draftKey, JSON.stringify({ track, title, slug, summary, readMin, applyMin, authorQuote, thumbnailUrl, jobTags, personas, body }));
+      localStorage.setItem(draftKey, JSON.stringify({ track, title, slug, summary, readMin, applyMin, authorQuote, thumbnailUrl, jobTags, personas, categoryId, body }));
     }, 1000);
     return () => clearTimeout(t);
-  }, [initial?.id, track, title, slug, summary, readMin, applyMin, authorQuote, thumbnailUrl, jobTags, personas, body]);
+  }, [initial?.id, track, title, slug, summary, readMin, applyMin, authorQuote, thumbnailUrl, jobTags, personas, categoryId, body]);
 
   // 재로그인 복구 — 세션 만료로 /login에 다녀온 뒤 돌아오면 임시 저장분을 복구.
   // (Google OAuth는 페이지를 완전히 떠나므로 폼 상태가 사라진다)
@@ -134,8 +137,22 @@ export function TrackForm({ initial, onSaved, startInPreview }: Props) {
       setTrack(d.track); setTitle(d.title); setSlug(d.slug); setSummary(d.summary);
       setReadMin(d.readMin); setApplyMin(d.applyMin); setAuthorQuote(d.authorQuote);
       setThumbnailUrl(d.thumbnailUrl); setJobTags(d.jobTags); setPersonas(d.personas);
+      setCategoryId(d.categoryId ?? '');
       updateBody(d.body);
     } catch { /* 손상된 스냅샷은 무시 */ }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // 케이스 성격 분류 로드 — /admin/contents CategoryQuickEdit와 같은 마스터(content_subcategory/case)
+  useEffect(() => {
+    supabase
+      .from('categories')
+      .select('id, slug, label')
+      .eq('type', 'content_subcategory')
+      .eq('parent_track', 'case')
+      .eq('is_active', true)
+      .order('sort_order')
+      .then(({ data }) => setCaseCats(data ?? []));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -206,14 +223,17 @@ export function TrackForm({ initial, onSaved, startInPreview }: Props) {
     body,
   });
 
-  // 발행 게이트 = 자동 lint(차단 항목)만. 수동 확인 체크는 폐지(솔로 운영 마찰 제거).
-  const canPublish = lint.passed;
+  // 케이스 분류 — 케이스만 필수 (분류 없는 케이스가 본가 필터에서 빠지는 걸 발행 시점에 차단)
+  const isTrend = track === 'trend';
+  const catOk = isTrend || !!categoryId;
+
+  // 발행 게이트 = 자동 lint(차단 항목) + 케이스 분류. 수동 확인 체크는 폐지(솔로 운영 마찰 제거).
+  const canPublish = lint.passed && catOk;
 
   // 우측 발행 준비 레일용 파생값 — 신호등·남은 항목 수·본문/경고 상태.
-  const isTrend = track === 'trend';
   const contentOk = lint.checks.find((c) => c.id === 'has-content')?.passed ?? false;
   const thumbOk = lint.checks.find((c) => c.id === 'thumbnail')?.passed ?? false;
-  const failingCount = lint.checks.filter((c) => c.blocking !== false && !c.passed).length;
+  const failingCount = lint.checks.filter((c) => c.blocking !== false && !c.passed).length + (catOk ? 0 : 1);
   const warnings = lint.checks.filter((c) => c.blocking === false && !c.passed);
 
   // 저장/발행 write 실패 처리 — 세션 만료면 재로그인 유도, 아니면 원인 노출.
@@ -225,7 +245,7 @@ export function TrackForm({ initial, onSaved, startInPreview }: Props) {
       const key = `recover-${initial?.id ?? 'new'}`;
       localStorage.setItem(
         key,
-        JSON.stringify({ track, title, slug, summary, readMin, applyMin, authorQuote, thumbnailUrl, jobTags, personas, body })
+        JSON.stringify({ track, title, slug, summary, readMin, applyMin, authorQuote, thumbnailUrl, jobTags, personas, categoryId, body })
       );
       const goLogin = confirm(
         `${verb} 실패: 로그인 세션이 만료된 것 같아요.\n작성 중인 내용을 임시 저장했어요. 다시 로그인할까요?`
@@ -255,6 +275,7 @@ export function TrackForm({ initial, onSaved, startInPreview }: Props) {
     // 저장을 막으면 편집이 갇힌다). 대신 지금 상태가 그대로 나간다는 걸 알린다.
     if (intent === 'update' && !canPublish) {
       const miss = lint.checks.filter((c) => c.blocking !== false && !c.passed).map((c) => c.label);
+      if (!catOk) miss.push('케이스 분류');
       if (!confirm(`발행 게이트 미충족 ${miss.length}건(${miss.join(', ')})이 있어요.\n이 글은 이미 본가에 나가 있어서, 저장하면 이 상태 그대로 반영됩니다. 계속할까요?`)) return;
     }
     if (intent === 'unpublish') {
@@ -271,6 +292,7 @@ export function TrackForm({ initial, onSaved, startInPreview }: Props) {
         body,
         job_tags: jobTags,
         persona_coverage: personas,
+        category_id: track === 'case' && categoryId ? categoryId : null,
         read_min: readMin,
         apply_min: applyMin,
         author_quote: authorQuote || null,
@@ -397,6 +419,24 @@ export function TrackForm({ initial, onSaved, startInPreview }: Props) {
                   </SelectContent>
                 </Select>
               </div>
+              {/* 케이스 성격 분류 — 단일 선택. 마스터 편집은 콘텐츠 목록의 CategoryQuickEdit */}
+              {track === 'case' && (
+                <div>
+                  <Label className="text-xs">케이스 분류</Label>
+                  <div className="mt-1.5 flex flex-wrap gap-1.5">
+                    {caseCats.map((c) => (
+                      <button
+                        type="button"
+                        key={c.id}
+                        onClick={() => setCategoryId((cur) => (cur === c.id ? '' : c.id))}
+                        className={cn('chip cursor-pointer', categoryId === c.id && 'chip-active')}
+                      >
+                        {c.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
               <div>
                 <Label htmlFor="title" className="text-xs">제목</Label>
                 <Input id="title" className="mt-1" value={title} onChange={(e) => setTitle(e.target.value)} />
@@ -598,6 +638,22 @@ export function TrackForm({ initial, onSaved, startInPreview }: Props) {
                     value={applyMin}
                     onChange={(e) => setApplyMin(+e.target.value)}
                   />
+                </RailField>
+              )}
+              {!isTrend && (
+                <RailField ok={catOk} label="케이스 분류">
+                  <div className="mt-1.5 flex flex-wrap gap-1.5">
+                    {caseCats.map((c) => (
+                      <button
+                        type="button"
+                        key={c.id}
+                        onClick={() => setCategoryId((cur) => (cur === c.id ? '' : c.id))}
+                        className={cn('chip cursor-pointer text-[11px]', categoryId === c.id && 'chip-active')}
+                      >
+                        {c.label}
+                      </button>
+                    ))}
+                  </div>
                 </RailField>
               )}
               {!isTrend && (

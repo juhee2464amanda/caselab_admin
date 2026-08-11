@@ -365,6 +365,8 @@ export interface ContentRow {
   apply_min: number;
   status: 'draft' | 'published' | 'archived';
   curated: boolean;
+  /** 케이스 성격 분류 FK (categories.id, type='content_subcategory', parent_track='case'). 트렌드는 null */
+  category_id: string | null;
   thumbnail_url: string | null;
   author_quote: string | null;
   view_count: number;

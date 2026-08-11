@@ -23,6 +23,8 @@ type Row = {
   updated_at: string;
   editHref: string;
   table: 'contents' | 'tools';
+  /** 케이스 성격 분류 (categories.id) — 케이스 외 타입은 null */
+  categoryId: string | null;
 };
 
 const TYPE_META: { key: ContentType; label: string }[] = [
@@ -45,11 +47,12 @@ const STATUS_TABS: { key: string; label: string }[] = [
 ];
 
 // 다른 파라미터를 보존하며 querystring 합성
-function buildHref(params: { type?: string; status?: string; q?: string }): string {
+function buildHref(params: { type?: string; status?: string; q?: string; cat?: string }): string {
   const qs = new URLSearchParams();
   if (params.type) qs.set('type', params.type);
   if (params.status) qs.set('status', params.status);
   if (params.q) qs.set('q', params.q);
+  if (params.cat) qs.set('cat', params.cat);
   const s = qs.toString();
   return s ? `/admin/contents?${s}` : '/admin/contents';
 }
@@ -62,11 +65,13 @@ function sanitizeSearch(raw: string): string {
 export default async function AdminContents({
   searchParams,
 }: {
-  searchParams: Promise<{ type?: string; status?: string; q?: string }>;
+  searchParams: Promise<{ type?: string; status?: string; q?: string; cat?: string }>;
 }) {
   const sp = await searchParams;
   const activeType = (sp.type ?? '') as ContentType | '';
   const activeStatus = sp.status ?? '';
+  // 케이스 성격 분류 필터 (categories.slug) — 케이스 타입 탭에서만 노출·적용
+  const activeCat = activeType === 'case' ? (sp.cat ?? '') : '';
   const rawQuery = (sp.q ?? '').trim();
   const query = sanitizeSearch(rawQuery);
 
@@ -78,7 +83,7 @@ export default async function AdminContents({
   // contents + tools 병렬 쿼리 (status 필터는 쿼리 단계에서 적용)
   let contentsQ = supabase
     .from('contents')
-    .select('id, slug, title, track, status, curated, updated_at')
+    .select('id, slug, title, track, status, curated, category_id, updated_at')
     .order('updated_at', { ascending: false });
   let toolsQ = supabase
     .from('tools')
@@ -97,7 +102,17 @@ export default async function AdminContents({
     contentsQ = contentsQ.or(`title.ilike.%${query}%,slug.ilike.%${query}%`);
     toolsQ = toolsQ.or(`name.ilike.%${query}%,slug.ilike.%${query}%`);
   }
-  const [contentsRes, toolsRes] = await Promise.all([contentsQ, toolsQ]);
+  // 케이스 분류 마스터 (워크플로/자동화/제작기) — 칩 필터·행 배지 라벨용
+  const caseCatsQ = supabase
+    .from('categories')
+    .select('id, slug, label')
+    .eq('type', 'content_subcategory')
+    .eq('parent_track', 'case')
+    .eq('is_active', true)
+    .order('sort_order');
+  const [contentsRes, toolsRes, caseCatsRes] = await Promise.all([contentsQ, toolsQ, caseCatsQ]);
+  const caseCats = caseCatsRes.data ?? [];
+  const catLabelById = new Map(caseCats.map((c) => [c.id, c.label]));
 
   const rows: Row[] = [
     ...(contentsRes.data ?? []).map((c): Row => ({
@@ -111,6 +126,7 @@ export default async function AdminContents({
       updated_at: c.updated_at,
       editHref: `/admin/contents/${c.id}`,
       table: 'contents',
+      categoryId: c.track === 'case' ? (c.category_id ?? null) : null,
     })),
     ...(toolsRes.data ?? []).map((t): Row => ({
       id: t.id,
@@ -123,6 +139,7 @@ export default async function AdminContents({
       updated_at: t.updated_at,
       editHref: `/admin/tools/${t.id}`,
       table: 'tools',
+      categoryId: null,
     })),
   ].sort((a, b) => (a.updated_at < b.updated_at ? 1 : -1));
 
@@ -130,7 +147,14 @@ export default async function AdminContents({
   const countByType = new Map<ContentType, number>();
   for (const r of rows) countByType.set(r.type, (countByType.get(r.type) ?? 0) + 1);
 
-  const visible = activeType ? rows.filter((r) => r.type === activeType) : rows;
+  const typeFiltered = activeType ? rows.filter((r) => r.type === activeType) : rows;
+  // 케이스 분류 필터 — slug가 마스터에 없으면(오타·삭제된 분류) 필터 미적용
+  const activeCatId = caseCats.find((c) => c.slug === activeCat)?.id;
+  const visible = activeCatId ? typeFiltered.filter((r) => r.categoryId === activeCatId) : typeFiltered;
+
+  // 분류별 건수 (케이스 타입 탭에서만 사용)
+  const countByCat = new Map<string, number>();
+  for (const r of typeFiltered) if (r.categoryId) countByCat.set(r.categoryId, (countByCat.get(r.categoryId) ?? 0) + 1);
 
   return (
     <div className="p-4 sm:p-8">
@@ -150,6 +174,7 @@ export default async function AdminContents({
       <form method="get" className="mb-4 flex flex-wrap items-center gap-2">
         {activeType && <input type="hidden" name="type" value={activeType} />}
         {activeStatus && <input type="hidden" name="status" value={activeStatus} />}
+        {activeCat && <input type="hidden" name="cat" value={activeCat} />}
         <div className="relative flex-1 min-w-[200px] max-w-sm">
           <input
             type="search"
@@ -189,12 +214,33 @@ export default async function AdminContents({
         })}
       </div>
 
+      {/* 케이스 분류 필터 — 케이스 탭에서만 (워크플로/자동화/제작기) */}
+      {activeType === 'case' && caseCats.length > 0 && (
+        <div className="mb-2 flex flex-wrap gap-2 text-sm">
+          <Link
+            href={buildHref({ type: 'case', status: activeStatus, q: rawQuery })}
+            className={`chip ${!activeCat ? 'chip-active' : ''}`}
+          >
+            분류 전체 <span className="ml-1 text-ink/40">{typeFiltered.length}</span>
+          </Link>
+          {caseCats.map((c) => (
+            <Link
+              key={c.slug}
+              href={buildHref({ type: 'case', status: activeStatus, q: rawQuery, cat: c.slug })}
+              className={`chip ${activeCat === c.slug ? 'chip-active' : ''}`}
+            >
+              {c.label} <span className="ml-1 text-ink/40">{countByCat.get(c.id) ?? 0}</span>
+            </Link>
+          ))}
+        </div>
+      )}
+
       {/* 상태 필터 */}
       <div className="mb-4 flex flex-wrap gap-2 text-sm">
         {STATUS_TABS.map((s) => (
           <Link
             key={s.key || 'all'}
-            href={buildHref({ type: activeType || undefined, status: s.key || undefined, q: rawQuery })}
+            href={buildHref({ type: activeType || undefined, status: s.key || undefined, q: rawQuery, cat: activeCat || undefined })}
             className={`chip ${activeStatus === s.key ? 'chip-active' : ''}`}
           >
             {s.label}
@@ -222,6 +268,9 @@ export default async function AdminContents({
               <tr key={`${it.type}-${it.id}`} className="hover:bg-muted/30">
                 <td className="px-4 py-3">
                   <span className="badge">{it.typeLabel}</span>
+                  {it.categoryId && catLabelById.has(it.categoryId) && (
+                    <span className="mt-1 block text-[11px] text-ink/50">{catLabelById.get(it.categoryId)}</span>
+                  )}
                 </td>
                 <td className="px-4 py-3">
                   <Link href={it.editHref} className="font-medium hover:underline">
