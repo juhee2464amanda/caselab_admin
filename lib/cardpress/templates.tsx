@@ -250,6 +250,18 @@ function PhotoBg({ image, overlay, pos }: { image?: string; overlay: number; pos
             'linear-gradient(180deg,rgba(0,0,0,0) 0%,rgba(0,0,0,0) 55%,rgba(0,0,0,0.85) 100%)',
         }}
       />
+      {/* 상단 스크림 — 밝은 사진에서 topbar·태그가 안 읽히는 문제(실측 2.89:1). 벤치마크도 상단 비네트를 일괄 적용한다 */}
+      <div
+        style={{
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          width: CARD_W,
+          height: Math.round(CARD_H * 0.16),
+          display: 'flex',
+          background: 'linear-gradient(180deg,rgba(0,0,0,0.42) 0%,rgba(0,0,0,0) 100%)',
+        }}
+      />
     </>
   );
 }
@@ -1730,8 +1742,722 @@ function B9({ accent, props }: Extract<RenderSlideInput, { template: 'B9' }>) {
   );
 }
 
+// ============================================================
+// P 계열 — 사진 편집형 본문 템플릿
+//
+// 왜 필요한가: 벤치마크(@doseodam_ 48장 전수 + 2026-08 레퍼런스 4건)는 커버뿐 아니라
+// **모든 장**이 사진 기반이다(photo-hook 69%). 우리는 스크림·빅넘버 룰을 커버(C1·C5)에만
+// 적용해서, 캐러셀 2장째부터 흰 배경 + 알약 배지 + 불릿 점으로 떨어졌다 → "제품 UI" 인상.
+// 여기서 라벨은 헤어라인 + 트래킹 텍스트, 목록은 번호 + 1px 구분선, 강조는 카드당 1구절로 바꾼다.
+//
+// 대비 불변식: P 계열 텍스트는 **반드시 스크림 위에** 올린다. 사진 밝기는 통제할 수 없고
+// (Unsplash 자동 채택), 밝은 사진 + 흰 글씨는 조용히 안 읽히는 카드를 만든다.
+// scripts/cardpress-verify.mjs가 렌더 PNG의 글자/배경 대비를 실측해 4.5:1 미만이면 실패시킨다.
+// ============================================================
+
+const PHOTO_ACCENT = '#E8B857'; // 골드 — 벤치마크 기본 강조색(카드당 1구절). accentColor로 오버라이드
+const P_TEXT = '#FFFFFF';
+const P_TEXT_2 = 'rgba(255,255,255,0.90)'; // 부본문 — 0.7대로 내리면 사진 위에서 대비가 무너진다
+const P_TEXT_3 = 'rgba(255,255,255,0.66)'; // eyebrow 전용(작고 짧은 텍스트만)
+const P_RULE = 'rgba(255,255,255,0.18)';
+const P_PAD = 78;
+const P_W = CARD_W - P_PAD * 2; // 924
+
+/** P 계열 강조색 — 기본 골드, 슬라이드별 accentColor 오버라이드 허용 */
+function photoAccent(props: { accentColor?: string }): string {
+  return props.accentColor && /^#[0-9a-fA-F]{6}$/.test(props.accentColor)
+    ? props.accentColor
+    : PHOTO_ACCENT;
+}
+
+/** 사진 밴드 + 하단으로 갈수록 검게 떨어지는 스크림. 밝은 사진이 와도 블랙 패널과 이어붙는다. */
+function PhotoBand({ image, height, pos }: { image?: string; height: number; pos?: string }) {
+  return (
+    <div
+      style={{
+        width: CARD_W,
+        height,
+        display: 'flex',
+        backgroundImage: image ? `url(${image})` : 'linear-gradient(135deg,#232a3d 0%,#12151f 100%)',
+        backgroundSize: `${CARD_W}px ${height}px`,
+        backgroundPosition: pos ?? '50% 50%',
+      }}
+    >
+      <div
+        style={{
+          position: 'absolute',
+          left: 0,
+          top: 0,
+          width: CARD_W,
+          height,
+          display: 'flex',
+          backgroundImage:
+            'linear-gradient(180deg,rgba(0,0,0,0.30) 0%,rgba(0,0,0,0.12) 42%,rgba(0,0,0,0.72) 86%,rgba(0,0,0,1) 100%)',
+        }}
+      />
+    </div>
+  );
+}
+
+/** 전면 사진 + 텍스트 영역 보장 스크림. textTop 위쪽부터 검게 눌러 흰 글씨 대비를 확보한다. */
+function PhotoFull({
+  image,
+  pos,
+  overlay,
+  textTop,
+}: {
+  image?: string;
+  pos?: string;
+  overlay: number;
+  textTop: number;
+}) {
+  return (
+    <>
+      <div
+        style={{
+          position: 'absolute',
+          left: 0,
+          top: 0,
+          width: CARD_W,
+          height: CARD_H,
+          display: 'flex',
+          backgroundImage: image ? `url(${image})` : 'linear-gradient(135deg,#232a3d 0%,#12151f 100%)',
+          backgroundSize: `${CARD_W}px ${CARD_H}px`,
+          backgroundPosition: pos ?? '50% 50%',
+        }}
+      />
+      <div
+        style={{
+          position: 'absolute',
+          left: 0,
+          top: 0,
+          width: CARD_W,
+          height: CARD_H,
+          display: 'flex',
+          background: `rgba(0,0,0,${overlay})`,
+        }}
+      />
+      <div
+        style={{
+          position: 'absolute',
+          left: 0,
+          top: Math.max(0, textTop - 220),
+          width: CARD_W,
+          height: CARD_H - Math.max(0, textTop - 220),
+          display: 'flex',
+          backgroundImage:
+            'linear-gradient(180deg,rgba(0,0,0,0) 0%,rgba(0,0,0,0.62) 34%,rgba(0,0,0,0.88) 62%,rgba(0,0,0,0.95) 100%)',
+        }}
+      />
+    </>
+  );
+}
+
+/** 헤어라인 + 트래킹 라벨 — 알약 배지를 대체한다(배지는 프레임워크 UI 인상의 주범) */
+function Eyebrow({ text, centered, color }: { text: string; centered?: boolean; color?: string }) {
+  const rule = (
+    <div style={{ display: 'flex', width: 46, height: 1, backgroundColor: 'rgba(255,255,255,0.34)' }} />
+  );
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 18 }}>
+      {centered ? rule : null}
+      <div
+        style={{
+          display: 'flex',
+          fontSize: 22,
+          fontWeight: 700,
+          letterSpacing: '0.2em',
+          color: color ?? P_TEXT_3,
+        }}
+      >
+        {text}
+      </div>
+      {centered ? rule : null}
+    </div>
+  );
+}
+
+/** 번호 + 1px 구분선 목록 — 불릿 점을 대체 */
+function RuleList({
+  items,
+  size,
+  gap,
+  accent,
+}: {
+  items: string[];
+  size: number;
+  gap: number;
+  accent: string;
+}) {
+  const pad = Math.round(gap / 2);
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', width: '100%' }}>
+      {items.map((t, i) => (
+        <div
+          key={i}
+          style={{
+            display: 'flex',
+            alignItems: 'flex-start',
+            gap: 24,
+            paddingTop: i === 0 ? 0 : pad,
+            paddingBottom: pad,
+            // 'none' 명시 — undefined 값은 Satori 스타일 파서를 죽인다(P1·P5 응답이 통째로 끊겼던 원인)
+            borderTop: i === 0 ? 'none' : `1px solid ${P_RULE}`,
+          }}
+        >
+          <div
+            style={{
+              display: 'flex',
+              fontSize: Math.round(size * 0.58),
+              fontWeight: 800,
+              letterSpacing: '0.1em',
+              color: accent,
+              paddingTop: Math.round(size * 0.24),
+            }}
+          >
+            {String(i + 1).padStart(2, '0')}
+          </div>
+          <div
+            style={{
+              display: 'flex',
+              flexWrap: 'wrap',
+              width: P_W - 70,
+              lineHeight: 1.4,
+            }}
+          >
+            {em(t, accent, { fontSize: size, fontWeight: 500, color: P_TEXT_2, lineHeight: 1.4 })}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ---------- P1 · 스플릿(사진 상단) + 번호 목록 ----------
+function P1({ accent, props }: Extract<RenderSlideInput, { template: 'P1' }>) {
+  const ac = photoAccent(props);
+  const photoH = Math.max(420, Math.min(840, props.photoH ?? 660));
+  const inner = CARD_H - photoH - 46 - 54;
+  const eyebrow = props.eyebrow ?? DEFAULT_TAGS[accent];
+  const eyebrowH = eyebrow ? 30 + 34 : 0;
+  const lead = fitBlock([props.lead], {
+    width: P_W,
+    height: Math.min(280, Math.round(inner * 0.44)),
+    max: 76,
+    min: 42,
+    lineHeight: 1.26,
+    gapRatio: 0,
+  });
+  const listH = Math.max(120, inner - eyebrowH - lead.height - 40);
+  const item = fitBlock(props.items, {
+    width: P_W - 70,
+    height: listH,
+    max: 40,
+    min: 25,
+    lineHeight: 1.4,
+    gapRatio: 0.95,
+    gapMaxRatio: 1.7,
+  });
+  return (
+    <div style={{ ...cardBase, backgroundColor: '#000' }}>
+      <PhotoBand image={props.image} height={photoH} pos={props.coverPos} />
+      <div
+        style={{
+          flex: 1,
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: `46px ${P_PAD}px 54px`,
+          backgroundColor: '#000',
+        }}
+      >
+        {eyebrow ? (
+          <div style={{ display: 'flex', marginBottom: 34 }}>
+            <Eyebrow text={eyebrow} centered />
+          </div>
+        ) : null}
+        <div
+          style={{
+            display: 'flex',
+            flexWrap: 'wrap',
+            justifyContent: 'center',
+            marginBottom: 40,
+            letterSpacing: '-0.02em',
+          }}
+        >
+          {em(props.lead, ac, {
+            fontSize: lead.size,
+            fontWeight: 800,
+            color: P_TEXT,
+            lineHeight: 1.26,
+          })}
+        </div>
+        <RuleList items={props.items} size={item.size} gap={item.gap} accent={ac} />
+      </div>
+    </div>
+  );
+}
+
+// ---------- P2 · 스플릿(사진 상단) + 문단 ----------
+// 레퍼런스(trenddalkak.ai·success_spoon) 문법: 큰 제목 → 중간 부제 → 작은 회색 본문.
+// 크기를 균일하게 키우는 대신 위계로 읽히게 한다.
+function P2({ accent, props }: Extract<RenderSlideInput, { template: 'P2' }>) {
+  const ac = photoAccent(props);
+  const photoH = Math.max(420, Math.min(840, props.photoH ?? 600));
+  const inner = CARD_H - photoH - 46 - 58;
+  const eyebrow = props.eyebrow ?? DEFAULT_TAGS[accent];
+  const eyebrowH = eyebrow ? 30 + 32 : 0;
+  const heading = fitBlock([props.heading], {
+    width: P_W,
+    height: Math.min(260, Math.round(inner * 0.4)),
+    max: 66,
+    min: 40,
+    lineHeight: 1.28,
+    gapRatio: 0,
+  });
+  const subH = props.sub ? 26 + Math.round(heading.size * 0.62) * 1.4 : 0;
+  const bodyH = Math.max(110, inner - eyebrowH - heading.height - subH - 34);
+  const body = fitBlock([props.body], {
+    width: P_W,
+    height: bodyH,
+    max: 34,
+    min: 23,
+    lineHeight: 1.62,
+    gapRatio: 0,
+  });
+  return (
+    <div style={{ ...cardBase, backgroundColor: '#000' }}>
+      <PhotoBand image={props.image} height={photoH} pos={props.coverPos} />
+      <div
+        style={{
+          flex: 1,
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: `46px ${P_PAD}px 58px`,
+          backgroundColor: '#000',
+        }}
+      >
+        {eyebrow ? (
+          <div style={{ display: 'flex', marginBottom: 32 }}>
+            <Eyebrow text={eyebrow} centered />
+          </div>
+        ) : null}
+        <div
+          style={{
+            display: 'flex',
+            flexWrap: 'wrap',
+            justifyContent: 'center',
+            letterSpacing: '-0.02em',
+          }}
+        >
+          {em(props.heading, ac, {
+            fontSize: heading.size,
+            fontWeight: 800,
+            color: P_TEXT,
+            lineHeight: 1.28,
+          })}
+        </div>
+        {props.sub ? (
+          <div
+            style={{
+              display: 'flex',
+              flexWrap: 'wrap',
+              justifyContent: 'center',
+              marginTop: 26,
+            }}
+          >
+            {em(props.sub, ac, {
+              fontSize: Math.round(heading.size * 0.62),
+              fontWeight: 700,
+              color: P_TEXT_2,
+              lineHeight: 1.4,
+            })}
+          </div>
+        ) : null}
+        <div
+          style={{
+            display: 'flex',
+            flexWrap: 'wrap',
+            justifyContent: 'center',
+            marginTop: 34,
+            textAlign: 'center',
+          }}
+        >
+          {em(props.body, ac, {
+            fontSize: body.size,
+            fontWeight: 500,
+            color: P_TEXT_2,
+            lineHeight: 1.62,
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ---------- P3 · 풀블리드 사진 + 하단 스크림 ----------
+function P3({ accent, props }: Extract<RenderSlideInput, { template: 'P3' }>) {
+  const ac = photoAccent(props);
+  const items = props.items ?? [];
+  const title = fitBlock([props.title], {
+    width: P_W,
+    height: 300,
+    max: 80,
+    min: 46,
+    lineHeight: 1.24,
+    gapRatio: 0,
+  });
+  const item = items.length
+    ? fitBlock(items, {
+        width: P_W,
+        height: 220,
+        max: 34,
+        min: 24,
+        lineHeight: 1.45,
+        gapRatio: 0.42,
+        gapMaxRatio: 0.6,
+      })
+    : { size: 0, gap: 0, height: 0 };
+  const bottomPad = 88;
+  const blockH = 30 + 26 + title.height + (items.length ? 30 + 3 + 28 + item.height : 0);
+  const textTop = CARD_H - bottomPad - blockH;
+  return (
+    <div style={{ ...cardBase }}>
+      <PhotoFull
+        image={props.image}
+        pos={props.coverPos}
+        overlay={props.overlay ?? 0.34}
+        textTop={textTop}
+      />
+      <div
+        style={{
+          position: 'absolute',
+          left: 0,
+          top: 0,
+          width: CARD_W,
+          height: CARD_H,
+          display: 'flex',
+          flexDirection: 'column',
+          justifyContent: 'flex-end',
+          padding: `0 ${P_PAD}px ${bottomPad}px`,
+        }}
+      >
+        <div style={{ display: 'flex', marginBottom: 26 }}>
+          <Eyebrow text={props.label ?? DEFAULT_TAGS[accent]} />
+        </div>
+        <div style={{ display: 'flex', flexWrap: 'wrap', letterSpacing: '-0.02em' }}>
+          {em(props.title, ac, {
+            fontSize: title.size,
+            fontWeight: 800,
+            color: P_TEXT,
+            lineHeight: 1.24,
+          })}
+        </div>
+        {items.length ? (
+          <>
+            <div
+              style={{
+                display: 'flex',
+                width: 78,
+                height: 3,
+                backgroundColor: ac,
+                marginTop: 30,
+                marginBottom: 28,
+              }}
+            />
+            <div style={{ display: 'flex', flexDirection: 'column', gap: item.gap }}>
+              {items.map((t, i) => (
+                <div key={i} style={{ display: 'flex', flexWrap: 'wrap' }}>
+                  {em(t, ac, {
+                    fontSize: item.size,
+                    fontWeight: 500,
+                    color: P_TEXT_2,
+                    lineHeight: 1.45,
+                  })}
+                </div>
+              ))}
+            </div>
+          </>
+        ) : null}
+        {props.footer ? (
+          <div
+            style={{
+              display: 'flex',
+              marginTop: 34,
+              fontSize: 22,
+              fontWeight: 800,
+              letterSpacing: '0.18em',
+              color: 'rgba(255,255,255,0.5)',
+            }}
+          >
+            {props.footer}
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+// ---------- P4 · 풀블리드 사진 + 인용 ----------
+function P4({ props }: Extract<RenderSlideInput, { template: 'P4' }>) {
+  const ac = photoAccent(props);
+  const quote = fitBlock([props.quote], {
+    width: P_W,
+    height: 520,
+    max: 76,
+    min: 42,
+    lineHeight: 1.36,
+    gapRatio: 0,
+  });
+  return (
+    <div style={{ ...cardBase }}>
+      <PhotoFull
+        image={props.image}
+        pos={props.coverPos}
+        overlay={props.overlay ?? 0.56}
+        textTop={Math.round(CARD_H / 2 - quote.height / 2)}
+      />
+      <div
+        style={{
+          position: 'absolute',
+          left: 0,
+          top: 0,
+          width: CARD_W,
+          height: CARD_H,
+          display: 'flex',
+          flexDirection: 'column',
+          justifyContent: 'center',
+          padding: `0 ${P_PAD}px`,
+        }}
+      >
+        <div
+          style={{
+            display: 'flex',
+            fontSize: 96,
+            fontWeight: 800,
+            color: ac,
+            lineHeight: 1,
+            marginBottom: 8,
+          }}
+        >
+          “
+        </div>
+        <div style={{ display: 'flex', flexWrap: 'wrap', letterSpacing: '-0.02em' }}>
+          {em(props.quote, ac, {
+            fontSize: quote.size,
+            fontWeight: 800,
+            color: P_TEXT,
+            lineHeight: 1.36,
+          })}
+        </div>
+        {props.attribution ? (
+          <div
+            style={{
+              display: 'flex',
+              marginTop: 40,
+              fontSize: 30,
+              fontWeight: 600,
+              color: P_TEXT_2,
+            }}
+          >
+            {`— ${props.attribution}`}
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+// ---------- P5 · 블랙아웃(사진을 텍스처로) + 번호 목록 ----------
+// 사진 수급 실패·프롬프트/코드처럼 사진이 붙지 않는 소재의 폴백. 타이포가 주인공.
+function P5({ accent, props }: Extract<RenderSlideInput, { template: 'P5' }>) {
+  const ac = photoAccent(props);
+  const lead = fitBlock([props.lead], {
+    width: P_W,
+    height: 300,
+    max: 94,
+    min: 52,
+    lineHeight: 1.2,
+    gapRatio: 0,
+  });
+  const item = fitBlock(props.items, {
+    width: P_W - 70,
+    height: 420,
+    max: 40,
+    min: 26,
+    lineHeight: 1.4,
+    gapRatio: 1.0,
+    gapMaxRatio: 1.5,
+  });
+  return (
+    <div style={{ ...cardBase, backgroundColor: DARK_BG }}>
+      <PhotoFull
+        image={props.image}
+        pos={props.coverPos}
+        overlay={props.overlay ?? 0.86}
+        textTop={CARD_H}
+      />
+      <div
+        style={{
+          position: 'absolute',
+          left: 0,
+          top: 0,
+          width: CARD_W,
+          height: CARD_H,
+          display: 'flex',
+          flexDirection: 'column',
+          justifyContent: 'center',
+          padding: `0 ${P_PAD}px`,
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 44 }}>
+          {props.index ? (
+            <div
+              style={{ display: 'flex', fontSize: 25, fontWeight: 800, letterSpacing: '0.1em', color: ac }}
+            >
+              {props.index}
+            </div>
+          ) : null}
+          <Eyebrow text={props.eyebrow ?? DEFAULT_TAGS[accent]} />
+        </div>
+        <div style={{ display: 'flex', flexWrap: 'wrap', letterSpacing: '-0.025em', marginBottom: 48 }}>
+          {em(props.lead, ac, { fontSize: lead.size, fontWeight: 800, color: P_TEXT, lineHeight: 1.2 })}
+        </div>
+        <RuleList items={props.items} size={item.size} gap={item.gap} accent={ac} />
+      </div>
+      {props.footer ? (
+        <div
+          style={{
+            position: 'absolute',
+            left: P_PAD,
+            bottom: 76,
+            display: 'flex',
+            fontSize: 22,
+            fontWeight: 800,
+            letterSpacing: '0.18em',
+            color: 'rgba(255,255,255,0.45)',
+          }}
+        >
+          {props.footer}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+// ---------- P6 · 블랙아웃 + 빅넘버(본문용) ----------
+// C5는 커버 전용이라 본문 흐름에서 숫자 한 방을 박을 자리가 없었다.
+function P6({ accent, props }: Extract<RenderSlideInput, { template: 'P6' }>) {
+  const ac = photoAccent(props);
+  const big = fitBlock([props.big], {
+    width: P_W,
+    height: 320,
+    max: 230,
+    min: 90,
+    lineHeight: 1.02,
+    gapRatio: 0,
+  });
+  const resolve = fitBlock([props.resolve], {
+    width: P_W,
+    height: 250,
+    max: 46,
+    min: 28,
+    lineHeight: 1.44,
+    gapRatio: 0,
+  });
+  return (
+    <div style={{ ...cardBase, backgroundColor: DARK_BG }}>
+      <PhotoFull
+        image={props.image}
+        pos={props.coverPos}
+        overlay={props.overlay ?? 0.82}
+        textTop={CARD_H}
+      />
+      <div
+        style={{
+          position: 'absolute',
+          left: 0,
+          top: 0,
+          width: CARD_W,
+          height: CARD_H,
+          display: 'flex',
+          flexDirection: 'column',
+          justifyContent: 'center',
+          alignItems: 'center',
+          padding: `0 ${P_PAD}px`,
+        }}
+      >
+        {props.kicker ? (
+          <div style={{ display: 'flex', marginBottom: 40 }}>
+            <Eyebrow text={props.kicker} centered />
+          </div>
+        ) : null}
+        <div
+          style={{
+            display: 'flex',
+            fontSize: big.size,
+            fontWeight: 800,
+            color: ac,
+            lineHeight: 1.02,
+            letterSpacing: '-0.04em',
+            marginBottom: 44,
+          }}
+        >
+          {props.big}
+        </div>
+        <div
+          style={{
+            display: 'flex',
+            flexWrap: 'wrap',
+            justifyContent: 'center',
+            textAlign: 'center',
+          }}
+        >
+          {em(props.resolve, ac, {
+            fontSize: resolve.size,
+            fontWeight: 600,
+            color: P_TEXT_2,
+            lineHeight: 1.44,
+          })}
+        </div>
+      </div>
+      {props.footer ? (
+        <div
+          style={{
+            position: 'absolute',
+            left: P_PAD,
+            bottom: 76,
+            display: 'flex',
+            fontSize: 22,
+            fontWeight: 800,
+            letterSpacing: '0.18em',
+            color: 'rgba(255,255,255,0.45)',
+          }}
+        >
+          {props.footer}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 export function renderSlide(input: RenderSlideInput): ReactNode {
   switch (input.template) {
+    case 'P1':
+      return <P1 {...input} />;
+    case 'P2':
+      return <P2 {...input} />;
+    case 'P3':
+      return <P3 {...input} />;
+    case 'P4':
+      return <P4 {...input} />;
+    case 'P5':
+      return <P5 {...input} />;
+    case 'P6':
+      return <P6 {...input} />;
     case 'C1':
       return <C1 {...input} />;
     case 'C2':

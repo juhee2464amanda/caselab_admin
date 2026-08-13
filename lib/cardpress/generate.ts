@@ -130,6 +130,11 @@ function lintLen(name: string, text: string | undefined, max: number): string[] 
   return t.length > max ? [`${name} "${t.slice(0, 20)}…": ${t.length}자 (최대 ${max}자)`] : [];
 }
 
+/** **강조** 구절 개수 — P 계열은 슬라이드 전체 1구절이 상한(벤치마크 룰) */
+function countEm(text?: string): number {
+  return text ? (text.match(/\*\*.+?\*\*/g) ?? []).length : 0;
+}
+
 /** 두 텍스트가 같은 정보를 반복하는지 — 공백 제거 후 5자 이상 공통 부분 문자열 검출 */
 function sharesLongSubstring(a?: string, b?: string, min = 5): boolean {
   if (!a || !b) return false;
@@ -169,6 +174,7 @@ function lintSlide(template: CardTemplateId, props: Record<string, unknown>): st
     rows?: { term: string; desc?: string }[];
     steps?: { title: string; desc?: string }[];
     lines?: string[];
+    items?: string[];
   };
   const issues: string[] = [];
   const at = (msg: string) => `[${template}] ${msg}`;
@@ -244,6 +250,31 @@ function lintSlide(template: CardTemplateId, props: Record<string, unknown>): st
       if ((p.lines ?? []).length > 4) push([`lines ${p.lines!.length}줄 (맛보기 최대 4줄)`]);
       for (const l of p.lines ?? []) push(lintLen('line', l, 24));
       break;
+    // ── P 계열 (사진 편집형) — 강조는 카드당 1구절이 벤치마크 룰 ──
+    case 'P1':
+    case 'P5':
+      push(lintLen('lead', p.lead, 30));
+      for (const it of p.items ?? []) push(lintLen('item', it, 32));
+      if (countEm(p.lead) + (p.items ?? []).reduce((n, it) => n + countEm(it), 0) > 1)
+        push(['**강조**는 슬라이드 전체에서 1구절만 (벤치마크: 카드당 정확히 1구절)']);
+      break;
+    case 'P2':
+      push(lintLines('heading', p.heading ?? '', 14, 2));
+      push(lintLen('sub', p.sub, 26));
+      push(lintLen('body', p.body, 120));
+      break;
+    case 'P3':
+      push(lintLines('title', p.title ?? '', 15, 3));
+      for (const it of p.items ?? []) push(lintLen('item', it, 34));
+      break;
+    case 'P4':
+      push(lintLen('quote', p.quote, 48));
+      push(lintLen('attribution', p.attribution, 24));
+      break;
+    case 'P6':
+      push(lintLen('big', p.big, 6));
+      push(lintLines('resolve', p.resolve ?? '', 20, 2));
+      break;
     default:
       break;
   }
@@ -266,7 +297,16 @@ const TEMPLATE_SPECS = `[템플릿별 props 규격 — 줄바꿈은 문자열 �
 - B6 스텝: {"heading":"≤13자","hl":"핵심 구","steps":[{"title":"≤12자","desc":"≤18자"}] 2~4개}
 - B7 숫자: {"big":"숫자만 ≤4자","unit":"%·배 등(선택)","cap":"1~2줄, 줄당 ≤16자, **강조** 1개","sub":"≤38자(선택)"} — 재료에 실제로 있는 숫자만
 - B8 프롬프트 패턴: {"badge":"'패턴 03' 등 ≤8자(선택)","patternEn":"영어 패턴명 원문 그대로(재료에 있으면 필수 — 예: Blindspot Pass) ≤30자","patternName":"≤12자 한글 패턴명(patternEn 아래 부제로 렌더)","when":"≤22자 — 어떤 상황에서 쓰는지 (따옴표 없이)","lines":["≤22자/줄"] 3~4줄 핵심 맛보기 — 전문이 아니라 구조가 보이는 핵심만, 변수는 [대괄호],"effect":"≤20자 기대 효과 (실측·구체적으로)"} — 인스타에선 복사 불가이므로 '복사' 언급 금지. 이 슬라이드의 목표는 "나도 써보고 싶다". CTA(댓글 유도 등)는 캡션이 전담 — 슬라이드에 ctaLine 생성 금지
-- O1 마무리: {"eyebrow":"기본 '오늘의 정리'(생략 가능)","title":"2줄, 줄당 ≤11자 핵심 요약","hl":"핵심 단어","body":"≤58자"} — actions/handle은 생성하지 말 것(시스템 기본값 사용)`;
+- O1 마무리: {"eyebrow":"기본 '오늘의 정리'(생략 가능)","title":"2줄, 줄당 ≤11자 핵심 요약","hl":"핵심 단어","body":"≤58자"} — actions/handle은 생성하지 말 것(시스템 기본값 사용)
+
+[P 계열 — 사진 편집형 본문. 벤치마크 문법(전 장 사진+스크림): 이미지가 있는 재료에서 우선 선택]
+공통: **강조**는 슬라이드 전체 1구절만(골드로 렌더). "image"는 생성하지 말 것 — 시스템이 재료 이미지/검색으로 채운다.
+- P1 사진+번호목록: {"eyebrow":"≤14자 라벨(선택)","lead":"≤28자 핵심 한 줄","items":["≤30자"] 2~4개} — 개요·정보 나열의 기본값. B2와 같은 자리에서 사진이 있으면 P1
+- P2 사진+문단: {"eyebrow":"≤14자(선택)","heading":"1~2줄, 줄당 ≤12자","sub":"≤24자 부제(선택)","body":"≤110자 문단"} — 설명·맥락 서술. 제목→부제→본문 3단 위계로 읽힌다
+- P3 풀사진+하단: {"label":"≤14자(선택)","title":"2~3줄, 줄당 ≤13자","items":["≤32자"] 0~3개(선택)","footer":"@영문개념(선택)"} — 사진이 주인공인 전환·강조 장. 텍스트 적을수록 강하다
+- P4 사진인용: {"quote":"≤44자 인용/선언 (따옴표 자동)","attribution":"≤22자 출처(선택)"} — B4의 사진 버전. 강한 한 문장이 있을 때
+- P5 블랙+번호목록: {"index":"'02' 같은 진행표시(선택)","eyebrow":"≤14자","lead":"≤28자","items":["≤30자"] 2~4개,"footer":"@영문개념(선택)"} — 사진이 없거나 프롬프트·코드 소재의 폴백. 타이포가 주인공
+- P6 블랙+빅넘버: {"kicker":"≤18자 맥락","big":"≤6자 거대 숫자/단어","resolve":"1~2줄, 줄당 ≤18자 해소","footer":"(선택)"} — 본문 중간에 숫자 한 방. 재료에 실재하는 숫자만`;
 
 const SYSTEM = `당신은 케이스랩(caselab)의 SNS 콘텐츠 에디터입니다. 발행된 웹 콘텐츠를 인스타그램 캐러셀 슬라이드 규격으로 압축 재작성합니다.
 
@@ -288,6 +328,9 @@ const SYSTEM = `당신은 케이스랩(caselab)의 SNS 콘텐츠 에디터입니
 - 개요(오버뷰) 슬라이드는 스토리의 지도다 — 나열이 아니라 위계로 쓴다: 가장 중요한 사실 1개를 lead에,
   나머지는 그것을 뒷받침하는 사실 2~3개로. 커버에서 미룬 답을 여기서 처음 밝히는 자리이기도 하다.
 - 슬라이드 하나에 항목을 욱여넣지 말 것 — 한 장의 텍스트가 많을수록 렌더 글씨가 작아져 폰에서 안 읽힌다
+- 시각 리듬: 같은 레이아웃이 3장 연속되면 손가락이 멈춘다. 계획의 대안(alternatives) 안에서
+  정보형(P1/P2·B계열) 사이에 호흡 장(P3 풀사진·P4 인용·P6 빅넘버)을 끼워 밀도를 번갈아줄 것.
+  단, 형식을 위해 내용을 늘리지 말 것 — 재료가 없는 호흡 장은 만들지 않는다.
 
 [커버 헤드라인 공식 — 벤치마크 검증 룰, 우선순위대로 시도]
 1. 이상하게 구체적인 숫자를 박는다 ("11가지"보다 "0.3초에", "80%는 앞쪽 106석"이 강함)
@@ -500,6 +543,8 @@ function finalizeSlides(
         props.coverImage = planned.image;
       if (s.template === 'B2' && !props.media) props.media = planned.image;
       if (s.template === 'B9' && !props.shot) props.shot = planned.image;
+      // P 계열은 사진이 정체성 — 계획에 이미지가 있으면 항상 image로 (AI는 image를 생성하지 않는다)
+      if (s.template.startsWith('P') && !props.image) props.image = planned.image;
     }
     return { ...s, order: i + 1, props };
   });

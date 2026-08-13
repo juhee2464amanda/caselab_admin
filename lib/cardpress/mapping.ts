@@ -184,7 +184,14 @@ function planCase(row: ContentRowLite, body: CaseBody, images: string[]): SlideP
   });
 
   const intro = blocksToText(body.caseIntro);
-  if (intro) slides.push({ template: 'B4', sourceSection: 'caseIntro', material: intro });
+  if (intro)
+    slides.push({
+      template: 'B4',
+      sourceSection: 'caseIntro',
+      material: intro,
+      alternatives: ['P4', 'P2'],
+      image: images[1],
+    });
 
   if (body.painPoints?.length) {
     slides.push({
@@ -193,7 +200,7 @@ function planCase(row: ContentRowLite, body: CaseBody, images: string[]): SlideP
       material: `${OVERVIEW_ROLE}\n(이 장의 lead: 가장 뼈아픈 문제 하나. 나머지는 그 문제를 뒷받침하는 증상)\n${body.painPoints
         .map((p) => `${p.num}. ${p.title} — 증상: ${p.symptom} / 근본 원인: ${p.rootCause}`)
         .join('\n')}`,
-      alternatives: ['B7'],
+      alternatives: ['P1', 'B7'],
     });
   }
 
@@ -217,8 +224,8 @@ function planCase(row: ContentRowLite, body: CaseBody, images: string[]): SlideP
             `${s.num}. ${s.label}${s.description ? ` — ${s.description}` : ''} (사람: ${s.human} / AI: ${s.ai})${s.goodResult ? `\n  좋았던 결과: ${s.goodResult}` : ''}${s.badResult ? `\n  아쉬운 결과: ${s.badResult}` : ''}`
         )
         .join('\n'),
-      alternatives: ['B2'],
-      image: images[1],
+      alternatives: ['B2', 'P1'],
+      image: images[2] ?? images[1],
     });
   }
 
@@ -269,7 +276,7 @@ function planTrend(row: ContentRowLite, body: TrendBody, images: string[]): Slid
   });
 
   const what = blocksToText(body.what);
-  if (what) slides.push({ template: 'B3', sourceSection: 'what', material: what });
+  if (what) slides.push({ template: 'B3', sourceSection: 'what', material: what, alternatives: ['P2'] });
 
   const items = splitListItems(body.deepDive);
 
@@ -278,13 +285,15 @@ function planTrend(row: ContentRowLite, body: TrendBody, images: string[]): Slid
       template: 'B2',
       sourceSection: 'keyPoints',
       material: `${OVERVIEW_ROLE}\n${body.keyPoints.map((k) => `- ${k}`).join('\n')}`,
-      alternatives: ['B7'],
+      alternatives: ['P1', 'B7'],
+      image: images[1],
       required: '개요 — 스토리의 지도 (커버 다음으로 이탈이 갈리는 자리)',
     });
   }
 
   const why = blocksToText(body.why);
-  if (why) slides.push({ template: 'B4', sourceSection: 'why', material: why });
+  if (why)
+    slides.push({ template: 'B4', sourceSection: 'why', material: why, alternatives: ['P4', 'P3'], image: images[2] });
 
   if (items.length >= 3) {
     // 리스트형(모음) 콘텐츠 — 항목당 슬라이드 후보. 프롬프트 있으면 B8(실물), 없으면 B2.
@@ -293,6 +302,7 @@ function planTrend(row: ContentRowLite, body: TrendBody, images: string[]): Slid
         template: it.prompt ? 'B8' : 'B2',
         sourceSection: `deepDive#${it.id}`,
         material: `${it.heading}\n${it.text}${it.prompt ? `\n[프롬프트 원문]\n${it.prompt}` : ''}`,
+        alternatives: it.prompt ? undefined : ['P2', 'P5'],
         optional: true,
       });
     }
@@ -378,6 +388,7 @@ export function buildSeedSlidePlan(seed: SeedRowLite): SlidePlan {
   slides.push({
     template: 'B2',
     sourceSection: 'seed:overview',
+    alternatives: ['P5'],
     material: [
       OVERVIEW_ROLE,
       `제목: ${title}`,
@@ -391,7 +402,7 @@ export function buildSeedSlidePlan(seed: SeedRowLite): SlidePlan {
   });
 
   if (segments.length === 0) {
-    slides.push({ template: 'B4', sourceSection: 'seed:body', material: seed.raw_text, alternatives: ['B2', 'B3'] });
+    slides.push({ template: 'B4', sourceSection: 'seed:body', material: seed.raw_text, alternatives: ['B2', 'B3', 'P5'] });
   } else {
     // 문단당 슬라이드 후보 — 3개 초과면 (선정)으로 AI가 대표만 작성
     const optional = segments.length > 3;
@@ -400,7 +411,7 @@ export function buildSeedSlidePlan(seed: SeedRowLite): SlidePlan {
         template: 'B2',
         sourceSection: `seed:seg#${String(i + 1).padStart(2, '0')}`,
         material: seg,
-        alternatives: ['B7', 'B4', 'B3'],
+        alternatives: ['B7', 'B4', 'B3', 'P5'],
         optional,
       });
     });
@@ -586,6 +597,8 @@ export function buildToolSlidePlan(row: ToolRowLite): SlidePlan {
   slides.push({
     template: 'B2',
     sourceSection: 'tool:overview',
+    alternatives: ['P1'],
+    image: images[1],
     material: [
       OVERVIEW_ROLE,
       `${kind}: ${row.name}`,
@@ -619,7 +632,7 @@ export function buildToolSlidePlan(row: ToolRowLite): SlidePlan {
       template: c.section === 'tool:whenToUse' || c.section === 'tool:pricing' ? 'B1' : 'B2',
       sourceSection: c.section,
       material: `${c.heading}\n${c.text}`,
-      alternatives: ['B2', 'B7', 'B4', 'B3'],
+      alternatives: ['B2', 'P2', 'B7', 'B4', 'B3'],
       optional,
     });
   });

@@ -174,7 +174,75 @@ export const B9PropsSchema = z.object({
     .optional(),
 });
 
+// ===== P 계열 — 사진 편집형 본문 (벤치마크 문법: 전 장 사진 + 스크림 + 헤어라인 라벨) =====
+// 공통: image 없으면 그라데이션 폴백. 텍스트는 항상 스크림 위 → 밝은 사진에도 대비가 유지된다.
+const PhotoFields = {
+  ...StyleOverrideFields,
+  page: z.string().optional(),
+  image: z.string().url().optional(),
+};
+
+/** P1 스플릿 + 번호 목록 — 정보량 많은 본문의 기본값 */
+export const P1PropsSchema = z.object({
+  ...PhotoFields,
+  eyebrow: z.string().optional(),                    // 헤어라인 라벨 (기본: 카테고리명)
+  lead: z.string().min(1),                           // 이 장의 핵심 한 줄 (**강조** 1구절)
+  items: z.array(z.string().min(1)).min(2).max(4),   // 번호 목록 (구분선)
+  photoH: z.number().min(420).max(840).optional(),   // 사진 밴드 높이 (기본 660)
+});
+
+/** P2 스플릿 + 문단 — 큰 제목 → 부제 → 회색 본문의 3단 위계 */
+export const P2PropsSchema = z.object({
+  ...PhotoFields,
+  eyebrow: z.string().optional(),
+  heading: z.string().min(1),
+  sub: z.string().optional(),
+  body: z.string().min(1),                           // '\n' 줄바꿈 허용
+  photoH: z.number().min(420).max(840).optional(),
+});
+
+/** P3 풀블리드 + 하단 스크림 — 사진이 주인공. 전환·강조 장 */
+export const P3PropsSchema = z.object({
+  ...PhotoFields,
+  label: z.string().optional(),
+  title: z.string().min(1),
+  items: z.array(z.string().min(1)).max(3).optional(),
+  footer: z.string().optional(),                     // "@LOSS LEADER" 식 개념 영문
+});
+
+/** P4 풀블리드 + 인용 */
+export const P4PropsSchema = z.object({
+  ...PhotoFields,
+  quote: z.string().min(1),
+  attribution: z.string().optional(),
+});
+
+/** P5 블랙아웃(사진=텍스처) + 번호 목록 — 사진 실패·프롬프트 소재 폴백 */
+export const P5PropsSchema = z.object({
+  ...PhotoFields,
+  index: z.string().optional(),                      // "02"
+  eyebrow: z.string().optional(),
+  lead: z.string().min(1),
+  items: z.array(z.string().min(1)).min(2).max(4),
+  footer: z.string().optional(),
+});
+
+/** P6 블랙아웃 + 빅넘버 — 본문 흐름에서 숫자 한 방 */
+export const P6PropsSchema = z.object({
+  ...PhotoFields,
+  kicker: z.string().optional(),
+  big: z.string().min(1),                            // "70%", "10배", "FOCUS"
+  resolve: z.string().min(1),
+  footer: z.string().optional(),
+});
+
 export const RenderSlideSchema = z.discriminatedUnion('template', [
+  z.object({ template: z.literal('P1'), accent: CardAccentSchema, props: P1PropsSchema }),
+  z.object({ template: z.literal('P2'), accent: CardAccentSchema, props: P2PropsSchema }),
+  z.object({ template: z.literal('P3'), accent: CardAccentSchema, props: P3PropsSchema }),
+  z.object({ template: z.literal('P4'), accent: CardAccentSchema, props: P4PropsSchema }),
+  z.object({ template: z.literal('P5'), accent: CardAccentSchema, props: P5PropsSchema }),
+  z.object({ template: z.literal('P6'), accent: CardAccentSchema, props: P6PropsSchema }),
   z.object({ template: z.literal('C1'), accent: CardAccentSchema, props: C1PropsSchema }),
   z.object({ template: z.literal('C2'), accent: CardAccentSchema, props: C2PropsSchema }),
   z.object({ template: z.literal('C3'), accent: CardAccentSchema, props: C3PropsSchema }),

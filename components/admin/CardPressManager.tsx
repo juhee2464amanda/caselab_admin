@@ -96,11 +96,17 @@ const TEMPLATE_LABEL: Record<CardTemplateId, string> = {
   B1: 'B1 타임라인', B2: 'B2 불릿', B3: 'B3 용어', B4: 'B4 선언',
   B5: 'B5 솔직후기', B6: 'B6 스텝', B7: 'B7 숫자', B8: 'B8 프롬프트',
   B9: 'B9 스크린샷', O1: 'O1 마무리',
+  P1: 'P1 사진+목록', P2: 'P2 사진+문단', P3: 'P3 풀사진', P4: 'P4 사진인용',
+  P5: 'P5 블랙목록', P6: 'P6 블랙빅넘버',
 };
 
 // 템플릿 교체 대안 (재료가 같은 섹션에서 서로 넘나들 수 있는 쌍)
+// P 계열은 사진 유무·정보량에 따라 서로 갈아끼운다: 사진 실패 → P5/P6로 폴백.
 const ALT_MAP: Partial<Record<CardTemplateId, CardTemplateId[]>> = {
-  B2: ['B7', 'B6'], B7: ['B2'], B6: ['B2'], C1: ['C2', 'C5'], C2: ['C1', 'C5'], C5: ['C1', 'C2'], B4: ['B2'],
+  B2: ['P1', 'P5', 'B7', 'B6'], B7: ['P6', 'B2'], B6: ['B2'], C1: ['C2', 'C5'], C2: ['C1', 'C5'],
+  C5: ['C1', 'C2'], B4: ['P4', 'P3', 'B2'],
+  P1: ['P5', 'P2', 'B2'], P2: ['P1', 'P3'], P3: ['P4', 'P2'], P4: ['P3', 'B4'],
+  P5: ['P1', 'P6'], P6: ['P5', 'B7'],
 };
 
 // 형광펜 색 팔레트 — 캐러셀 가이드 시스템(카테고리 3색+Bad 레드) + 벤치마크 골드
@@ -117,11 +123,12 @@ const HL_TARGET: Partial<Record<CardTemplateId, string>> = {
   C1: 'title', C2: 'title', C3: 'title', B4: 'title', O1: 'title', B1: 'heading', B6: 'heading',
 };
 // **강조** 마커(포인트색 볼드)를 렌더하는 필드
-const EM_FIELDS = new Set(['bullets', 'body', 'cap', 'lead', 'resolve']);
+const EM_FIELDS = new Set(['bullets', 'body', 'cap', 'lead', 'resolve', 'items', 'heading', 'title', 'quote', 'sub']);
 
 // 슬라이드별 이미지가 들어가는 props 키
 const IMAGE_KEY: Partial<Record<CardTemplateId, string>> = {
   C1: 'coverImage', C2: 'coverImage', C5: 'coverImage', B4: 'coverImage', B2: 'media', B9: 'shot',
+  P1: 'image', P2: 'image', P3: 'image', P4: 'image', P5: 'image', P6: 'image',
 };
 
 // ── 템플릿별 인라인 편집 필드 정의 ──────────────────────────
@@ -227,6 +234,47 @@ const FIELDS: Record<CardTemplateId, FieldDef[]> = {
     { key: 'title', label: '핵심 요약', kind: 'textarea', hint: '2줄, 줄당 ≤11자' },
     { key: 'hl', label: '형광펜 단어', kind: 'input' },
     { key: 'body', label: '부연', kind: 'textarea' },
+  ],
+  // ── P 계열 (사진 편집형) ──
+  P1: [
+    { key: 'eyebrow', label: '라벨', kind: 'input', hint: '헤어라인 라벨 · 비우면 카테고리명' },
+    { key: 'lead', label: '핵심 한 줄', kind: 'textarea', hint: '**강조**는 1구절만 · ≤26자' },
+    { key: 'items', label: '목록 (줄마다 1개)', kind: 'lines', hint: '2~4개 · 번호+구분선으로 렌더' },
+    { key: 'image', label: '사진 URL', kind: 'input', hint: '비우면 그라데이션 폴백' },
+  ],
+  P2: [
+    { key: 'eyebrow', label: '라벨', kind: 'input' },
+    { key: 'heading', label: '제목', kind: 'textarea', hint: '가장 크게 서는 줄' },
+    { key: 'sub', label: '부제', kind: 'input', hint: '제목의 62% 크기' },
+    { key: 'body', label: '본문', kind: 'textarea', hint: '작은 회색 문단 — 위계로 읽힌다' },
+    { key: 'image', label: '사진 URL', kind: 'input' },
+  ],
+  P3: [
+    { key: 'label', label: '라벨', kind: 'input' },
+    { key: 'title', label: '헤드라인', kind: 'textarea', hint: '2~3줄 · **강조** 1구절' },
+    { key: 'items', label: '뒷받침 (줄마다 1개)', kind: 'lines', hint: '0~3개 · 비워도 됨' },
+    { key: 'footer', label: '푸터', kind: 'input', hint: '@개념영문 (예: @LOSS LEADER)' },
+    { key: 'image', label: '사진 URL', kind: 'input' },
+  ],
+  P4: [
+    { key: 'quote', label: '인용문', kind: 'textarea', hint: '따옴표는 자동 · ≤48자' },
+    { key: 'attribution', label: '출처', kind: 'input', hint: '앞의 — 는 자동' },
+    { key: 'image', label: '사진 URL', kind: 'input' },
+  ],
+  P5: [
+    { key: 'index', label: '인덱스', kind: 'input', hint: '"02" 같은 진행 표시' },
+    { key: 'eyebrow', label: '라벨', kind: 'input' },
+    { key: 'lead', label: '핵심 한 줄', kind: 'textarea', hint: '사진이 없으니 타이포가 주인공' },
+    { key: 'items', label: '목록 (줄마다 1개)', kind: 'lines', hint: '2~4개' },
+    { key: 'footer', label: '푸터', kind: 'input' },
+    { key: 'image', label: '사진 URL', kind: 'input', hint: '있으면 텍스처 수준(86% 눌림)' },
+  ],
+  P6: [
+    { key: 'kicker', label: '맥락 한 줄', kind: 'input' },
+    { key: 'big', label: '거대 숫자/단어', kind: 'input', hint: '"70%", "10배", "FOCUS" · ≤6자' },
+    { key: 'resolve', label: '해소 문장', kind: 'textarea' },
+    { key: 'footer', label: '푸터', kind: 'input' },
+    { key: 'image', label: '사진 URL', kind: 'input', hint: '있으면 텍스처 수준(82% 눌림)' },
   ],
 };
 
