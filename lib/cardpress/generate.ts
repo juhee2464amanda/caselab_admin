@@ -83,6 +83,8 @@ export type CardSetDraft = {
   ctaKeyword: string;
   /** 메타포 검색어로 Unsplash에서 자동 수급한 커버 후보 (키 없으면 빈 배열) */
   coverCandidates: CoverCandidate[];
+  /** 슬라이드에 자동 수급된 사진 출처 — Unsplash 가이드라인상 발행 시 표기 필요 */
+  photoCredits: { url: string; credit: string; creditLink: string }[];
 };
 
 const FIXED_TAGS = ['#케이스랩', '#AI활용', '#일잘러', '#업무효율', '#AI실험'];
@@ -102,6 +104,10 @@ const GenOutputSchema = z.object({
         template: z.string(),
         sourceSection: z.string().optional(),
         props: z.record(z.string(), z.unknown()),
+        /** 이 슬라이드용 사진 검색어 사다리(영어, 우선순위 순) — 서버가 앞에서부터 시도해 image에 채운다.
+         *  커버(metaphorQueries)와 같은 구조. 모델이 문자열 하나로 낼 때도 있어 둘 다 받는다. */
+        imageQueries: z.union([z.string(), z.array(z.string())]).optional(),
+        imageQuery: z.string().optional(),
       }),
     ])
   ),
@@ -109,6 +115,14 @@ const GenOutputSchema = z.object({
   threadsText: z.string().min(1),
   metaphorQueries: z.array(z.string()).optional(),
 });
+
+// 개념→사물 치환표 — 커버·슬라이드 검색어가 공유하는 단일 정의(벤치마크 문서 §3-4 시드).
+// 추상어로 검색하면 스톡티한 사진이 나온다: "집중"이 아니라 "다트판"을 찾아야 한다.
+const SUBSTITUTION_TABLE = `병목·약한 고리→steel chain macro / 집중→dartboard bullseye / 니치·작은 시장→ant macro /
+  불확실성→foggy mountain / 관문·심사→old door knocker / 유입 경로→fishing net silhouette /
+  성장·시작→seedling soil / 함정·손실→mousetrap / 데이터·AI→matrix code dark, server room dark /
+  계약·법→contract fountain pen / 돈·가격→coins macro / 방치·묵힘→dusty notebook shelf dark /
+  반복 확인→stopwatch macro dark / 협업→hands on desk from above / 완성·출시→ribbon cutting scissors`;
 
 // ── 규격 검사 ──────────────────────────────────────────────
 
@@ -294,8 +308,11 @@ const TEMPLATE_SPECS = `[템플릿별 props 규격 — 줄바꿈은 문자열 �
 - B8 프롬프트 패턴: {"badge":"'패턴 03' 등 ≤8자(선택)","patternEn":"영어 패턴명 원문 그대로(재료에 있으면 필수 — 예: Blindspot Pass) ≤30자","patternName":"≤12자 한글 패턴명(patternEn 아래 부제로 렌더)","when":"≤22자 — 어떤 상황에서 쓰는지 (따옴표 없이)","lines":["≤22자/줄"] 3~4줄 핵심 맛보기 — 전문이 아니라 구조가 보이는 핵심만, 변수는 [대괄호],"effect":"≤20자 기대 효과 (실측·구체적으로)"} — 인스타에선 복사 불가이므로 '복사' 언급 금지. 이 슬라이드의 목표는 "나도 써보고 싶다". CTA(댓글 유도 등)는 캡션이 전담 — 슬라이드에 ctaLine 생성 금지
 
 [템플릿 선택 규칙 — 사진 우선]
-- 계획 줄에 **📷사진 있음** 표시가 있으면 그 장은 **P 계열을 우선 선택**한다(대안에 있는 경우).
-  정보 나열이면 P1, 설명·맥락이면 P2, 한 문장이 강하면 P3/P4. 사진을 두고 흰 카드를 고르지 말 것.
+- 계획 줄에 **📷사진 있음** = 본문에서 추출한 실제 이미지가 이미 있는 장. **P 계열을 우선 선택**한다
+  (정보 나열이면 P1, 설명·맥락이면 P2, 한 문장이 강하면 P3/P4). 사진을 두고 흰 카드를 고르지 말 것.
+- 계획 줄에 **🖼사진 수급 가능** = 아직 사진이 없지만 **P 계열을 고르면 시스템이 검색해서 채워준다**.
+  이 표시가 있으면 적극적으로 P 계열을 고르고 **imageQueries를 반드시 함께 낼 것** — 검색어를 안 내면
+  사진이 안 붙는다. (흰 카드 B 계열을 고를 거라면 검색어는 불필요)
 - 시각적으로 후킹되는 소재(도구·서비스 소개, 제작기, 게임/화면 결과물, 실행 스크린샷)는
   텍스트로 설명하지 말고 **사진형(P1·P2·P3)으로 보여줄 것** — 결과물이 보이는 게 설명보다 강하다.
 - 사진 표시가 없으면 B 계열 또는 P5/P6(블랙아웃)을 쓴다. 없는 사진을 지어내지 말 것.
@@ -346,12 +363,14 @@ const SYSTEM = `당신은 케이스랩(caselab)의 SNS 콘텐츠 에디터입니
 2. 필드 간 중복 금지: kicker·title·sub·footer는 각자 다른 정보 1개씩 — 신뢰(출처)는 한 필드에서만, 같은 사실을 두 필드에 반복하지 말 것
 3. sub의 역할: title 재서술이 아니라 궁금증 증폭 또는 스펙 제공(N가지·읽는 시간·대상 독자)
 
-[커버 이미지 검색어(metaphorQueries) — 4단 우선순위]
-1순위 리터럴: 본문에 등장하는 구체 사물 그대로 (naengmyeon, rolex watch macro)
-2순위 은유: 개념을 설명하는 관용적 사물 — 치환표: 병목→steel chain macro / 집중→dartboard bullseye / 니치→ant macro / 불확실성→foggy mountain / 관문·심사→old door knocker / 유입 경로→fishing net silhouette / 성장→seedling soil / 함정→mousetrap / 데이터·AI→matrix code dark, server room dark / 계약→contract fountain pen / 돈·가격→coins macro
+[이미지 검색어 공통 규칙 — 커버·슬라이드 모두 이 사다리를 쓴다]
+먼저 **핵심 키워드**를 뽑는다: 그 화면이 말하는 것 중 "눈에 보이는 것 하나". 그다음 4단 우선순위로 검색어를 만든다.
+1순위 리터럴: 텍스트에 등장하는 구체 사물 그대로 (naengmyeon, rolex watch macro)
+2순위 은유: 개념을 설명하는 관용적 사물 — 치환표: ${SUBSTITUTION_TABLE}
 3순위 장면: 이야기의 분위기 컷 (old office desk night, contract signing) — 사람은 back view·crowd·distant 강제
 4순위 텍스처: 무드 배경 (dark green matrix code, old world map dark)
-규칙: 영어 2~4단어 + 구체 명사 필수 + 촬영 스타일 단어 1개(macro/close up/dark/moody/silhouette/minimal). 3개를 1→2→3순위 순서로.
+규칙: 영어 2~4단어 + 구체 명사 필수 + 촬영 스타일 단어 1개(macro/close up/dark/moody/silhouette/minimal).
+검색어는 **1→2→3순위 순서로** 낸다 — 앞이 실패하면 서버가 다음 순위로 내려간다.
 
 [작업]
 아래 슬라이드 계획의 각 항목에 대해, 주어진 재료(material)를 해당 템플릿 규격에 맞게 압축한 props를 작성하세요.
@@ -381,8 +400,24 @@ ${TEMPLATE_SPECS}
 - threadsText: 스레드 네이티브 톤으로 재작성한 글 300~450자 — 대화하듯, 핵심 발견 1~2개 + 솔직 후기 한 줄. 링크는 쓰지 말 것(시스템이 붙임).
 - metaphorQueries: 커버 배경 이미지 검색어 3개 — 제목·후킹 문장 속 "구체적 사물/장면"을 영어로 (주제어 말고 명사. 예: "airplane cabin aisle interior", "colored pencils macro"). 구체 명사가 없으면 개념을 사물로 치환(집중→과녁, 선택→갈림길). 어둡고 대비 강한 톤 선호("dark", "moody", "silhouette" 등 톤 단어 1개 포함), 알아볼 수 있는 얼굴은 피할 것(뒷모습·손·오브젝트 위주).
 
+[슬라이드 사진 검색어(imageQueries) — 사진형 템플릿(P1·P2·P3·P4·C1·B4)에만]
+**🖼사진 수급 가능** 표시가 있는 장에서 P 계열을 골랐다면, 위의 공통 사다리를 그 장에 적용해 검색어 2~3개를 냅니다.
+(📷사진 있음 장은 이미 실제 이미지가 붙으므로 검색어가 필요 없습니다)
+
+① 그 장의 **핵심 키워드**를 먼저 잡는다 — lead·title·items에서 가장 구체적인 명사 하나.
+   (커버는 글 전체의 핵심을, 슬라이드는 **그 장의** 핵심을 잡는다. 글 주제를 반복하면 전 장이 같은 사진이 된다)
+② 그 키워드로 1순위(리터럴)→2순위(은유)→3순위(장면) 검색어를 만든다.
+③ 앞 장에서 쓴 소재와 **겹치지 않게** 고른다 — 같은 사물이 반복되면 카드 전체가 지루해진다.
+
+예) "4년 전 메모를 꺼냈다" → 핵심 키워드=오래된 메모 →
+    ["dusty notebook shelf dark", "old sketchbook desk moody", "storage boxes attic dark"]
+    글 주제인 "AI·게임"으로 검색하면 전 장이 비슷한 그림이 된다 — 그 장이 말하는 것을 찍을 것.
+
+- 사람은 뒷모습·손·군중만(back view, hands, crowd). 정면 얼굴·스톡티한 연출 금지
+- 사진이 필요 없거나 떠오르지 않으면 imageQueries를 생략하세요(그라데이션으로 렌더됨)
+
 [출력 — JSON 하나만, 설명 없이]
-{"edge":"이 콘텐츠의 엣지 한 줄","ctaKeyword":"댓글 키워드(comment_dm일 때)","slides":[{"template":"C1","sourceSection":"계획의 sourceSection 그대로","props":{...}} 또는 {"skip":true,"sourceSection":"..."}, ...],"igCaption":"...","threadsText":"...","metaphorQueries":["...","...","..."]}
+{"edge":"이 콘텐츠의 엣지 한 줄","ctaKeyword":"댓글 키워드(comment_dm일 때)","slides":[{"template":"C1","sourceSection":"계획의 sourceSection 그대로","props":{...},"imageQueries":["1순위","2순위","3순위"]} 또는 {"skip":true,"sourceSection":"..."}, ...],"igCaption":"...","threadsText":"...","metaphorQueries":["...","...","..."]}
 슬라이드 배열의 순서·개수는 계획과 1:1 동일해야 합니다(선정 제외는 skip 객체로 자리를 지킬 것).`;
 
 function planPrompt(
@@ -396,7 +431,13 @@ function planPrompt(
   const slideLines = plan.slides
     .map(
       (s, i) =>
-        `${i + 1}. template=${s.template}${s.alternatives?.length ? ` (대안: ${s.alternatives.join(',')})` : ''} · sourceSection=${s.sourceSection}${s.image ? ' · 📷사진 있음' : ''}${s.optional ? ' · (선정)' : ''}${s.required ? ` · ${s.required}` : ''}\n재료:\n${clip(s.material)}`
+        `${i + 1}. template=${s.template}${s.alternatives?.length ? ` (대안: ${s.alternatives.join(',')})` : ''} · sourceSection=${s.sourceSection}${
+          s.image
+            ? ' · 📷사진 있음'
+            : [s.template, ...(s.alternatives ?? [])].some((t) => t.startsWith('P'))
+              ? ' · 🖼사진 수급 가능'
+              : ''
+        }${s.optional ? ' · (선정)' : ''}${s.required ? ` · ${s.required}` : ''}\n재료:\n${clip(s.material)}`
     )
     .join('\n\n');
   const optCount = plan.slides.filter((s) => s.optional).length;
@@ -461,12 +502,150 @@ async function fetchCoverCandidates(queries: string[]): Promise<CoverCandidate[]
   return flat.slice(0, 2);
 }
 
+// ── 슬라이드별 사진 수급 ────────────────────────────────────
+//
+// 왜: 본문 추출 이미지는 보통 3~4장뿐이고 전부 같은 글의 화면 캡처라, 여러 장에 깔면
+// 같은 그림이 반복되고 슬라이드 메시지와도 안 맞는다(2026-08-13 피드백). 추출 이미지는
+// "결과물을 보여주는 장"에만 쓰고, 나머지 사진형 장은 그 장의 메시지에 맞는 사진을 따로 받는다.
+//
+// 중복 방지가 핵심 — 같은 사진이 두 장에 깔리면 "이미지가 반복된다"는 인상이 그대로 남는다.
+// 검색어별로 여러 후보를 받아 이미 쓴 photo id를 건너뛴다.
+const PHOTO_TEMPLATES: CardTemplateId[] = ['P1', 'P2', 'P3', 'P4', 'C1', 'B4'];
+
+/** 슬라이드의 사진이 들어가는 props 키 (템플릿마다 다름) */
+function imagePropKey(t: CardTemplateId): string | null {
+  if (t.startsWith('P')) return 'image';
+  if (t === 'C1' || t === 'B4' || t === 'C5') return 'coverImage';
+  return null;
+}
+
+type SlidePhoto = { url: string; credit: string; creditLink: string };
+
+// ── 라이선스·API 약관 준수 ───────────────────────────────────
+// Unsplash License: 상업적 사용 무료·허가 불필요(unsplash.com/license). 단 두 가지가 별개다.
+//  ① Unsplash+ (유료 구독 사진) — 검색에 섞이면 라이선스 위반이 된다. 실측(60장 표본)에선
+//     기본 /search/photos에 안 섞였지만, 정책이 바뀔 수 있어 호스트·asset_type으로 방어한다.
+//  ② API Guidelines(라이선스와 별개로 구속) — 사진 사용 시 download_location 호출 필수 +
+//     사진가·Unsplash 출처 표기 필수(UTM 파라미터 포함).
+// 참고: 얼굴·상표가 식별되는 사진은 초상권·상표권이 별도라 라이선스가 보장하지 않는다
+//       → 프롬프트에서 정면 얼굴을 금지하는 이유가 미적 취향만은 아니다.
+const UTM = 'utm_source=caselab&utm_medium=referral';
+
+/** 무료 Unsplash 사진인지 — 유료(Unsplash+)·비사진 자산을 배제 */
+function isFreePhoto(r: {
+  urls: { raw: string };
+  asset_type?: string;
+  premium?: boolean;
+  plus?: boolean;
+}): boolean {
+  if (r.premium || r.plus) return false;
+  if (r.asset_type && r.asset_type !== 'photo') return false;
+  try {
+    return new URL(r.urls.raw).host === 'images.unsplash.com';
+  } catch {
+    return false;
+  }
+}
+
+/** API 약관: 사진을 실제로 쓸 때 download 엔드포인트를 호출해야 한다(다운로드 집계) */
+function trackDownload(downloadLocation: string | undefined, key: string): void {
+  if (!downloadLocation) return;
+  void fetch(downloadLocation, { headers: { Authorization: `Client-ID ${key}` } }).catch(() => {});
+}
+
+/** 검색어 하나로 후보를 받아 아직 안 쓴 무료 사진을 고른다 */
+async function searchUnsplash(
+  query: string,
+  usedIds: Set<string>,
+  key: string
+): Promise<(SlidePhoto & { id: string }) | null> {
+  try {
+    const res = await fetch(
+      `https://api.unsplash.com/search/photos?query=${encodeURIComponent(query)}&per_page=6&orientation=portrait&content_filter=high`,
+      { headers: { Authorization: `Client-ID ${key}` } }
+    );
+    if (!res.ok) return null;
+    const data = (await res.json()) as {
+      results: Array<{
+        id: string;
+        urls: { raw: string };
+        asset_type?: string;
+        premium?: boolean;
+        plus?: boolean;
+        links: { download_location?: string };
+        user: { name: string; username: string; links: { html: string } };
+      }>;
+    };
+    for (const r of data.results) {
+      if (usedIds.has(r.id) || !isFreePhoto(r)) continue;
+      trackDownload(r.links?.download_location, key);
+      return {
+        id: r.id,
+        // fm=jpg 필수 — Satori는 WebP를 디코드하지 못하고 조용히 검정으로 렌더한다
+        url: `${r.urls.raw}&w=1080&h=1350&fit=crop&fm=jpg&q=80`,
+        credit: r.user.name,
+        creditLink: `${r.user.links.html}?${UTM}`,
+      };
+    }
+  } catch {
+    /* 네트워크 실패는 다음 검색어로 — P 계열은 그라데이션 폴백이 있다 */
+  }
+  return null;
+}
+
+/** 검색어 사다리를 우선순위대로 시도 — 커버(fetchCoverCandidates)와 같은 구조.
+ *  1순위(리터럴)가 비면 2순위(은유), 그것도 비면 3순위(장면)로 내려간다.
+ *  단일 검색어였을 땐 결과가 없거나 전부 중복이면 그 장이 그냥 사진 없이 나갔다. */
+async function pickPhotoFromLadder(
+  queries: string[],
+  usedIds: Set<string>,
+  key: string
+): Promise<(SlidePhoto & { id: string; query: string }) | null> {
+  for (const q of queries) {
+    const hit = await searchUnsplash(q, usedIds, key);
+    if (hit) return { ...hit, query: q };
+  }
+  return null;
+}
+
+/** 사진이 비어 있는 사진형 슬라이드를 imageQuery로 채운다. 반환: 사진 출처 목록(크레딧 표기용) */
+async function fillSlidePhotos(
+  slides: ParsedSlide[],
+  finalized: CardSlide[]
+): Promise<SlidePhoto[]> {
+  const key = process.env.UNSPLASH_ACCESS_KEY;
+  if (!key) return [];
+  const usedIds = new Set<string>();
+  const credits: SlidePhoto[] = [];
+  for (const [i, s] of finalized.entries()) {
+    if (!PHOTO_TEMPLATES.includes(s.template)) continue;
+    const propKey = imagePropKey(s.template);
+    if (!propKey || s.props[propKey]) continue; // 추출 이미지가 이미 붙은 장은 그대로 둔다
+    const queries = slides[i]?.imageQueries;
+    if (!queries?.length) continue;
+    const photo = await pickPhotoFromLadder(queries, usedIds, key);
+    if (!photo) continue;
+    usedIds.add(photo.id);
+    s.props[propKey] = photo.url;
+    credits.push({ url: photo.url, credit: photo.credit, creditLink: photo.creditLink });
+  }
+  return credits;
+}
+
 // ── 생성 본체 ──────────────────────────────────────────────
 
 type RawSlide = z.infer<typeof GenOutputSchema>['slides'][number];
-type ParsedSlide = CardSlide & { planIndex: number };
+type ParsedSlide = CardSlide & { planIndex: number; imageQueries?: string[] };
 
 const COVER_TEMPLATES: CardTemplateId[] = ['C1', 'C2', 'C3', 'C5'];
+
+/** imageQueries(배열|문자열) + 레거시 imageQuery → 검색어 사다리 배열 */
+function normalizeQueries(qs?: string | string[], legacy?: string): string[] | undefined {
+  const arr = [...(Array.isArray(qs) ? qs : qs ? [qs] : []), ...(legacy ? [legacy] : [])]
+    .map((q) => q.trim())
+    .filter(Boolean);
+  return arr.length ? arr.slice(0, 3) : undefined;
+}
 
 function validateSlides(
   raw: RawSlide[],
@@ -515,6 +694,7 @@ function validateSlides(
       sourceSection: planned?.sourceSection ?? s.sourceSection,
       required: planned?.required,
       planIndex: i,
+      imageQueries: normalizeQueries(s.imageQueries, s.imageQuery),
     });
   });
 
@@ -770,10 +950,15 @@ ${lastIssues.map((i) => `- ${i}`).join('\n')}`;
   const ctaKeyword = opts?.ctaKeyword?.trim() || lastRaw.ctaKeyword?.trim() || '프롬프트';
   const metaphorQueries = lastRaw.metaphorQueries ?? [];
 
+  const finalSlides = finalizeSlides(slides, plan, ctaType, ctaKeyword);
+  // 추출 이미지가 안 붙은 사진형 장을 슬라이드별 검색어로 채운다(중복 없이)
+  const photoCredits = await fillSlidePhotos(slides, finalSlides);
+
   return {
     accent: plan.accent,
-    slides: finalizeSlides(slides, plan, ctaType, ctaKeyword),
+    slides: finalSlides,
     extractedImages: plan.images,
+    photoCredits,
     igCaption: `${lastRaw.igCaption.trim()}\n\n${tags.join(' ')}`,
     threadsText: threads,
     metaphorQueries,
