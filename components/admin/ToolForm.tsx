@@ -612,7 +612,32 @@ export function ToolForm({ initial, onSaved, startInPreview }: Props) {
             thumbnailUrl={thumbnailUrl}
             onApply={(patch) => {
               if (patch.thumbnailUrl) setThumbnailUrl(patch.thumbnailUrl);
-              if (patch.addSections.length) setSections([...sections, ...patch.addSections]);
+              // features 이미지 슬롯 채움 + 추가 섹션을 한 번의 body 갱신으로 처리
+              const merged: Record<string, unknown> = { ...(parsedBody ?? {}) };
+              const leftovers: RichSection[] = [];
+              if (patch.featureImages.length) {
+                const remaining = [...patch.featureImages];
+                if (Array.isArray(merged.features)) {
+                  merged.features = (merged.features as Record<string, unknown>[]).map((f) => {
+                    const hit = remaining.findIndex((m) => m.title === String(f?.title ?? '').trim());
+                    if (hit === -1) return f;
+                    const [m] = remaining.splice(hit, 1);
+                    // feature.image 계약은 {url, caption?}만 허용 (strict 스키마 — alt 넣으면 발행 차단)
+                    return { ...f, image: { url: m.url, ...(m.caption ? { caption: m.caption } : {}) } };
+                  });
+                }
+                // 반영 시점에 기능이 사라졌으면 버리지 말고 추가 섹션으로 보존
+                for (const m of remaining) {
+                  leftovers.push({
+                    heading: m.title,
+                    blocks: [{ type: 'image', url: m.url, alt: m.alt, caption: m.caption }],
+                  });
+                }
+              }
+              const nextSections = [...sections, ...patch.addSections, ...leftovers];
+              if (nextSections.length) merged.sections = nextSections;
+              else delete merged.sections;
+              syncBody(JSON.stringify(merged, null, 2));
             }}
           />
 

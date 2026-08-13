@@ -8,7 +8,8 @@ import type { RichSection } from '@/types/content';
 
 // 초안 기준 이미지 자동 채움 패널 (로컬 admin 전용).
 // 버튼 → /api/admin/suggest-images (사이트 캡처 + Claude 매칭 + 버킷 업로드, 1~3분)
-// → 후보 미리보기 → 체크한 것만 썸네일/추가 섹션(image 블록)으로 반영.
+// → 후보 미리보기 → 체크한 것만 반영: 기능 제목과 일치하면 해당 기능의 이미지 슬롯
+// (features[i].image, '이 도구가 잘하는 것' 아래), 아니면 추가 섹션(image 블록).
 // Playwright·Claude CLI가 운영자 Mac에만 있으므로 localhost에서만 노출한다(스튜디오 버튼과 같은 정책).
 
 interface Match {
@@ -38,7 +39,12 @@ export function AiImageFill({
   name: string;
   parsedBody: Record<string, unknown> | null;
   thumbnailUrl: string;
-  onApply: (patch: { thumbnailUrl?: string; addSections: RichSection[] }) => void;
+  onApply: (patch: {
+    thumbnailUrl?: string;
+    // 기능 제목이 일치한 이미지 — ToolForm이 body.features[i].image에 넣는다
+    featureImages: { title: string; url: string; alt?: string; caption?: string }[];
+    addSections: RichSection[];
+  }) => void;
 }) {
   const [visible, setVisible] = useState(false);
   const [running, setRunning] = useState(false);
@@ -74,7 +80,8 @@ export function AiImageFill({
       const json = await res.json();
       if (!res.ok) throw new Error(json.error ?? `실패 (${res.status})`);
       setResult(json as SuggestResult);
-      setUseThumb(Boolean(json.thumbnail));
+      // 이미 썸네일이 있으면 교체는 명시적으로 체크했을 때만 — 기본 해제
+      setUseThumb(Boolean(json.thumbnail) && !thumbnailUrl);
       setPicked(new Set((json.matches as Match[]).map((_, i) => i)));
     } catch (e) {
       setErr((e as Error).message);
@@ -85,14 +92,25 @@ export function AiImageFill({
 
   function apply() {
     if (!result) return;
-    const addSections: RichSection[] = result.matches
-      .filter((_, i) => picked.has(i))
-      .map((m) => ({
-        heading: m.title,
-        blocks: [{ type: 'image' as const, url: m.url, alt: m.alt || undefined, caption: m.caption || undefined }],
-      }));
+    // 기능 제목과 일치하면 해당 기능의 이미지 슬롯으로. 같은 기능에 두 장을 고르면
+    // 첫 장만 슬롯에 넣고 나머지는 추가 섹션으로 보존한다(체크한 이미지는 버리지 않는다).
+    const featureTitles = new Set(features.map((f) => f.title.trim()));
+    const featureImages: { title: string; url: string; alt?: string; caption?: string }[] = [];
+    const addSections: RichSection[] = [];
+    for (const m of result.matches.filter((_, i) => picked.has(i))) {
+      const title = m.title.trim();
+      if (featureTitles.delete(title)) {
+        featureImages.push({ title, url: m.url, alt: m.alt || undefined, caption: m.caption || undefined });
+      } else {
+        addSections.push({
+          heading: m.title,
+          blocks: [{ type: 'image' as const, url: m.url, alt: m.alt || undefined, caption: m.caption || undefined }],
+        });
+      }
+    }
     onApply({
       thumbnailUrl: useThumb && result.thumbnail ? result.thumbnail.url : undefined,
+      featureImages,
       addSections,
     });
     setResult(null);
@@ -212,7 +230,7 @@ export function AiImageFill({
                 선택 반영
               </Button>
               <p className="mt-1.5 text-[11px] text-ink/45 break-keep">
-                체크한 이미지가 &lsquo;추가 섹션&rsquo;(기능명 제목 + 이미지)으로 들어가요. 반영 뒤에도 상세 필드에서 수정·삭제할 수 있어요.
+                체크한 이미지는 제목이 일치하는 기능(&lsquo;이 도구가 잘하는 것&rsquo;) 아래 이미지로 들어가고, 일치하는 기능이 없으면 &lsquo;추가 섹션&rsquo;으로 들어가요. 반영 뒤에도 수정·삭제할 수 있어요.
               </p>
             </div>
           )}
