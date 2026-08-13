@@ -73,6 +73,8 @@ export function ToolForm({ initial, onSaved, startInPreview }: Props) {
   const router = useRouter();
   const supabase = createSupabaseBrowserClient();
   const [pending, startTransition] = useTransition();
+  // 초안 저장은 화면을 떠나지 않으므로, 저장됐다는 표시를 여기서 준다.
+  const [savedAt, setSavedAt] = useState<string | null>(null);
 
   const [name, setName] = useState(initial?.name ?? '');
   const [slug, setSlug] = useState(initial?.slug ?? '');
@@ -240,9 +242,11 @@ export function ToolForm({ initial, onSaved, startInPreview }: Props) {
 
       let id = initial?.id;
       if (id) {
-        await supabase.from('tools').update(payload).eq('id', id);
+        const { error } = await supabase.from('tools').update(payload).eq('id', id);
+        if (error) return alert('저장 실패: ' + error.message);
       } else {
-        const { data } = await supabase.from('tools').insert(payload).select('id').single();
+        const { data, error } = await supabase.from('tools').insert(payload).select('id').single();
+        if (error) return alert('저장 실패: ' + error.message);
         id = data?.id;
       }
 
@@ -264,7 +268,16 @@ export function ToolForm({ initial, onSaved, startInPreview }: Props) {
         router.refresh();
         return;
       }
-      router.push('/admin/tools');
+      // 초안 저장은 편집 화면 유지 — /admin/tools는 '프롬프트 순위'로 바뀌어 목록이 아니다.
+      // 새 자료 첫 저장만 편집 URL로 교체해 재저장이 중복 insert가 되지 않게 한다.
+      if (status === 'draft') {
+        setSavedAt(new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' }));
+        if (!initial?.id && id) router.replace(`/admin/tools/${id}`);
+        router.refresh();
+        return;
+      }
+      // 발행·보관: 들어온 목록(통합 콘텐츠 목록)으로.
+      router.push('/admin/contents');
       router.refresh();
     });
   }
@@ -276,7 +289,12 @@ export function ToolForm({ initial, onSaved, startInPreview }: Props) {
         <h1 className="font-serif text-xl sm:text-2xl font-semibold">
           {initial?.id ? '자료 편집' : '새 자료'}
         </h1>
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          {savedAt && (
+            <span className="flex items-center gap-1 text-xs text-ink/50">
+              <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" /> 초안 저장됨 {savedAt}
+            </span>
+          )}
           <Button variant="outline" onClick={() => setPreviewOpen((v) => !v)}>
             {previewOpen ? <PenLine className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
             {previewOpen ? '상세 필드' : '초안으로'}
@@ -703,6 +721,11 @@ export function ToolForm({ initial, onSaved, startInPreview }: Props) {
               <Button variant="outline" className="w-full" onClick={() => save('draft')} disabled={pending}>
                 <Save className="h-4 w-4" /> 초안 저장
               </Button>
+              {savedAt && (
+                <p className="flex items-center justify-center gap-1 text-xs text-ink/50">
+                  <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" /> 초안 저장됨 {savedAt}
+                </p>
+              )}
             </div>
           </section>
 
