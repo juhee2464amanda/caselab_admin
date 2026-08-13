@@ -235,10 +235,13 @@ function lintSlide(template: CardTemplateId, props: Record<string, unknown>): st
       push(lintLen('lead', p.lead, 22));
       push(lintLen('body', p.body, 62));
       break;
-    case 'B5':
-      for (const g of p.good ?? []) push(lintLen('good', g, 58));
-      for (const b of p.bad ?? []) push(lintLen('bad', b, 58));
+    case 'B5': {
+      // 재디자인(2026-08-14)으로 글자가 커져 상한을 조였다 — versus(좌우 2열)는 폭이 절반이라 더 짧게.
+      const max = p.layout === 'versus' ? 24 : 38;
+      for (const g of p.good ?? []) push(lintLen('good', g, max));
+      for (const b of p.bad ?? []) push(lintLen('bad', b, max));
       break;
+    }
     case 'B6':
       push(lintLines('heading', p.heading ?? '', 14, 1));
       for (const s of p.steps ?? []) {
@@ -302,7 +305,9 @@ const TEMPLATE_SPECS = `[템플릿별 props 규격 — 줄바꿈은 문자열 �
   · 재료에 "(역할: 개요…)" 표시가 있으면 반드시 lead를 채울 것. 일반 본문 슬라이드는 lead 없이 bullets만.
 - B3 용어: {"badge":"기본 '30초 개념'(생략 가능)","term":"≤10자 핵심 용어","termEn":"영문(선택)","lead":"≤20자 한 줄 정의","body":"≤58자 부연, **강조** 1개"}
 - B4 인용/선언: {"title":"2~3줄, 줄당 ≤13자 선언 문장","hl":"핵심 단어","attribution":"— 출처 느낌 한 줄(선택)"}
-- B5 잘된것/별로였던것: {"good":["≤55자"] 1~2개,"bad":["≤55자"] 1~2개} — 솔직하게, 실패를 뭉개지 말 것
+- B5 잘된것/별로였던것: {"good":["≤36자, **강조** 1구절"] 1~2개,"bad":["≤36자"] 1~2개,"layout":"split|versus(선택)"} — 솔직하게, 실패를 뭉개지 말 것.
+  · 한 항목은 한 호흡에 읽히는 길이로. 문장이 길면 잘라서 핵심만 — 카드에서 길게 쓰면 글씨가 작아진다.
+  · 네 항목 모두 24자 이내로 압축되면 layout:"versus"(좌우 대비)를 쓰면 대칭으로 읽힌다.
 - B6 스텝: {"heading":"≤13자","hl":"핵심 구","steps":[{"title":"≤12자","desc":"≤18자"}] 2~4개}
 - B7 숫자: {"big":"숫자만 ≤4자","unit":"%·배 등(선택)","cap":"1~2줄, 줄당 ≤16자, **강조** 1개","sub":"≤38자(선택)"} — 재료에 실제로 있는 숫자만
 - B8 프롬프트 패턴: {"badge":"'패턴 03' 등 ≤8자(선택)","patternEn":"영어 패턴명 원문 그대로(재료에 있으면 필수 — 예: Blindspot Pass) ≤30자","patternName":"≤12자 한글 패턴명(patternEn 아래 부제로 렌더)","when":"≤22자 — 어떤 상황에서 쓰는지 (따옴표 없이)","lines":["≤22자/줄"] 3~4줄 핵심 맛보기 — 전문이 아니라 구조가 보이는 핵심만, 변수는 [대괄호],"effect":"≤20자 기대 효과 (실측·구체적으로)"} — 인스타에선 복사 불가이므로 '복사' 언급 금지. 이 슬라이드의 목표는 "나도 써보고 싶다". CTA(댓글 유도 등)는 캡션이 전담 — 슬라이드에 ctaLine 생성 금지
@@ -510,11 +515,11 @@ async function fetchCoverCandidates(queries: string[]): Promise<CoverCandidate[]
 //
 // 중복 방지가 핵심 — 같은 사진이 두 장에 깔리면 "이미지가 반복된다"는 인상이 그대로 남는다.
 // 검색어별로 여러 후보를 받아 이미 쓴 photo id를 건너뛴다.
-const PHOTO_TEMPLATES: CardTemplateId[] = ['P1', 'P2', 'P3', 'P4', 'C1', 'B4'];
+const PHOTO_TEMPLATES: CardTemplateId[] = ['P1', 'P2', 'P3', 'P4', 'C1', 'B4', 'B5'];
 
 /** 슬라이드의 사진이 들어가는 props 키 (템플릿마다 다름) */
 function imagePropKey(t: CardTemplateId): string | null {
-  if (t.startsWith('P')) return 'image';
+  if (t.startsWith('P') || t === 'B5') return 'image';
   if (t === 'C1' || t === 'B4' || t === 'C5') return 'coverImage';
   return null;
 }
@@ -737,6 +742,7 @@ function finalizeSlides(
         props.coverImage = planned.image;
       if (s.template === 'B2' && !props.media) props.media = planned.image;
       if (s.template === 'B9' && !props.shot) props.shot = planned.image;
+      if (s.template === 'B5' && !props.image) props.image = planned.image;
       // P 계열은 사진이 정체성 — 계획에 이미지가 있으면 항상 image로 (AI는 image를 생성하지 않는다)
       if (s.template.startsWith('P') && !props.image) props.image = planned.image;
     }

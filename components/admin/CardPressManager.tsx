@@ -123,12 +123,12 @@ const HL_TARGET: Partial<Record<CardTemplateId, string>> = {
   C1: 'title', C2: 'title', C3: 'title', B4: 'title', B1: 'heading', B6: 'heading',
 };
 // **강조** 마커(포인트색 볼드)를 렌더하는 필드
-const EM_FIELDS = new Set(['bullets', 'body', 'cap', 'lead', 'resolve', 'items', 'heading', 'title', 'quote', 'sub']);
+const EM_FIELDS = new Set(['bullets', 'body', 'cap', 'lead', 'resolve', 'items', 'heading', 'title', 'quote', 'sub', 'good', 'bad']);
 
 // 슬라이드별 이미지가 들어가는 props 키
 const IMAGE_KEY: Partial<Record<CardTemplateId, string>> = {
   C1: 'coverImage', C2: 'coverImage', C5: 'coverImage', B4: 'coverImage', B2: 'media', B9: 'shot',
-  P1: 'image', P2: 'image', P3: 'image', P4: 'image', P5: 'image', P6: 'image',
+  P1: 'image', P2: 'image', P3: 'image', P4: 'image', P5: 'image', P6: 'image', B5: 'image',
 };
 
 // ── 템플릿별 인라인 편집 필드 정의 ──────────────────────────
@@ -201,8 +201,12 @@ const FIELDS: Record<CardTemplateId, FieldDef[]> = {
   ],
   B5: [
     { key: 'heading', label: '제목', kind: 'input', hint: '비우면 "솔직 후기"' },
-    { key: 'good', label: '잘된 것 (줄마다 1개)', kind: 'lines' },
-    { key: 'bad', label: '별로였던 것 (줄마다 1개)', kind: 'lines' },
+    { key: 'layout', label: '레이아웃', kind: 'input', hint: 'split(사진+상하) | versus(좌우 대비) · 비우면 길이로 자동' },
+    { key: 'goodLabel', label: '왼쪽 라벨', kind: 'input', hint: '비우면 "잘된 것"' },
+    { key: 'good', label: '잘된 것 (줄마다 1개)', kind: 'lines', hint: '≤38자 · **강조** 1구절' },
+    { key: 'badLabel', label: '오른쪽 라벨', kind: 'input', hint: '비우면 "별로였던 것"' },
+    { key: 'bad', label: '별로였던 것 (줄마다 1개)', kind: 'lines', hint: '≤38자 · 실패를 뭉개지 말 것' },
+    { key: 'image', label: '사진 URL', kind: 'input', hint: 'split 레이아웃 상단 밴드 (비우면 그라데이션)' },
   ],
   B6: [
     { key: 'heading', label: '제목', kind: 'input' },

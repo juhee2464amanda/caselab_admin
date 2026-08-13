@@ -637,161 +637,218 @@ function B2({ accent, props }: Extract<RenderSlideInput, { template: 'B2' }>) {
 }
 
 // ---------- B5 · 잘된 것 / 별로였던 것 (caselab 시그니처) ----------
-function ProCon({
-  tone,
-  label,
-  items,
-  size,
-  gap,
-}: {
-  tone: 'good' | 'bad';
-  label: string;
-  items: string[];
-  size: number;
-  gap: number;
-}) {
-  const color = tone === 'good' ? GOOD : BAD;
-  const mixBg = tone === 'good' ? 0.08 : 0.07;
-  const mixLine = tone === 'good' ? 0.3 : 0.28;
+// ---------- B5 · 솔직 후기 (잘된 것 / 별로였던 것) ----------
+//
+// 2026-08-14 재디자인: 파스텔 라운드 패널 + 원형 ✓/✕ 배지는 프레임워크 alert 컴포넌트 룩이라
+// 캐러셀에서 이 장만 "제품 UI"로 튀었다(운영자 피드백 "AI티"). 다크 편집 문법으로 교체 —
+// 헤어라인 라벨(골드=잘된 것 / 코랄=별로였던 것) + 1px 구분선, 본문은 순백.
+// 색은 라벨과 강조 1구절에만 쓴다 — 여러 군데 흩어지면 얼룩처럼 지저분해진다.
+//
+// layout: 'split'(사진 밴드 + 상하 2단) | 'versus'(좌우 대비). 재료가 짧으면 versus가 대칭으로
+// 읽히고, 길면 split이 한 줄에 떨어진다. 미지정 시 항목 길이로 자동 선택.
+const B5_GOLD = '#F2C75C';
+const B5_CORAL = '#FF8F6B';
+const B5_LABEL_EN = 'rgba(255,255,255,0.55)';
+const B5_RULE = 'rgba(255,255,255,0.2)';
+const B5_PAD = 78;
+const B5_W = CARD_W - B5_PAD * 2;
+
+/** 헤어라인 + 한글 라벨 + 영문 트래킹 — 원형 아이콘 배지를 대체 */
+function ToneLabel({ ko, en, color }: { ko: string; en: string; color: string }) {
   return (
-    <div
-      style={{
-        display: 'flex',
-        flexDirection: 'column',
-        borderRadius: 20,
-        padding: '40px 42px',
-        background: mixWithWhite(color, mixBg),
-        border: `2px solid ${mixWithWhite(color, mixLine)}`,
-      }}
-    >
+    <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+      <div style={{ display: 'flex', width: 30, height: 4, backgroundColor: color }} />
+      <div style={{ display: 'flex', fontSize: 32, fontWeight: 800, color, letterSpacing: '-0.01em' }}>
+        {ko}
+      </div>
       <div
         style={{
           display: 'flex',
-          alignItems: 'center',
-          gap: 16,
-          fontSize: 42,
-          fontWeight: 800,
-          color,
-          marginBottom: 22,
+          fontSize: 19,
+          fontWeight: 700,
+          letterSpacing: '0.18em',
+          color: B5_LABEL_EN,
         }}
       >
-        {/* ✓·✕ 글리프는 twemoji로 치환돼 톤이 깨짐 → CSS 도형으로 직접 그림 */}
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            width: 52,
-            height: 52,
-            borderRadius: 26,
-            background: color,
-          }}
-        >
-          {tone === 'good' ? (
-            <div
-              style={{
-                width: 24,
-                height: 13,
-                borderLeft: '5px solid #fff',
-                borderBottom: '5px solid #fff',
-                transform: 'rotate(-45deg)',
-                marginTop: -6,
-              }}
-            />
-          ) : (
-            <div
-              style={{
-                position: 'relative',
-                width: 26,
-                height: 26,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-              }}
-            >
-              <div
-                style={{
-                  position: 'absolute',
-                  width: 28,
-                  height: 5,
-                  background: '#fff',
-                  borderRadius: 3,
-                  transform: 'rotate(45deg)',
-                }}
-              />
-              <div
-                style={{
-                  position: 'absolute',
-                  width: 28,
-                  height: 5,
-                  background: '#fff',
-                  borderRadius: 3,
-                  transform: 'rotate(-45deg)',
-                }}
-              />
-            </div>
-          )}
-        </div>
-        <span>{label}</span>
-      </div>
-      <div style={{ display: 'flex', flexDirection: 'column', gap }}>
-        {items.map((t, i) => (
-          <div key={i} style={{ fontSize: size, lineHeight: 1.55, color: BODY_TEXT, display: 'flex' }}>
-            <span>{t}</span>
-          </div>
-        ))}
+        {en}
       </div>
     </div>
   );
 }
 
-const B5_HEADING = 54;
+/** 항목 목록 — 현행이 빠뜨렸던 em() 처리를 넣는다(없으면 `**` 별표가 화면에 그대로 나갔다) */
+function ToneItems({
+  items,
+  accent,
+  size,
+  gap,
+  width,
+}: {
+  items: string[];
+  accent: string;
+  size: number;
+  gap: number;
+  width: number;
+}) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap, marginTop: 20 }}>
+      {items.map((t, i) => (
+        <div key={i} style={{ display: 'flex', flexWrap: 'wrap', width }}>
+          {em(t, accent, { fontSize: size, fontWeight: 600, color: '#fff', lineHeight: 1.42 })}
+        </div>
+      ))}
+    </div>
+  );
+}
 
 function B5({ props }: Extract<RenderSlideInput, { template: 'B5' }>) {
-  // 두 패널의 항목을 한 번에 재서 같은 크기로 — 패널마다 글씨 크기가 달라지면 비교가 흐려진다
-  const shell = 80 + Math.round(42 * 1.3) + 22; // 패널 패딩 40*2 + 라벨 줄 + 라벨 아래 여백
-  const fit = fitBlock([...props.good, ...props.bad], {
-    width: BODY_W - 84, // 패널 좌우 패딩 42*2
-    height:
-      CARD_H - PAD_Y * 2 - TOPBAR_H - (44 + Math.round(B5_HEADING * 1.3)) - 44 - 28 - shell * 2,
-    max: 40,
-    min: 25,
-    lineHeight: 1.55,
-    gapRatio: 0.4,
-    gapMaxRatio: 0.8,
-  });
-  return (
-    <div style={{ ...cardBase, background: '#fff', color: INK, padding: `${PAD_Y}px ${PAD_X}px` }}>
-      <Topbar color={INK} right={props.page} />
-      {/* 제목~패널을 한 덩어리로 묶어 남는 공간을 위아래로 나눠 갖는다 */}
+  const longest = Math.max(...[...props.good, ...props.bad].map((t) => stripMarks(t).length));
+  const layout = props.layout ?? (longest <= 26 ? 'versus' : 'split');
+  const goodLabel = props.goodLabel ?? '잘된 것';
+  const badLabel = props.badLabel ?? '별로였던 것';
+
+  if (layout === 'versus') {
+    const colW = (CARD_W - B5_PAD * 2 - 52) / 2;
+    // 두 열을 한 번에 재서 같은 크기로 — 열마다 글씨가 다르면 비교가 흐려진다
+    const fit = fitBlock([...props.good, ...props.bad], {
+      width: colW,
+      height: 520,
+      max: 44,
+      min: 26,
+      lineHeight: 1.36,
+      gapRatio: 0.75,
+      gapMaxRatio: 1.1,
+    });
+    const col = (label: string, en: string, color: string, items: string[]) => (
+      <div style={{ display: 'flex', flexDirection: 'column', width: colW }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 6 }}>
+          <div style={{ display: 'flex', width: 26, height: 4, backgroundColor: color }} />
+          <div style={{ display: 'flex', fontSize: 30, fontWeight: 800, color }}>{label}</div>
+        </div>
+        <div
+          style={{
+            display: 'flex',
+            fontSize: 18,
+            fontWeight: 700,
+            letterSpacing: '0.18em',
+            color: B5_LABEL_EN,
+            marginBottom: 28,
+          }}
+        >
+          {en}
+        </div>
+        <ToneItems items={items} accent={color} size={fit.size} gap={fit.gap} width={colW} />
+      </div>
+    );
+    return (
       <div
-        style={{ display: 'flex', flexDirection: 'column', flexGrow: 1, justifyContent: 'center' }}
+        style={{
+          ...cardBase,
+          backgroundColor: DARK_BG,
+          justifyContent: 'center',
+          padding: `0 ${B5_PAD}px`,
+        }}
       >
         <div
           style={{
             display: 'flex',
-            fontSize: B5_HEADING,
+            fontSize: 58,
             fontWeight: 800,
-            letterSpacing: '-0.035em',
+            color: '#fff',
+            letterSpacing: '-0.03em',
+            marginBottom: 14,
           }}
         >
           {props.heading ?? '솔직 후기'}
         </div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 28, marginTop: 44 }}>
-          <ProCon
-            tone="good"
-            label={props.goodLabel ?? '잘된 것'}
-            items={props.good}
-            size={fit.size}
-            gap={fit.gap}
-          />
-          <ProCon
-            tone="bad"
-            label={props.badLabel ?? '별로였던 것'}
-            items={props.bad}
-            size={fit.size}
-            gap={fit.gap}
-          />
+        <div
+          style={{
+            display: 'flex',
+            fontSize: 25,
+            fontWeight: 700,
+            letterSpacing: '0.2em',
+            color: B5_LABEL_EN,
+            marginBottom: 62,
+          }}
+        >
+          3개월 써보고 남은 것
+        </div>
+        <div style={{ display: 'flex', gap: 26 }}>
+          {col(goodLabel, 'WORKED', B5_GOLD, props.good)}
+          <div style={{ display: 'flex', width: 1, backgroundColor: B5_RULE }} />
+          {col(badLabel, "DIDN'T", B5_CORAL, props.bad)}
+        </div>
+      </div>
+    );
+  }
+
+  // split — 사진 밴드 + 상하 2단
+  const bandH = 430;
+  const inner = CARD_H - bandH - 64;
+  const fit = fitBlock([...props.good, ...props.bad], {
+    width: B5_W,
+    height: inner - (36 + 20) * 2 - 80, // 라벨 2줄 + 구분선 여백
+    max: 44,
+    min: 27,
+    lineHeight: 1.42,
+    gapRatio: 0.3,
+    gapMaxRatio: 0.5,
+  });
+  return (
+    <div style={{ ...cardBase, backgroundColor: '#000' }}>
+      <PhotoBand image={props.image} height={bandH} pos={props.coverPos} />
+      {/* 라벨 전용 스크림 — 밴드 그라데이션만으론 밝은 사진에서 2.7:1까지 떨어진다(검수 검출).
+          사진을 고를 수 없는 자동 파이프라인이라, 글자가 놓이는 자리는 배경을 확정해 둔다. */}
+      <div
+        style={{
+          position: 'absolute',
+          left: 0,
+          top: 0,
+          width: CARD_W,
+          height: 190,
+          display: 'flex',
+          backgroundImage: 'linear-gradient(180deg,rgba(0,0,0,0.78) 0%,rgba(0,0,0,0.42) 55%,rgba(0,0,0,0) 100%)',
+        }}
+      />
+      <div
+        style={{
+          position: 'absolute',
+          left: B5_PAD,
+          top: 74,
+          display: 'flex',
+          fontSize: 27,
+          fontWeight: 700,
+          letterSpacing: '0.22em',
+          color: '#fff',
+        }}
+      >
+        {props.heading ?? '솔직 후기'}
+      </div>
+      <div
+        style={{
+          flex: 1,
+          display: 'flex',
+          flexDirection: 'column',
+          justifyContent: 'center',
+          padding: `0 ${B5_PAD}px 64px`,
+          backgroundColor: '#000',
+        }}
+      >
+        <ToneLabel ko={goodLabel} en="WORKED" color={B5_GOLD} />
+        <ToneItems items={props.good} accent={B5_GOLD} size={fit.size} gap={fit.gap} width={B5_W} />
+        {/* 구분선은 borderTop으로 — 높이 1px짜리 독립 div는 Satori가 점으로 찌그러뜨린다(실측).
+            RuleList가 borderTop을 쓰는 것과 같은 이유. */}
+        <div
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            borderTop: `1px solid ${B5_RULE}`,
+            marginTop: 40,
+            paddingTop: 40,
+          }}
+        >
+          <ToneLabel ko={badLabel} en="DIDN'T" color={B5_CORAL} />
+          <ToneItems items={props.bad} accent={B5_CORAL} size={fit.size} gap={fit.gap} width={B5_W} />
         </div>
       </div>
     </div>
@@ -1735,8 +1792,10 @@ function PhotoBand({ image, height, pos }: { image?: string; height: number; pos
           width: CARD_W,
           height,
           display: 'flex',
+          // 상단 0.46 — 밴드 위에 라벨을 올리는 템플릿(B5 split)이 있어 상단 대비를 확보해야 한다.
+          // 0.30이던 시절 밝은 사진에서 "솔직 후기" 라벨이 2.01:1로 안 읽혔다(검수 스크립트 검출).
           backgroundImage:
-            'linear-gradient(180deg,rgba(0,0,0,0.30) 0%,rgba(0,0,0,0.12) 42%,rgba(0,0,0,0.72) 86%,rgba(0,0,0,1) 100%)',
+            'linear-gradient(180deg,rgba(0,0,0,0.46) 0%,rgba(0,0,0,0.14) 44%,rgba(0,0,0,0.72) 86%,rgba(0,0,0,1) 100%)',
         }}
       />
     </div>

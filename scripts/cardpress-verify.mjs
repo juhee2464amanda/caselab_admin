@@ -54,7 +54,9 @@ const SAMPLES = [
   ['B2', { banner: '✓ AI에게 시킨 것', lead: '검수 시간이 **70% 줄었다**', bullets: ['초안 작성이 40분 → 6분', '반려율은 그대로 12%', '툴 비용은 월 2만원'] }],
   ['B3', { term: '컨텍스트', termEn: 'Context', lead: '모델이 한 번에 보는 범위', body: '넓힐수록 좋아지는 게 아니라 **관련 없는 정보**가 섞이면 정확도가 떨어진다' }],
   ['B4', { title: '지시가 아니라\n제약을 준다', hl: '제약', attribution: '3개월 운영 기록' }],
-  ['B5', { good: ['초안 작성 시간이 6분으로 줄었다', '톤이 흔들리지 않는다'], bad: ['첫 주는 오히려 느렸다'] }],
+  // B5는 레이아웃 2종 — split(사진+상하 2단) / versus(좌우 대비). 둘 다 렌더 검사한다.
+  ['B5', { layout: 'split', good: ['초안 작성이 **40분에서 6분**으로', '톤이 흔들리지 않는다'], bad: ['첫 주는 오히려 느렸다', '판단은 여전히 사람 몫'], image: PHOTO_BRIGHT }],
+  ['B5', { layout: 'versus', good: ['초안이 **6분**으로', '톤이 안 흔들린다'], bad: ['첫 주는 더 느렸다', '판단은 사람 몫'] }, { suffix: '-versus' }],
   ['B6', { heading: '이렇게 세팅했어요', hl: '세팅', steps: [{ title: '문제를 3줄로 적는다', desc: '제약과 금지 사항까지' }, { title: '초안 3개를 받는다', desc: '고르는 게 빠르다' }, { title: '검수는 5줄 체크리스트', desc: '길면 아무도 안 본다' }] }],
   ['B7', { big: '70', unit: '%', cap: '검수 시간이 **줄었다**', sub: '3개월 실측' }],
   ['B8', { patternEn: 'Constraint First', patternName: '제약 먼저', when: '초안이 매번 산으로 갈 때', lines: ['아래 제약을 지켜 초안 3개를 만들어줘.', '# 톤: 담백하게, 과장 금지', '- 길이: 각 [400]자', '- 금지: 최고/혁신 같은 표현'], effect: '반려가 절반으로 줄었다', ctaLine: '전문은 댓글에 "제약"' }],
@@ -266,7 +268,7 @@ async function main() {
       continue;
     }
     const buf = Buffer.from(await res.arrayBuffer());
-    await writeFile(`${OUT}/${template}.png`, buf);
+    await writeFile(`${OUT}/${template}${opts.suffix ?? ''}.png`, buf);
     const a = await analyze(buf);
 
     const problems = [];
