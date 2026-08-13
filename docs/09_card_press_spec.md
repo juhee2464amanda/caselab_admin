@@ -32,7 +32,7 @@
 | stepCards{human,ai} | B2 / B6 스텝 |
 | stepCards.prompt / prompt 블록 | B8 복사용 프롬프트 |
 | goodResult/badResult · pros/cons · result-compare | B5 잘된것/별로였던것 ★ |
-| takingPoints / soWhat | O1 마무리·CTA |
+| takingPoints / soWhat | P5 마무리 정리(결론 lead + 행동 2~3개) — O1(포인트색 CTA 카드)은 톤 불일치로 삭제(2026-08-13), 저장·댓글 유도 문구는 캡션 전담 |
 
 씨앗(content_seeds) 소스는 커버 다음에 **개요 슬라이드**(`seed:overview`)를 항상 깐다 — 문단을 그대로 나열하면 "무슨 일인지 한눈에"가 없어 커버 다음에서 이탈한다.
 

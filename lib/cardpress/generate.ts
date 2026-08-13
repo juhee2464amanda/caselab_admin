@@ -200,11 +200,6 @@ function lintSlide(template: CardTemplateId, props: Record<string, unknown>): st
       push(lintLines('title', p.title ?? '', 14, 3));
       if (p.hl && !(p.title ?? '').includes(p.hl)) push([`hl "${p.hl}"이 title 안에 없음`]);
       break;
-    case 'O1':
-      push(lintLines('title', p.title ?? '', 12, 2));
-      push(lintLen('body', p.body, 65));
-      if (p.hl && !(p.title ?? '').includes(p.hl)) push([`hl "${p.hl}"이 title 안에 없음`]);
-      break;
     case 'B1':
       push(lintLen('lead', p.lead, 40));
       push(lintLines('heading', p.heading ?? '', 14, 1));
@@ -297,7 +292,6 @@ const TEMPLATE_SPECS = `[템플릿별 props 규격 — 줄바꿈은 문자열 �
 - B6 스텝: {"heading":"≤13자","hl":"핵심 구","steps":[{"title":"≤12자","desc":"≤18자"}] 2~4개}
 - B7 숫자: {"big":"숫자만 ≤4자","unit":"%·배 등(선택)","cap":"1~2줄, 줄당 ≤16자, **강조** 1개","sub":"≤38자(선택)"} — 재료에 실제로 있는 숫자만
 - B8 프롬프트 패턴: {"badge":"'패턴 03' 등 ≤8자(선택)","patternEn":"영어 패턴명 원문 그대로(재료에 있으면 필수 — 예: Blindspot Pass) ≤30자","patternName":"≤12자 한글 패턴명(patternEn 아래 부제로 렌더)","when":"≤22자 — 어떤 상황에서 쓰는지 (따옴표 없이)","lines":["≤22자/줄"] 3~4줄 핵심 맛보기 — 전문이 아니라 구조가 보이는 핵심만, 변수는 [대괄호],"effect":"≤20자 기대 효과 (실측·구체적으로)"} — 인스타에선 복사 불가이므로 '복사' 언급 금지. 이 슬라이드의 목표는 "나도 써보고 싶다". CTA(댓글 유도 등)는 캡션이 전담 — 슬라이드에 ctaLine 생성 금지
-- O1 마무리: {"eyebrow":"기본 '오늘의 정리'(생략 가능)","title":"2줄, 줄당 ≤11자 핵심 요약","hl":"핵심 단어","body":"≤58자"} — actions/handle은 생성하지 말 것(시스템 기본값 사용)
 
 [P 계열 — 사진 편집형 본문. 벤치마크 문법(전 장 사진+스크림): 이미지가 있는 재료에서 우선 선택]
 공통: **강조**는 슬라이드 전체 1구절만(골드로 렌더). "image"는 생성하지 말 것 — 시스템이 재료 이미지/검색으로 채운다.
@@ -322,7 +316,7 @@ const SYSTEM = `당신은 케이스랩(caselab)의 SNS 콘텐츠 에디터입니
 - 커버(eyebrow·sub)와 신뢰/선언 슬라이드에 반드시 드러나게 반영하세요. 운영자가 [운영자 지정 엣지]를 준 경우 그것을 최우선으로 따르세요.
 
 [독자 의식 흐름 — 서사 규칙]
-- 스파인: 후킹 커버 → 왜 믿을 만한가(edge) → 문제 제기/오버뷰 → 실물(프롬프트·구체 항목) → 정리·저장 CTA
+- 스파인: 후킹 커버 → 왜 믿을 만한가(edge) → 문제 제기/오버뷰 → 실물(프롬프트·구체 항목) → 정리(P5 — 결론 한 줄 + 행동 2~3개). 저장·댓글 유도 문구는 캡션 전담, 슬라이드에 쓰지 말 것
 - 슬라이드마다 "새 정보 1개". 직전 슬라이드와 소재·표현 중복 금지 (특히 오버뷰 슬라이드와 개별 항목 슬라이드가 같은 문장을 반복하지 않게)
 - 각 슬라이드는 "다음 장을 넘길 이유"를 남길 것
 - 개요(오버뷰) 슬라이드는 스토리의 지도다 — 나열이 아니라 위계로 쓴다: 가장 중요한 사실 1개를 lead에,
@@ -511,7 +505,7 @@ function validateSlides(
 }
 
 /** page 자동 기입 + 계획 이미지 배치.
- *  CTA는 캡션·스레드 전담이되, 예외 1곳 — comment_dm이면 마지막 O1에만 댓글 안내 액션(운영자 결정 2026-07-21). */
+ *  CTA(댓글 키워드 안내 포함)는 캡션·스레드 전담 — O1 삭제(2026-08-13)로 슬라이드 내 CTA 예외도 사라짐. */
 function finalizeSlides(
   slides: ParsedSlide[],
   plan: SlidePlan,
@@ -519,19 +513,13 @@ function finalizeSlides(
   ctaKeyword: string
 ): CardSlide[] {
   const total = slides.length;
-  const PAGED: CardTemplateId[] = ['B1', 'B2', 'B3', 'B5', 'B6', 'B7', 'B8', 'B9', 'O1'];
+  const PAGED: CardTemplateId[] = ['B1', 'B2', 'B3', 'B5', 'B6', 'B7', 'B8', 'B9'];
   return slides.map(({ planIndex, ...s }, i) => {
     const props = { ...s.props };
     if (PAGED.includes(s.template)) props.page = `${i + 1} / ${total}`;
     if (s.template === 'B8') {
       delete props.ctaLine; // CTA는 캡션 전담
       delete props.tip; // 구 '복사' 문법 제거
-    }
-    if (s.template === 'O1' && ctaType === 'comment_dm' && !props.actions) {
-      props.actions = [
-        { icon: '💬', text: `전문 복사 링크가 필요하면 댓글에 "${ctaKeyword}"` },
-        { icon: '🔖', text: '저장해두고 하나씩 적용해 보세요' },
-      ];
     }
     // 커버 이미지 배치: C5는 텍스처로 깔리므로 허용
     if (s.template === 'C5' && planIndex === 0 && plan.slides[0]?.image && !props.coverImage)

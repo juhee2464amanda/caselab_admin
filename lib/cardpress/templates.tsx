@@ -3,7 +3,7 @@ import type { CSSProperties, ReactNode } from 'react';
 import type { CardAccent, RenderSlideInput } from '@/types/cardpress';
 
 // content/instagram/carousel-template/caselab-carousel-guide.html 의 슬라이드 14종 중
-// C1(사진몰입 커버)·B2(이미지+배너+불릿)·B5(잘된것/별로였던것)·O1(마무리 CTA)을
+// C1(사진몰입 커버)·B2(이미지+배너+불릿)·B5(잘된것/별로였던것) 등을
 // Satori(next/og) 호환으로 포팅. Satori 제약: CSS 변수·color-mix 불가 → JS 상수/mix 헬퍼,
 // box-decoration-break 불가 → 형광펜(hl)은 한 줄 안의 단어에만.
 
@@ -777,94 +777,6 @@ function B5({ props }: Extract<RenderSlideInput, { template: 'B5' }>) {
             gap={fit.gap}
           />
         </div>
-      </div>
-    </div>
-  );
-}
-
-// ---------- O1 · 마무리 · CTA (포인트색 배경) ----------
-function O1({ accent, props }: Extract<RenderSlideInput, { template: 'O1' }>) {
-  const color = accentOf(accent, props);
-  const actions = props.actions ?? [
-    { icon: '🔖', text: '저장해두고 필요할 때 다시 보기' },
-    { icon: '💬', text: '여러분 케이스도 댓글로 남겨주세요' },
-  ];
-  return (
-    <div style={{ ...cardBase, background: color, color: '#fff', padding: '80px 72px' }}>
-      <Topbar color="#fff" right={props.page} rightStyle={{ color: 'rgba(255,255,255,0.6)' }} />
-      <div
-        style={{
-          display: 'flex',
-          flexDirection: 'column',
-          marginTop: 48, // 본문 눈높이 통일
-        }}
-      >
-        <div style={{ fontSize: 30, fontWeight: 600, color: 'rgba(255,255,255,0.88)' }}>
-          {props.eyebrow ?? '오늘의 정리'}
-        </div>
-        <div
-          style={{
-            display: 'flex',
-            flexDirection: 'column',
-            marginTop: 28,
-            fontSize: 66,
-            fontWeight: 800,
-            letterSpacing: '-0.035em',
-          }}
-        >
-          {highlightLines(
-            props.title,
-            props.hl,
-            { minHeight: 82 },
-            { background: hlBg(props, 'rgba(255,255,255,0.22)'), padding: '2px 12px', borderRadius: 8 }
-          )}
-        </div>
-        {props.body ? (
-          <div
-            style={{
-              display: 'flex',
-              marginTop: 30,
-              fontSize: 36,
-              lineHeight: 1.55,
-              color: 'rgba(255,255,255,0.94)',
-            }}
-          >
-            <span>{props.body}</span>
-          </div>
-        ) : null}
-      </div>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 22, marginTop: 'auto' }}>
-        {actions.map((a, i) => (
-          <div
-            key={i}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 20,
-              background: 'rgba(255,255,255,0.12)',
-              border: '1.5px solid rgba(255,255,255,0.3)',
-              borderRadius: 16,
-              padding: '28px 32px',
-              fontSize: 34,
-              fontWeight: 600,
-            }}
-          >
-            <span>{a.icon}</span>
-            <span>{a.text}</span>
-          </div>
-        ))}
-      </div>
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'center',
-          marginTop: 36,
-          fontSize: 30,
-          fontWeight: 700,
-          opacity: 0.95,
-        }}
-      >
-        {props.handle ?? '@caselab'}
       </div>
     </div>
   );
@@ -2486,7 +2398,5 @@ export function renderSlide(input: RenderSlideInput): ReactNode {
       return <B8 {...input} />;
     case 'B9':
       return <B9 {...input} />;
-    case 'O1':
-      return <O1 {...input} />;
   }
 }

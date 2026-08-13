@@ -95,7 +95,7 @@ const TEMPLATE_LABEL: Record<CardTemplateId, string> = {
   C1: 'C1 사진커버', C2: 'C2 다크커버', C3: 'C3 툴커버', C4: 'C4 VS커버', C5: 'C5 빅넘버커버',
   B1: 'B1 타임라인', B2: 'B2 불릿', B3: 'B3 용어', B4: 'B4 선언',
   B5: 'B5 솔직후기', B6: 'B6 스텝', B7: 'B7 숫자', B8: 'B8 프롬프트',
-  B9: 'B9 스크린샷', O1: 'O1 마무리',
+  B9: 'B9 스크린샷',
   P1: 'P1 사진+목록', P2: 'P2 사진+문단', P3: 'P3 풀사진', P4: 'P4 사진인용',
   P5: 'P5 블랙목록', P6: 'P6 블랙빅넘버',
 };
@@ -120,7 +120,7 @@ const HL_PALETTE: Array<{ hex: string; name: string }> = [
 
 // 형광펜(hl = 배경 포인트색 필)이 가리키는 대상 필드 — 드래그 선택 → 형광펜 지정에 사용
 const HL_TARGET: Partial<Record<CardTemplateId, string>> = {
-  C1: 'title', C2: 'title', C3: 'title', B4: 'title', O1: 'title', B1: 'heading', B6: 'heading',
+  C1: 'title', C2: 'title', C3: 'title', B4: 'title', B1: 'heading', B6: 'heading',
 };
 // **강조** 마커(포인트색 볼드)를 렌더하는 필드
 const EM_FIELDS = new Set(['bullets', 'body', 'cap', 'lead', 'resolve', 'items', 'heading', 'title', 'quote', 'sub']);
@@ -228,12 +228,6 @@ const FIELDS: Record<CardTemplateId, FieldDef[]> = {
     { key: 'lead', label: '도입', kind: 'input' },
     { key: 'shot', label: '스크린샷 URL', kind: 'input' },
     { key: 'callouts', label: '말풍선 (문구 | tl·tr·bl·br)', kind: 'pairs', pairKeys: ['text', 'pos'] },
-  ],
-  O1: [
-    { key: 'eyebrow', label: '도입', kind: 'input', hint: '비우면 "오늘의 정리"' },
-    { key: 'title', label: '핵심 요약', kind: 'textarea', hint: '2줄, 줄당 ≤11자' },
-    { key: 'hl', label: '형광펜 단어', kind: 'input' },
-    { key: 'body', label: '부연', kind: 'textarea' },
   ],
   // ── P 계열 (사진 편집형) ──
   P1: [
@@ -345,7 +339,7 @@ function formToProps(
 
 /** 활성 슬라이드 기준 page("n / total") 재계산 — 커버·B4는 페이지 없음 */
 function renumber(slides: CardSlide[]): CardSlide[] {
-  const PAGED: CardTemplateId[] = ['B1', 'B2', 'B3', 'B5', 'B6', 'B7', 'B8', 'B9', 'O1'];
+  const PAGED: CardTemplateId[] = ['B1', 'B2', 'B3', 'B5', 'B6', 'B7', 'B8', 'B9'];
   const enabled = slides.filter((s) => s.enabled);
   const total = enabled.length;
   let n = 0;
@@ -851,7 +845,10 @@ function CardEditor({ card, sourceTitle }: { card: CardRow; sourceTitle?: string
   const router = useRouter();
   const supabase = createSupabaseBrowserClient();
 
-  const [slides, setSlides] = useState<CardSlide[]>(card.slides);
+  // O1(마무리 CTA)은 2026-08-13 템플릿 삭제 — 구 저장분에 남은 O1 슬라이드는 로드에서 제외(렌더 불가)
+  const [slides, setSlides] = useState<CardSlide[]>(
+    card.slides.filter((s) => (s.template as string) !== 'O1')
+  );
   const [igCaption, setIgCaption] = useState(card.ig_caption ?? '');
   const [threadsText, setThreadsText] = useState(card.threads_text ?? '');
   const [threadsCover, setThreadsCover] = useState(card.threads_cover ?? '');

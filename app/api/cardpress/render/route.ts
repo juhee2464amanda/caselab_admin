@@ -11,7 +11,7 @@ export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
 
 // 슬라이드 1장 → 1080×1350 PNG. 검수 프리뷰·발행 업로드 공용 렌더러.
-// body: { template: 'C1'|'B2'|'B5'|'O1', accent: 'cat-case'|..., props: {...} }
+// body: { template: 'C1'|'B2'|'P1'|..., accent: 'cat-case'|..., props: {...} }
 export async function POST(req: NextRequest) {
   // admin 인증 (app/api/studio/refine/route.ts 패턴) — 로컬 렌더 검증용 dev 우회 헤더만 예외
   const devBypass =

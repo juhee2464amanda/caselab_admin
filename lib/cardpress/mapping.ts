@@ -250,15 +250,18 @@ function planCase(row: ContentRowLite, body: CaseBody, images: string[]): SlideP
     });
   }
 
+  // 마무리 장 — O1(포인트색 CTA 카드)은 톤 불일치로 삭제(2026-08-13). 정리는 P5 타이포로, CTA 문구는 캡션 전담.
   slides.push({
-    template: 'O1',
+    template: 'P5',
     sourceSection: 'takingPoints',
-    material:
+    material: `(역할: 마무리 정리 — lead는 이 글의 결론 한 줄, items는 독자가 내일 해볼 행동 2~3개)\n${
       body.takingPoints?.length
         ? body.takingPoints
             .map((t) => `${t.title}: ${t.description}${t.action ? ` → ${t.action}` : ''}`)
             .join('\n')
-        : coverMaterial(row),
+        : coverMaterial(row)
+    }`,
+    alternatives: ['P6', 'B2'],
   });
 
   return slides;
@@ -318,10 +321,12 @@ function planTrend(row: ContentRowLite, body: TrendBody, images: string[]): Slid
   }
 
   const soWhat = blocksToText(body.soWhat);
+  // 마무리 장 — O1(포인트색 CTA 카드)은 톤 불일치로 삭제(2026-08-13). 정리는 P5 타이포로, CTA 문구는 캡션 전담.
   slides.push({
-    template: 'O1',
+    template: 'P5',
     sourceSection: 'soWhat',
-    material: soWhat || coverMaterial(row),
+    material: `(역할: 마무리 정리 — lead는 So What 한 줄, items는 뒷받침 2~3개)\n${soWhat || coverMaterial(row)}`,
+    alternatives: ['P6', 'B2'],
   });
 
   return slides;
@@ -417,10 +422,12 @@ export function buildSeedSlidePlan(seed: SeedRowLite): SlidePlan {
     });
   }
 
+  // 마무리 장 — O1(포인트색 CTA 카드)은 톤 불일치로 삭제(2026-08-13). 정리는 P5 타이포로, CTA 문구는 캡션 전담.
   slides.push({
-    template: 'O1',
+    template: 'P5',
     sourceSection: 'seed:outro',
-    material: [angle ? `핵심 각도: ${angle}` : '', `제목: ${title}`, segments.at(-1) ?? ''].filter(Boolean).join('\n'),
+    material: `(역할: 마무리 정리 — lead는 이 소식의 So What 한 줄, items는 뒷받침 2~3개)\n${[angle ? `핵심 각도: ${angle}` : '', `제목: ${title}`, segments.at(-1) ?? ''].filter(Boolean).join('\n')}`,
+    alternatives: ['P6', 'B2'],
   });
 
   const optCount = slides.filter((s) => s.optional).length;
@@ -637,10 +644,12 @@ export function buildToolSlidePlan(row: ToolRowLite): SlidePlan {
     });
   });
 
+  // 마무리 장 — O1(포인트색 CTA 카드)은 톤 불일치로 삭제(2026-08-13). 정리는 P5 타이포로, CTA 문구는 캡션 전담.
   slides.push({
-    template: 'O1',
+    template: 'P5',
     sourceSection: 'tool:outro',
-    material: [`${kind}: ${row.name}`, desc, chunks.at(-1)?.text ?? ''].filter(Boolean).join('\n'),
+    material: `(역할: 마무리 정리 — lead는 이 자료를 쓰면 달라지는 것 한 줄, items는 시작 방법 2~3개)\n${[`${kind}: ${row.name}`, desc, chunks.at(-1)?.text ?? ''].filter(Boolean).join('\n')}`,
+    alternatives: ['P6', 'B2'],
   });
 
   const optCount = slides.filter((s) => s.optional).length;
@@ -666,7 +675,7 @@ export function buildSlidePlan(row: ContentRowLite): SlidePlan {
               material: coverMaterial(row),
               image: images[0],
             },
-            { template: 'O1' as const, sourceSection: 'title+summary', material: coverMaterial(row) },
+            { template: 'P4' as const, sourceSection: 'title+summary', material: coverMaterial(row) },
           ];
   // 선정 대표 개수 ≈ 후보의 50% (사용자 결정: 11개면 5개 수준), 최소 3·최대 6
   const optCount = slides.filter((s) => s.optional).length;

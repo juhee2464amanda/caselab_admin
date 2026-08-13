@@ -56,7 +56,6 @@ const SAMPLES = [
   ['B8', { patternEn: 'Constraint First', patternName: '제약 먼저', when: '초안이 매번 산으로 갈 때', lines: ['아래 제약을 지켜 초안 3개를 만들어줘.', '# 톤: 담백하게, 과장 금지', '- 길이: 각 [400]자', '- 금지: 최고/혁신 같은 표현'], effect: '반려가 절반으로 줄었다', ctaLine: '전문은 댓글에 "제약"' }],
   // B9의 shot은 운영자가 고르는 콘텐츠 이미지 — 그 안의 밝은 픽셀은 글자가 아니라서 대비 검사 제외
   ['B9', { shot: PHOTO_DARK, caption: '실제 검수 화면', callouts: [{ text: '여기서 반려', pos: 'tr' }] }, { skipContrast: true }],
-  ['O1', { eyebrow: '오늘의 정리', title: '제약을 주면\n초안이 산다', hl: '제약', body: '저장해두고 다음 초안에서 바로 써보세요' }],
   // ── P 계열 (사진 편집형) — 밝은 사진을 기본으로 넣어 스크림을 시험한다 ──
   ['P1', { eyebrow: 'OVERVIEW · 한눈에', lead: '검수 시간이 **70% 줄었다**', items: ['초안 작성이 40분 → 6분', '반려율은 그대로 12%', '툴 비용은 월 2만원'], image: PHOTO_BRIGHT }],
   ['P2', { eyebrow: 'AI TIP', heading: '온라인 클로드를\n오프라인으로', sub: '회의 기록을 자동으로 넘긴다', body: '클로드는 똑똑한데, 내가 참석한 회의나 오프라인 활동은 타이핑해 알려주기 전까진 전혀 모른다. 이 정보 격차를 메우는 방법이 조용히 퍼지고 있다.', image: PHOTO_BRIGHT }],

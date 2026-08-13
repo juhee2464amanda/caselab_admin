@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 // 카드프레스 슬라이드 스키마 — docs/09_card_press_spec.md §5
-// 1단계: 템플릿 4종(C1·B2·B5·O1)만. 나머지 10종은 렌더 파이프라인 검증 후 확장.
+// O1(마무리 CTA)은 2026-08-13 삭제 — 포인트색 배경+이모지 액션 필이 캐러셀 톤과 어긋남(운영자). CTA는 캡션 전담.
 
 export const CardAccentSchema = z.enum(['cat-case', 'cat-trend', 'cat-tool']);
 export type CardAccent = z.infer<typeof CardAccentSchema>;
@@ -59,20 +59,6 @@ export const B5PropsSchema = z.object({
   badLabel: z.string().optional(),   // 기본 '별로였던 것'
   good: z.array(z.string().min(1)).min(1).max(3),
   bad: z.array(z.string().min(1)).min(1).max(3),
-});
-
-export const O1PropsSchema = z.object({
-  ...StyleOverrideFields,
-  page: z.string().optional(),
-  eyebrow: z.string().optional(),    // 기본 '오늘의 정리'
-  title: z.string().min(1),          // '\n' 줄바꿈, hl 지원(흰 반투명 하이라이트)
-  hl: z.string().optional(),
-  body: z.string().optional(),
-  actions: z
-    .array(z.object({ icon: z.string(), text: z.string() }))
-    .max(3)
-    .optional(),                     // 기본: 저장 유도 + 댓글 유도 (팔로우 구걸 ❌)
-  handle: z.string().optional(),     // 기본 '@caselab'
 });
 
 export const C2PropsSchema = z.object({
@@ -257,7 +243,6 @@ export const RenderSlideSchema = z.discriminatedUnion('template', [
   z.object({ template: z.literal('B7'), accent: CardAccentSchema, props: B7PropsSchema }),
   z.object({ template: z.literal('B8'), accent: CardAccentSchema, props: B8PropsSchema }),
   z.object({ template: z.literal('B9'), accent: CardAccentSchema, props: B9PropsSchema }),
-  z.object({ template: z.literal('O1'), accent: CardAccentSchema, props: O1PropsSchema }),
 ]);
 
 export type RenderSlideInput = z.infer<typeof RenderSlideSchema>;
