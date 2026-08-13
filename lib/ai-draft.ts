@@ -5,6 +5,7 @@ import { runClaudeSubscription, extractJson } from '@/lib/claude-cli';
 import { BUCKETS, bucketProfile, isSeedBucket, type SeedBucket } from '@/lib/seed-curation';
 import { lintToolBody } from '@/lib/tool-body';
 import { sourceProfile } from '@/lib/seed-sources';
+import { PERSONA_PROMPT_BLOCK, isPersona, type DirectionProposal, type DirectionProposals } from '@/lib/personas';
 import type { SeedTrack } from '@/lib/seed-tracks';
 import { trackEdge } from '@/lib/track-edges';
 import { sectionSpec, isEmptySection, FREE_SECTION_EXAMPLE } from '@/lib/content-sections';
@@ -511,6 +512,92 @@ export async function generateOutline(input: OutlineInput): Promise<{ title: str
   } catch {
     return { title: input.title, outline: [] };
   }
+}
+
+// ─────────────── 기획방향 제안(개요 생성보다 앞 단계) ───────────────
+// 기획방향은 생성의 최우선 축인데(directionBlock), 빈 칸 앞에서 "무슨 각도로 풀지"가 가장 오래 걸린다.
+// 소스를 읽고 독자 페르소나(lib/personas.ts)가 자기 일로 느낄 지점 2~3개를 각도로 뽑아 고르게 한다.
+// 제안은 어디까지나 출발점 — 운영자는 이 값을 입력칸에서 그대로 고쳐 쓸 수 있고, 직접 쓰기도 그대로 남는다.
+
+export interface DirectionInput {
+  track: SeedTrack;
+  title: string;
+  summary?: string;
+  sourceType?: string;
+  bucket?: string;
+}
+
+function directionSystem(track: SeedTrack): string {
+  const edge = trackEdge(track);
+  return `당신은 케이스랩(Caselab)의 콘텐츠 기획자입니다.
+운영자가 고른 소스(씨앗)를 읽고, 이걸 "${TRACK_LABEL[track]}"으로 만들 때의 **기획방향 후보 2~3개**를 제안합니다.
+
+[기획방향이란] 이 콘텐츠를 누구에게·어떤 막힘을·어떤 메시지로 풀지 정하는 짧은 지시문.
+생성 AI가 이 방향을 최우선 축으로 소스를 재구성하므로, 방향이 곧 콘텐츠의 정체성입니다.
+
+[이 형식(트랙)의 엣지] ${edge.edge}
+→ 이 형식으로 소화되는 방향만 제안하세요. (이 트랙이 덜어내야 할 것: ${edge.cuts})
+
+[먼저 할 일 — 소스 파악]
+1. 소스에서 무엇이 새롭고 무엇이 사실인지 핵심을 스스로 정리한다.
+2. 그 핵심 중 아래 페르소나가 "이건 내 얘기"라고 느낄 접점을 찾는다.
+3. 소스에 근거가 없는 방향은 만들지 않는다(그럴듯한 일반론·지어내기 금지).
+
+${PERSONA_PROMPT_BLOCK}
+
+[좋은 제안의 조건]
+- 2~3개는 서로 다른 페르소나 또는 서로 다른 각도여야 한다. 같은 말을 바꿔 쓴 두 개면 실패.
+- direction은 그대로 입력칸에 붙여 쓸 수 있는 완성된 문장 2~3개. "누구에게 / 어떤 막힘을 / 어떤 메시지·범위로"가 다 들어가야 한다. 제목이나 목차를 쓰지 말 것.
+- why는 그 페르소나의 실제 막힘과 연결한 한 줄. "유용하다" 같은 일반론 금지.
+- 페르소나가 즉시 거절하는 톤(수익 약속·광고·과장·근거 없는 단정) 금지.
+
+응답은 아래 JSON 객체 하나만 반환하세요(설명 없이):
+{
+  "coreInsight": "이 소스의 핵심 한 줄 — 무엇이 새롭고 왜 지금 중요한지",
+  "proposals": [
+    { "headline": "각도 이름 12자 내외", "personas": ["B"], "why": "이 페르소나가 왜 궁금해하는지 한 줄", "direction": "기획방향 2~3문장" }
+  ]
+}
+proposals는 2~3개, personas는 "A"~"E" 중 1~2개(첫 번째가 주 대상).`;
+}
+
+/**
+ * 소스+페르소나로 기획방향 후보 2~3개 제안. 사람이 고른 뒤 수정해서 개요·본문으로 넘어간다.
+ * 주어진 원문을 읽고 각도를 잡는 작업이라 웹서치 불필요(속도↑). 로컬 작업장 전제.
+ */
+export async function proposeDirections(input: DirectionInput): Promise<DirectionProposals> {
+  const userPrompt =
+    `콘텐츠 종류: ${TRACK_LABEL[input.track]}\n제목: ${input.title}\n소스 원문:\n${input.summary ?? ''}` +
+    contextBlock(input) +
+    `\n\n위 소스를 읽고 기획방향 후보 JSON만 반환하세요.`;
+  const raw = await callModel(directionSystem(input.track), userPrompt, {
+    allowedTools: [],
+    effort: 'medium',
+    timeoutMs: 120_000,
+  });
+
+  const parsed = (parseModelJson(raw) ?? {}) as Record<string, unknown>;
+  const list = Array.isArray(parsed.proposals) ? parsed.proposals : [];
+  const proposals: DirectionProposal[] = [];
+  for (const item of list) {
+    if (!item || typeof item !== 'object') continue;
+    const p = item as Record<string, unknown>;
+    const direction = typeof p.direction === 'string' ? p.direction.trim() : '';
+    if (!direction) continue; // 방향 문장이 없으면 카드로서 쓸모가 없다
+    const personas = (Array.isArray(p.personas) ? p.personas : []).filter(isPersona).slice(0, 2);
+    proposals.push({
+      headline: typeof p.headline === 'string' && p.headline.trim() ? p.headline.trim() : '제안',
+      personas,
+      why: typeof p.why === 'string' ? p.why.trim() : '',
+      direction,
+    });
+  }
+  if (!proposals.length) throw new Error('기획방향 제안을 만들지 못했어요. 다시 시도해 주세요.');
+
+  return {
+    coreInsight: typeof parsed.coreInsight === 'string' ? parsed.coreInsight.trim() : '',
+    proposals: proposals.slice(0, 3),
+  };
 }
 
 // ─────────────── 엣지 제안(MD 직행 레인) ───────────────

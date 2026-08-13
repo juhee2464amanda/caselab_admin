@@ -2,12 +2,13 @@
 
 import { useMemo, useState, type ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
-import { ExternalLink, ChevronDown, ChevronUp, Sparkles, Loader2, RefreshCw, X, Plus } from 'lucide-react';
+import { ExternalLink, ChevronDown, ChevronUp, Sparkles, Loader2, RefreshCw, X, Plus, Lightbulb } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { createSupabaseBrowserClient } from '@/lib/supabase/client';
 import { formatDate, cn } from '@/lib/utils';
 import { BUCKETS, SCORE_CUT, WINDOW_HOURS, BUCKET_CAP, VISIBLE_BUCKETS, bucketProfile, bucketFromSource, stripSeedTitleTag, type SeedBucket } from '@/lib/seed-curation';
 import { SEED_TRACKS, type SeedTrack } from '@/lib/seed-tracks';
+import { personaBadge, type DirectionProposals } from '@/lib/personas';
 import { SOURCES, sourceProfile } from '@/lib/seed-sources';
 import { ESSENCE_LABELS, essenceRows } from '@/lib/seed-essence';
 import { CollectRequestButton } from '@/components/admin/CollectRequestButton';
@@ -60,11 +61,16 @@ export function SeedCuration({
   const [gen, setGen] = useState<SeedTrack | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  // 생성 흐름: 타입 선택 → 기획방향(필수) → 개요 생성 → 개요 확인·수정 → 본문 생성(단계적 구체화)
+  // 생성 흐름: 타입 선택 → 기획방향(직접 쓰기 또는 AI 제안 선택) → 개요 생성 → 개요 확인·수정 → 본문 생성
   const [pendingTrack, setPendingTrack] = useState<SeedTrack | null>(null);
   const [direction, setDirection] = useState('');
   const [outlineText, setOutlineText] = useState<string | null>(null); // null = 아직 개요 생성 전
   const [outlining, setOutlining] = useState(false);
+
+  // 기획방향 AI 제안 — 소스+독자 페르소나로 각도 2~3개. 고르면 입력칸을 채우고, 이어서 손으로 고친다.
+  const [proposals, setProposals] = useState<DirectionProposals | null>(null);
+  const [proposing, setProposing] = useState(false);
+  const [pickedProposal, setPickedProposal] = useState<number | null>(null);
 
   // 필터 상태 (버킷은 라우팅이 아닌 soft 필터)
   const [sourceFilter, setSourceFilter] = useState<string | null>(null);
@@ -83,12 +89,20 @@ export function SeedCuration({
   const [composerOpen, setComposerOpen] = useState(false);
   const [creating, setCreating] = useState(false);
 
-  const toggle = (id: string) =>
+  const clearProposals = () => {
+    setProposals(null);
+    setPickedProposal(null);
+  };
+
+  const toggle = (id: string) => {
+    // 제안은 "선택한 소스"에서 나온 것 → 선택이 바뀌면 남은 카드는 다른 소스의 각도라 버린다.
+    clearProposals();
     setSelected((prev) => {
       const next = new Set(prev);
       next.has(id) ? next.delete(id) : next.add(id);
       return next;
     });
+  };
 
   // 공통 노출 조건(점수컷·검색어). 칩 카운트와 목록이 같은 기준을 쓰도록 단일화.
   const passesBase = useMemo(() => {
@@ -179,11 +193,44 @@ export function SeedCuration({
     setPendingTrack(null);
     setDirection('');
     setOutlineText(null);
+    clearProposals();
   };
 
   const pickTrack = (track: SeedTrack | null) => {
     setPendingTrack(track);
     setOutlineText(null); // 타입 바뀌면 개요 초기화
+    clearProposals(); // 각도는 트랙(형식)에 맞춰 뽑은 것 → 타입 바뀌면 무효
+  };
+
+  // 0단계(선택): 소스+독자 페르소나로 기획방향 후보 2~3개. 고르면 아래 입력칸이 채워지고, 거기서 고쳐 쓴다.
+  const askDirections = async () => {
+    if (selected.size === 0 || !pendingTrack) return;
+    setProposing(true);
+    setError(null);
+    try {
+      const res = await fetch('/api/seeds/directions', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ seedIds: [...selected], track: pendingTrack }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || '기획방향 제안 실패');
+      setProposals(json as DirectionProposals);
+      setPickedProposal(null);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setProposing(false);
+    }
+  };
+
+  // 제안 채택 = 입력칸을 채우는 것까지. 이후 수정은 평소처럼 손으로.
+  const applyProposal = (idx: number) => {
+    const p = proposals?.proposals[idx];
+    if (!p) return;
+    setDirection(p.direction);
+    setPickedProposal(idx);
+    setOutlineText(null); // 방향이 바뀌면 이전 개요는 다른 방향의 뼈대 → 다시 뽑게 한다
   };
 
   // 1단계: 개요(목차) 생성 — 사람이 확인·수정할 뼈대.
@@ -429,7 +476,7 @@ export function SeedCuration({
                 <label className="block text-xs font-medium text-ink/70">
                   기획방향 <span className="text-red-500">*</span>
                   <span className="ml-1 font-normal text-ink/40">
-                    — 이 {SEED_TRACKS.find((p) => p.track === pendingTrack)?.label.replace('로 생성', '')}를 어떤 대상·문제·메시지로 풀지 방향을 적으세요. 소스가 이 방향에 맞게 재구성됩니다.
+                    — 이 {SEED_TRACKS.find((p) => p.track === pendingTrack)?.label.replace('로 생성', '')}를 어떤 대상·문제·메시지로 풀지 방향을 적으세요. 소스가 이 방향에 맞게 재구성됩니다. 막히면 아래 제안에서 골라 채운 뒤 고쳐 써도 됩니다.
                   </span>
                 </label>
                 <textarea
@@ -439,6 +486,67 @@ export function SeedCuration({
                   placeholder="예) 마케터가 반복 업무를 자동화하는 관점에서, 도입 장벽과 실제 절감 효과를 중심으로"
                   className="w-full min-h-[64px] resize-y rounded-md border border-border bg-white px-2.5 py-1.5 text-sm outline-none focus:ring-1 focus:ring-accent"
                 />
+
+                {/* 기획방향 AI 제안 — 직접 쓰기(위 입력칸)는 그대로 두고, 막힐 때 고를 출발점만 아래에 더한다.
+                    카드를 고르면 위 입력칸이 채워지고, 이후 수정은 평소처럼 손으로. */}
+                <div className="space-y-2 rounded-lg border border-dashed border-border bg-muted/30 p-2.5">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={proposing || !!gen || outlining}
+                      onClick={askDirections}
+                    >
+                      {proposing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Lightbulb className="h-3.5 w-3.5" />}
+                      {proposals ? '다시 제안받기' : '기획방향 제안받기'}
+                    </Button>
+                    <span className="text-[11px] leading-snug text-ink/40">
+                      {proposing
+                        ? '소스를 읽고 페르소나별 각도를 잡는 중… 30초~1분'
+                        : '선택한 소스를 읽고, 케이스랩 독자 페르소나가 궁금해할 각도를 2~3개 제안해요.'}
+                    </span>
+                  </div>
+
+                  {proposals && (
+                    <div className="space-y-2">
+                      {proposals.coreInsight && (
+                        <p className="text-[11px] leading-snug text-ink/60">
+                          <span className="font-medium text-ink/70">이 소스의 핵심</span> · {proposals.coreInsight}
+                        </p>
+                      )}
+                      <div className="grid grid-cols-1 gap-2 md:grid-cols-3">
+                        {proposals.proposals.map((p, i) => (
+                          <button
+                            key={i}
+                            type="button"
+                            disabled={!!gen || outlining}
+                            onClick={() => applyProposal(i)}
+                            className={cn(
+                              'rounded-lg border p-2.5 text-left transition-colors disabled:opacity-60',
+                              pickedProposal === i
+                                ? 'border-accent bg-white ring-1 ring-accent'
+                                : 'border-border bg-white hover:bg-muted/60',
+                            )}
+                          >
+                            <div className="mb-1 flex flex-wrap items-center gap-1">
+                              <span className="text-xs font-semibold">{p.headline}</span>
+                              {p.personas.map((k) => (
+                                <span key={k} className="rounded bg-muted px-1.5 py-0.5 text-[10px] text-ink/60">
+                                  {personaBadge(k)}
+                                </span>
+                              ))}
+                            </div>
+                            {p.why && <p className="mb-1 text-[11px] leading-snug text-ink/50">{p.why}</p>}
+                            <p className="text-[11px] leading-snug text-ink/80">{p.direction}</p>
+                            <span className={cn('mt-1.5 inline-block text-[10px]', pickedProposal === i ? 'text-accent' : 'text-ink/40')}>
+                              {pickedProposal === i ? '✓ 위 칸에 넣었어요 — 그대로 고쳐 쓰세요' : '이 방향으로 채우기'}
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
 
                 {/* Step 3: 개요 생성 → 확인·수정 → 본문 생성 (단계적 구체화) */}
                 {outlineText === null ? (
