@@ -211,22 +211,38 @@ const cardBase: CSSProperties = {
 function PhotoBg({ image, overlay, pos }: { image?: string; overlay: number; pos?: string }) {
   return (
     <>
-      <div
-        data-bg={image ? '1' : undefined}
-        style={{
-          position: 'absolute',
-          top: 0,
-          left: 0,
-          width: CARD_W,
-          height: CARD_H,
-          display: 'flex',
-          backgroundImage: image
-            ? `url(${image})`
-            : 'linear-gradient(135deg,#232a3d 0%,#12151f 100%)',
-          backgroundSize: 'cover',
-          backgroundPosition: pos ?? '50% 50%',
-        }}
-      />
+      {/* ⚠️ 사진은 반드시 <img>+objectFit로 채운다 — 배경 CSS의 cover 값을 Satori가 무시하고
+          원본 크기로 타일링한다(2026-08-13 실발생: 커버 사진이 2×2 격자로 반복돼 나감).
+          scripts/cardpress-verify.mjs의 소스 린트가 이 패턴을 금지한다. */}
+      {image ? (
+        <img
+          data-bg="1"
+          src={image}
+          width={CARD_W}
+          height={CARD_H}
+          style={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            width: CARD_W,
+            height: CARD_H,
+            objectFit: 'cover',
+            objectPosition: pos ?? '50% 50%',
+          }}
+        />
+      ) : (
+        <div
+          style={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            width: CARD_W,
+            height: CARD_H,
+            display: 'flex',
+            backgroundImage: 'linear-gradient(135deg,#232a3d 0%,#12151f 100%)',
+          }}
+        />
+      )}
       <div
         style={{
           position: 'absolute',
@@ -1690,11 +1706,27 @@ function PhotoBand({ image, height, pos }: { image?: string; height: number; pos
         width: CARD_W,
         height,
         display: 'flex',
-        backgroundImage: image ? `url(${image})` : 'linear-gradient(135deg,#232a3d 0%,#12151f 100%)',
-        backgroundSize: `${CARD_W}px ${height}px`,
-        backgroundPosition: pos ?? '50% 50%',
+        backgroundImage: 'linear-gradient(135deg,#232a3d 0%,#12151f 100%)',
       }}
     >
+      {/* 사진은 <img>+objectFit로만 — 배경 CSS는 크기 지정이 통째로 무시되고 원본 크기로 타일링된다.
+          px를 명시해도 마찬가지(2026-08-13 실측: 512×768 사진이 660px 밴드에서 2×2로 반복). */}
+      {image ? (
+        <img
+          src={image}
+          width={CARD_W}
+          height={height}
+          style={{
+            position: 'absolute',
+            left: 0,
+            top: 0,
+            width: CARD_W,
+            height,
+            objectFit: 'cover',
+            objectPosition: pos ?? '50% 50%',
+          }}
+        />
+      ) : null}
       <div
         style={{
           position: 'absolute',
@@ -1725,19 +1757,34 @@ function PhotoFull({
 }) {
   return (
     <>
-      <div
-        style={{
-          position: 'absolute',
-          left: 0,
-          top: 0,
-          width: CARD_W,
-          height: CARD_H,
-          display: 'flex',
-          backgroundImage: image ? `url(${image})` : 'linear-gradient(135deg,#232a3d 0%,#12151f 100%)',
-          backgroundSize: `${CARD_W}px ${CARD_H}px`,
-          backgroundPosition: pos ?? '50% 50%',
-        }}
-      />
+      {image ? (
+        <img
+          src={image}
+          width={CARD_W}
+          height={CARD_H}
+          style={{
+            position: 'absolute',
+            left: 0,
+            top: 0,
+            width: CARD_W,
+            height: CARD_H,
+            objectFit: 'cover',
+            objectPosition: pos ?? '50% 50%',
+          }}
+        />
+      ) : (
+        <div
+          style={{
+            position: 'absolute',
+            left: 0,
+            top: 0,
+            width: CARD_W,
+            height: CARD_H,
+            display: 'flex',
+            backgroundImage: 'linear-gradient(135deg,#232a3d 0%,#12151f 100%)',
+          }}
+        />
+      )}
       <div
         style={{
           position: 'absolute',

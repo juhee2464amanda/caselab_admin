@@ -146,6 +146,16 @@ function imagesFromBlocks(blocks: Block[] | undefined): string[] {
 }
 
 /** 본문 이미지 자동 추출 — 썸네일·본문 image/gallery 블록·마크다운 이미지·프레임워크 출처 썸네일 (spec §3-①) */
+/** Satori가 디코드할 수 있는 이미지만 남긴다.
+ *
+ * WebP·AVIF는 **조용히 검은 화면으로 렌더된다** — 에러도 없고 렌더는 200이라 검수에서 놓치기 쉽다
+ * (2026-08-13 실측: 평균 밝기 197의 밝은 webp가 통째로 검정으로 나감). 본가 업로드가 webp를
+ * 만들 수 있으므로 카드 소스 단계에서 걸러낸다. 확장자가 없는 URL은 통과시킨다(대개 jpg/png).
+ */
+export function renderableImages(urls: string[]): string[] {
+  return urls.filter((u) => !/\.(webp|avif|heic|heif)(\?|$)/i.test(u));
+}
+
 export function collectImages(row: ContentRowLite): string[] {
   const urls: string[] = [];
   if (row.thumbnail_url) urls.push(row.thumbnail_url);
@@ -159,13 +169,34 @@ export function collectImages(row: ContentRowLite): string[] {
     for (const key of ['what', 'why', 'deepDive', 'soWhat'] as const)
       urls.push(...imagesFromBlocks(body[key]));
   }
-  return Array.from(new Set(urls.filter((u) => u.startsWith('http'))));
+  return renderableImages(Array.from(new Set(urls.filter((u) => u.startsWith('http')))));
 }
 
 // 개요(오버뷰) 역할 표시 — 이 표시가 붙은 재료는 generate.ts가 B2 개요 모드(lead=핵심 한 줄 + 번호 목록)로 쓴다.
 // 개요는 스토리의 지도라서, 나열이면 독자가 "무엇이 중요한지"를 못 잡고 그냥 넘긴다.
 const OVERVIEW_ROLE =
   '(역할: 개요 — 이 글에서 딱 하나만 가져간다면 그것을 lead 한 줄로, 나머지는 그것을 뒷받침하는 사실 2~3개로. 뒤에 나올 개별 항목 슬라이드와 표현·내용이 겹치지 않게)';
+
+/** 남는 추출 이미지를 사진형 본문 장에 분배한다.
+ *
+ * 왜 필요한가: 이미지를 커버·B6에만 배정했더니 AI가 본문에서 P 계열을 한 번도 고르지 않았다
+ * (2026-08-13 실측 — 이미지가 4장 있는 케이스인데도 전 장이 흰 카드). AI 입장에선 사진이
+ * 없는 장에 사진형 템플릿을 고를 이유가 없다. 재료 단계에서 "이 장엔 사진이 있다"를 만들어줘야
+ * 시각 소재(도구 소개·제작기·게임 화면)가 이미지 템플릿으로 흐른다. */
+function distributeImages(slides: SlidePlanItem[], images: string[]): void {
+  const used = new Set(slides.map((s) => s.image).filter(Boolean) as string[]);
+  const pool = images.filter((u) => !used.has(u));
+  if (!pool.length) return;
+  for (const s of slides) {
+    if (!pool.length) break;
+    if (s.image) continue;
+    // 사진형이거나 사진형으로 교체 가능한 장에만
+    const photoCapable =
+      s.template.startsWith('P') || (s.alternatives ?? []).some((t) => t.startsWith('P'));
+    if (!photoCapable) continue;
+    s.image = pool.shift();
+  }
+}
 
 function coverMaterial(row: ContentRowLite): string {
   // 읽기/적용 시간은 본가 웹 개념 — 인스타 커버에선 무의미해서 재료에서 제외 (운영자 결정 2026-07-21)
@@ -264,6 +295,7 @@ function planCase(row: ContentRowLite, body: CaseBody, images: string[]): SlideP
     alternatives: ['P6', 'B2'],
   });
 
+  distributeImages(slides, images);
   return slides;
 }
 
@@ -329,6 +361,7 @@ function planTrend(row: ContentRowLite, body: TrendBody, images: string[]): Slid
     alternatives: ['P6', 'B2'],
   });
 
+  distributeImages(slides, images);
   return slides;
 }
 
@@ -546,7 +579,7 @@ function toolImages(row: ToolRowLite): string[] {
   asArray(b.sections).forEach((s) => {
     urls.push(...imagesFromBlocks(asRecord(s)?.blocks as Block[] | undefined));
   });
-  return Array.from(new Set(urls.filter((u) => /^https?:\/\//.test(u))));
+  return renderableImages(Array.from(new Set(urls.filter((u) => /^https?:\/\//.test(u)))));
 }
 
 /**
@@ -652,6 +685,7 @@ export function buildToolSlidePlan(row: ToolRowLite): SlidePlan {
     alternatives: ['P6', 'B2'],
   });
 
+  distributeImages(slides, images);
   const optCount = slides.filter((s) => s.optional).length;
   const selectTarget = optCount > 0 ? Math.min(6, Math.max(3, Math.round(optCount / 2))) : undefined;
   return { accent: 'cat-tool', slides, images, selectTarget };

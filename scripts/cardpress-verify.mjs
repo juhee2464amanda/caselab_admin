@@ -7,16 +7,18 @@
  *      (실제로 2026-08-13 프로브에서 헤드라인 절반이 사라진 채 제안될 뻔했다)
  *   ② 대비 부족 — 밝은 사진 위 흰 글씨. 렌더는 성공하고 스크린샷에서도 "보이긴" 하는데 폰에선 안 읽힌다.
  *
- * 방법: 렌더 PNG를 60px 그리드로 쪼개 셀마다 p95(글자)·p50(배경) 휘도를 구한다.
- *   - 글자 셀 = p95가 밝고 p95-p50 격차가 있는 셀
- *   - 글자 셀이 너무 적으면 → 글자 소실
- *   - 글자 셀의 WCAG 대비가 MIN_CONTRAST 미만이면 → 대비 부족
- *   - 카드 가장자리 24px 띠에 글자 셀이 있으면 → 오버플로
+ *   ③ 배경 타일링 — Satori가 backgroundSize:'cover'를 무시해 사진이 격자로 반복된다.
+ *      렌더는 200이고 글자 대비도 정상이라 픽셀 검사를 전부 통과한다 → 소스 린트로 막는다.
+ *
+ * 방법: (a) 소스 린트 — templates.tsx에서 Satori 미지원 CSS를 금지.
+ *       (b) 픽셀 검사 — 렌더 PNG를 60px 셀로 쪼개 글자 획을 특정하고
+ *           글자량(소실)·밝은 글자의 실대비·가장자리 침범(오버플로)을 잰다.
  *
  * 사용: node scripts/cardpress-verify.mjs [--base http://localhost:3000] [--out <dir>] [--only P1,P3]
  * 전제: dev 서버 실행 중 (렌더 라우트의 x-cardpress-dev 우회 헤더는 NODE_ENV!=='production'에서만 동작)
  */
-import { writeFile, mkdir } from 'node:fs/promises';
+import { writeFile, mkdir, readFile } from 'node:fs/promises';
+import { fileURLToPath } from 'node:url';
 import sharp from 'sharp';
 
 const args = process.argv.slice(2);
@@ -33,11 +35,13 @@ const ONLY = argOf('--only', '')
 const MIN_CONTRAST = 4.5; // WCAG AA 본문 기준
 const CELL = 60;
 
-// 밝은 사진을 일부러 섞는다 — 스크림이 없으면 여기서 대비 검사가 터져야 정상이다
+// 샘플 사진은 **카드와 다른 크기**여야 한다 — 1080×1350으로 딱 맞춰 받으면 타일 하나가 프레임을
+// 정확히 채워서 배경 타일링 버그가 안 보인다(2026-08-13: 그래서 검수 20/20 통과인데 실콘텐츠에서
+// 2×2 격자가 나갔다). 밝은 사진은 스크림 대비 검사용으로 유지.
 const PHOTO_BRIGHT =
-  'https://images.unsplash.com/photo-1587522384446-64daf3e2689a?ixid=M3wxMDAxMzgwfDB8MXxzZWFyY2h8MXx8bWluaW1hbCUyMHdvcmtzcGFjZSUyMG1vb2R5fGVufDF8MXx8fDE3ODY2MjQ3OTZ8MA&ixlib=rb-4.1.0&w=1080&h=1350&fit=crop&q=80';
+  'https://images.unsplash.com/photo-1587522384446-64daf3e2689a?ixid=M3wxMDAxMzgwfDB8MXxzZWFyY2h8MXx8bWluaW1hbCUyMHdvcmtzcGFjZSUyMG1vb2R5fGVufDF8MXx8fDE3ODY2MjQ3OTZ8MA&ixlib=rb-4.1.0&w=640&h=427&fit=crop&q=80';
 const PHOTO_DARK =
-  'https://images.unsplash.com/photo-1540978455180-ad56d128489a?ixid=M3wxMDAxMzgwfDB8MXxzZWFyY2h8MXx8c3RlZWwlMjBjaGFpbiUyMG1hY3JvJTIwZGFya3xlbnwxfDF8fHwxNzg2NjI0Nzk2fDA&ixlib=rb-4.1.0&w=1080&h=1350&fit=crop&q=80';
+  'https://images.unsplash.com/photo-1540978455180-ad56d128489a?ixid=M3wxMDAxMzgwfDB8MXxzZWFyY2h8MXx8c3RlZWwlMjBjaGFpbiUyMG1hY3JvJTIwZGFya3xlbnwxfDF8fHwxNzg2NjI0Nzk2fDA&ixlib=rb-4.1.0&w=640&h=427&fit=crop&q=80';
 
 /** 템플릿별 대표 샘플 — 실제 생성물과 같은 분량으로 (짧게 넣으면 오버플로를 못 잡는다) */
 const SAMPLES = [
@@ -198,8 +202,50 @@ async function analyze(buf) {
   return { W, H, glyphCells, lightCells, worst, edgeHits };
 }
 
+// ── 소스 린트 — Satori가 조용히 무시하는 CSS ───────────────────
+// 픽셀 검사로 잡으려다 실패한 부류다: backgroundSize:'cover'는 렌더가 200으로 성공하고
+// 글자 대비도 멀쩡한데 사진만 타일링된다(2026-08-13 커버가 2×2 격자로 나감). 자기상관으로
+// 주기성을 재봤지만 스크림 그라데이션이 주기를 깨면 못 잡았다 → 원인을 소스에서 금지하는 게 확실하다.
+const FORBIDDEN = [
+  {
+    re: /backgroundImage:\s*(image \?\s*)?`url\(/g,
+    why: 'Satori는 배경 CSS의 크기 지정을 무시하고 원본 크기로 타일링한다(px를 명시해도 동일) → 사진은 <img>+objectFit',
+  },
+  {
+    re: /backgroundSize:\s*['"](cover|contain)['"]/g,
+    why: "backgroundSize:'cover'는 Satori가 무시한다 → <img>+objectFit:'cover'",
+  },
+  {
+    re: /color:\s*['"]inherit['"]/g,
+    why: 'Satori는 color:\'inherit\'을 못 받아 검정으로 떨어진다 → 어두운 배경에서 글자가 사라짐. 색을 명시할 것',
+  },
+  {
+    re: /(borderTop|borderBottom|borderLeft|borderRight|border):\s*undefined/g,
+    why: '스타일 값 undefined는 Satori 파서를 죽여 응답이 통째로 끊긴다 → \'none\'을 명시할 것',
+  },
+];
+
+async function lintSource() {
+  const path = fileURLToPath(new URL('../lib/cardpress/templates.tsx', import.meta.url));
+  const src = await readFile(path, 'utf8');
+  const hits = [];
+  for (const { re, why } of FORBIDDEN) {
+    for (const m of src.matchAll(re)) {
+      const line = src.slice(0, m.index).split('\n').length;
+      hits.push(`templates.tsx:${line}  ${m[0]}\n         → ${why}`);
+    }
+  }
+  return hits;
+}
+
 async function main() {
   await mkdir(OUT, { recursive: true });
+  const lintHits = await lintSource();
+  if (lintHits.length) {
+    console.log('■ 소스 린트 — Satori 미지원 CSS');
+    for (const h of lintHits) console.log('  ' + h);
+    console.log('');
+  }
   const rows = [];
   for (const [template, props, opts = {}] of SAMPLES) {
     if (ONLY.length && !ONLY.includes(template)) continue;
@@ -260,8 +306,8 @@ async function main() {
       }  ${r.why ?? ''}`
     );
   }
-  console.log(`\n${rows.length - fail}/${rows.length} 통과 · PNG: ${OUT}`);
-  process.exit(fail ? 1 : 0);
+  console.log(`\n${rows.length - fail}/${rows.length} 통과 · 소스 린트 위반 ${lintHits.length}건 · PNG: ${OUT}`);
+  process.exit(fail || lintHits.length ? 1 : 0);
 }
 
 main();
