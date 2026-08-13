@@ -51,14 +51,18 @@ export const B2PropsSchema = z.object({
   media: z.string().url().optional(),// 본문 추출 스크린샷 url (없으면 미디어 영역 생략)
 });
 
+// B5 — 2026-08-14 다크 편집형으로 재디자인(파스텔 패널+아이콘 배지는 "제품 UI" 인상이라 폐기)
 export const B5PropsSchema = z.object({
   ...StyleOverrideFields,
   page: z.string().optional(),
   heading: z.string().optional(),    // 기본 '솔직 후기'
   goodLabel: z.string().optional(),  // 기본 '잘된 것'
   badLabel: z.string().optional(),   // 기본 '별로였던 것'
-  good: z.array(z.string().min(1)).min(1).max(3),
+  good: z.array(z.string().min(1)).min(1).max(3),  // **강조** 마커 지원
   bad: z.array(z.string().min(1)).min(1).max(3),
+  // split=사진 밴드+상하 2단 / versus=좌우 대비. 미지정 시 항목 길이로 자동(≤26자면 versus)
+  layout: z.enum(['split', 'versus']).optional(),
+  image: z.string().url().optional(), // split 레이아웃의 상단 사진 (없으면 그라데이션)
 });
 
 export const C2PropsSchema = z.object({
