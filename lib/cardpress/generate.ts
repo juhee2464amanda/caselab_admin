@@ -553,6 +553,15 @@ function trackDownload(downloadLocation: string | undefined, key: string): void 
   void fetch(downloadLocation, { headers: { Authorization: `Client-ID ${key}` } }).catch(() => {});
 }
 
+// 벤치마크 룰(§2-2): 저채도·저조도 사진이 스크림과 만나야 톤이 통일된다. 프롬프트가 톤 단어를
+// 요구하지만 모델이 빠뜨리면 밝고 알록달록한 사진이 걸린다(실측: "sticky notes wall" → 형광 포스트잇 벽).
+// 톤 단어가 없으면 서버가 붙인다 — 검색어 의미는 그대로 두고 톤만 좁힌다.
+const TONE_WORDS = ['dark', 'moody', 'macro', 'close up', 'silhouette', 'minimal', 'night', 'shadow'];
+function withTone(query: string): string {
+  const q = query.toLowerCase();
+  return TONE_WORDS.some((t) => q.includes(t)) ? query : `${query} dark moody`;
+}
+
 /** 검색어 하나로 후보를 받아 아직 안 쓴 무료 사진을 고른다 */
 async function searchUnsplash(
   query: string,
@@ -561,7 +570,7 @@ async function searchUnsplash(
 ): Promise<(SlidePhoto & { id: string }) | null> {
   try {
     const res = await fetch(
-      `https://api.unsplash.com/search/photos?query=${encodeURIComponent(query)}&per_page=6&orientation=portrait&content_filter=high`,
+      `https://api.unsplash.com/search/photos?query=${encodeURIComponent(withTone(query))}&per_page=6&orientation=portrait&content_filter=high`,
       { headers: { Authorization: `Client-ID ${key}` } }
     );
     if (!res.ok) return null;
