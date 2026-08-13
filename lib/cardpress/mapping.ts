@@ -581,6 +581,25 @@ export function buildToolSlidePlan(row: ToolRowLite): SlidePlan {
     { template: 'C2', sourceSection: 'tool:cover', material: coverMat, alternatives: ['C1', 'C5'], image: images[0] },
   ];
 
+  // 커버 다음은 개요 — 씨앗·트렌드·케이스와 같은 규칙. 자료실은 chunk를 순서대로 깔기만 해서
+  // "이 자료가 뭘 해주는지"를 한 장으로 못 박는 자리가 없었다.
+  slides.push({
+    template: 'B2',
+    sourceSection: 'tool:overview',
+    material: [
+      OVERVIEW_ROLE,
+      `${kind}: ${row.name}`,
+      desc && `설명: ${desc}`,
+      chunks
+        .slice(0, 3)
+        .map((c) => `${c.heading}: ${c.text.slice(0, 200)}`)
+        .join('\n'),
+    ]
+      .filter(Boolean)
+      .join('\n'),
+    required: '개요 — 스토리의 지도 (커버 다음으로 이탈이 갈리는 자리)',
+  });
+
   // 프롬프트는 패턴 슬라이드(B8)가 정체성 — 원문이 있으면 반드시 한 장 낸다.
   const promptChunk = chunks.find((c) => c.section === 'tool:prompt');
   if (promptChunk) {
