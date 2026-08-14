@@ -7,6 +7,8 @@ import type { SeedBucket } from '@/lib/seed-curation';
 export type SeedSource =
   | 'ai-briefing'
   | 'service-scout'
+  | 'ai-usecase'
+  | 'prompt-scout'
   | 'youtube'
   | 'community'
   | 'blog'
@@ -83,6 +85,25 @@ export const SOURCES: SourceProfile[] = [
     qualitySignal: '릴스/게시물 댓글의 실제 needs 원문 + 게시물 링크(수동 발췌).',
   },
   {
+    key: 'ai-usecase',
+    label: 'AI 활용사례',
+    badge: '🟣 활용사례',
+    bucketHint: 'usecase',
+    criteria: '직무인·팀이 AI로 실제 업무를 처리한 사례. 도구·절차·결과가 있는 것.',
+    qualitySignal:
+      '실제 사례 원문 + 쓴 도구명 + 전후 변화(시간·품질·비용 중 1개+) + 출처 URL. 홍보성 성공담·계획만 있는 글 아님.',
+  },
+  {
+    key: 'prompt-scout',
+    label: '프롬프트 스카우트',
+    badge: '🟡 프롬프트',
+    bucketHint: 'prompt',
+    criteria: '실무에 바로 쓸 수 있는 프롬프트, 또는 프롬프트로 재구성 가능한 사용 노하우.',
+    qualitySignal:
+      '프롬프트 전문 또는 "이렇게 지시하면 잘 나온다"는 구체적 노하우(어떤 지시를 왜 넣는지) + 어떤 업무·직무용인지 + 어느 모델·도구에서 쓰는지 + 출처 URL. ' +
+      '결과가 눈에 띄게 달라지거나 같은 결과를 더 적은 토큰·왕복으로 얻게 해주는 것. "프롬프트 잘 쓰는 법" 일반론은 제외.',
+  },
+  {
     key: 'slack-brief',
     label: 'Slack 브리핑',
     badge: '💬 브리핑',
@@ -110,6 +131,8 @@ export const LANE_SOURCE: Record<string, SeedSource> = {
   'painpoint-community': 'community',
   'painpoint-blog': 'blog',
   'painpoint-instagram': 'instagram',
+  'ai-usecase': 'ai-usecase',
+  'prompt-scout': 'prompt-scout',
   // 레거시 lane(현재 HERMES가 실제로 쓰는 이름) → 신규 소스로 흡수.
   //   briefing = 매일 AI 브리핑 → ai-briefing(trend)
   //   scout/analyst = 도구 스카우팅·비교 → service-scout(service)

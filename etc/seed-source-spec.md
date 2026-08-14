@@ -1,6 +1,6 @@
 # 씨앗 소스 스펙 (HERMES → /admin/seeds)
 
-`/admin/seeds`의 3개 목적 버킷을 채우는 소스 정의. HERMES(외부 스카우트 앱)가 소스(lane)별 브리핑을 `content_seeds`에 `source_type`과 함께 적재하고, 로컬 AI 채점기(`scoreSeed`)가 버킷으로 분류한다. 적재 경로는 2개:
+`/admin/seeds`의 5개 목적 버킷(🔵 trend · 🟢 service · 🟠 painpoint · 🟣 usecase · 🟡 prompt)을 채우는 소스 정의. HERMES(외부 스카우트 앱)가 소스(lane)별 브리핑을 `content_seeds`에 `source_type`과 함께 적재하고, 로컬 AI 채점기(`scoreSeed`)가 버킷으로 분류한다. 적재 경로는 2개:
 
 - **직접 적재(권장)** — HERMES 크론 → `POST /api/seeds/ingest` (아래 "직접 적재" 절)
 - **Slack 경로(하위호환)** — 전용 Slack lane → 웹훅(`/api/slack/hermes-brief`)
@@ -21,6 +21,8 @@
 | `community` | `painpoint-community` | 🟠 painpoint | 실제 고충 원문 인용 · 여러 사람 공감/반복 · 스레드 링크. |
 | `blog` | `painpoint-blog` | 🟠 painpoint | 구체적 상황·맥락 담긴 후기/문제 서술 본문 + 원문 URL(RSS). |
 | `instagram` | `painpoint-instagram` | 🟠 painpoint | 릴스/게시물 댓글 needs 원문 + 링크(수동 발췌). |
+| `ai-usecase` | `ai-usecase` | 🟣 usecase | 실제 사례 원문 + 쓴 도구명 + 전후 변화(시간·품질·비용 1+) + URL. 홍보성 성공담·계획만 있는 글 아님. |
+| `prompt-scout` | `prompt-scout` | 🟡 prompt | 프롬프트 전문 **또는** 재구성 가능한 구체적 노하우 + 대상 업무 + 모델/도구 + URL. 결과가 달라지거나 토큰·왕복이 줄어야 함. 일반론 제외. |
 | `slack-brief` | 기타 generic lane | (자유분류) | — (하위호환) |
 | `manual` | — | — | — (태깅한 소스 기준에 준함) |
 
