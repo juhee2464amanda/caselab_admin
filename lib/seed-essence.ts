@@ -15,6 +15,14 @@ export const ESSENCE_LABELS: Record<string, string> = {
   who: '대상',
   pain: '페인',
   suggest: '제안 콘텐츠',
+  // usecase (who 공유)
+  task: '업무',
+  how: '방법·도구',
+  result: '결과',
+  // prompt (who 공유)
+  purpose: '목적',
+  model: '도구·모델',
+  gain: '효과',
 };
 
 export function essenceRows(essence: Record<string, string> | null): [string, string][] {

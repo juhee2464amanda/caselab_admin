@@ -9,7 +9,7 @@
 import type { SeedTrack } from '@/lib/seed-tracks';
 import type { SeedSource } from '@/lib/seed-sources';
 
-export type SeedBucket = 'trend' | 'service' | 'painpoint' | 'etc';
+export type SeedBucket = 'trend' | 'service' | 'painpoint' | 'usecase' | 'prompt' | 'etc';
 
 export interface BucketProfile {
   key: SeedBucket;
@@ -54,6 +54,30 @@ export const BUCKETS: BucketProfile[] = [
     criteria: '직무인이 겪는 구체적 막힘/문제. 실전 케이스로 풀어낼 소재가 되는 것.',
     sources: ['youtube', 'community', 'blog', 'instagram'],
   },
+  {
+    key: 'usecase',
+    emoji: '🟣',
+    label: 'AI Usecase',
+    defaultTrack: 'case',
+    weights: { timeliness: 10, practical: 45, fit: 30, trust: 15 },
+    criteria:
+      'AI를 실제 업무에 써서 결과를 낸 사례. 쓴 도구·절차·전후 변화가 드러나는 것. ' +
+      '문제 제기만 있고 실행·결과가 없으면 painpoint, 출시·발표 소식이면 trend.',
+    sources: ['ai-usecase'],
+  },
+  {
+    key: 'prompt',
+    emoji: '🟡',
+    label: 'Prompt',
+    defaultTrack: 'prompt',
+    weights: { timeliness: 10, practical: 50, fit: 25, trust: 15 },
+    // 값어치 기준은 프롬프트 카드 생성기(lib/ai-draft.ts PROMPT_SYSTEM)와 같은 문장을 쓴다.
+    criteria:
+      '복사해 바로 쓸 수 있는 프롬프트, 또는 그렇게 재구성 가능한 사용 노하우. ' +
+      '① 결과가 달라지거나(그냥 시켰을 때보다 눈에 띄게 낫다) ② 더 싸게 도달하는(토큰·왕복이 준다) 것이라야 함. ' +
+      '도구 소개면 service, 프롬프트 쓰는 법 일반론이면 etc.',
+    sources: ['prompt-scout'],
+  },
 ];
 
 export const HIDDEN_BUCKET: SeedBucket = 'etc'; // 광고·루머·중복·off-topic
@@ -80,7 +104,8 @@ export function bucketProfile(key: string | null | undefined): BucketProfile | u
 }
 
 export function isSeedBucket(v: unknown): v is SeedBucket {
-  return v === 'trend' || v === 'service' || v === 'painpoint' || v === 'etc';
+  // BUCKETS 참조 — 버킷 추가 시 여기를 같이 고치는 걸 잊으면 채점 결과가 통째로 'etc'로 떨어진다.
+  return typeof v === 'string' && (v === HIDDEN_BUCKET || BUCKETS.some((b) => b.key === v));
 }
 
 /**
