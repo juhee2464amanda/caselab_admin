@@ -542,6 +542,12 @@ function toolChunks(row: ToolRowLite): ToolChunk[] {
   const bodyRich = str(b.bodyRich);
   if (bodyRich) out.push({ section: 'tool:bodyRich', heading: '본문', text: bodyRich });
 
+  // 대상 독자 — body.audience. 도구 카드뉴스에서 "누구를 위한 것인지"가 빠지면 독자가
+  // 자기 얘기인지 판단할 수 없다(2026-08-14: 이 필드가 추출에서 통째로 빠져 있었다).
+  const audience = asArray(b.audience).map(str).filter(Boolean);
+  const audienceText = audience.length ? audience.join('\n') : str(b.audience);
+  if (audienceText) out.push({ section: 'tool:audience', heading: '이런 분께', text: audienceText });
+
   // 설명이 한 문단 이상이면 본문 재료로도 쓴다 — 프롬프트 자료는 설명이 곧 해설이라
   // 커버에만 쓰고 버리면 본문 슬라이드가 프롬프트 원문 한 장뿐이 된다.
   const desc = (row.description ?? '').trim();
@@ -665,14 +671,76 @@ export function buildToolSlidePlan(row: ToolRowLite): SlidePlan {
     });
   }
 
-  const rest = chunks.filter((c) => c.section !== 'tool:prompt');
-  const optional = rest.length > 3;
-  rest.slice(0, 6).forEach((c) => {
+  // ── 자료 소개의 필수 4문 — 무엇 / 누구에게 / 어떻게 / 얼마 ─────────────────
+  // 이전엔 남은 chunk를 전부 optional로 뿌리고 AI가 절반만 골랐다. 그 결과 실제 카드에서
+  // 가격도 대상도 빠지고 기능 5개 중 1개만 남았다(2026-08-14 "Agents Never Sleep" 실측).
+  // 도구·서비스 소개는 이 4가지가 없으면 카드뉴스가 아니라 감상문이 된다 → 재료가 있으면 required.
+  const take = (section: string) => chunks.find((c) => c.section === section);
+
+  const audienceChunk = take('tool:audience');
+  if (audienceChunk) {
     slides.push({
-      template: c.section === 'tool:whenToUse' || c.section === 'tool:pricing' ? 'B1' : 'B2',
+      template: 'P1',
+      sourceSection: audienceChunk.section,
+      material: `(역할: 대상 — lead는 "이런 사람에게 필요하다" 한 줄, items는 구체적인 상황 2~3개)\n${audienceChunk.text}`,
+      alternatives: ['B2', 'P5'],
+      required: '누구를 위한 자료인지 — 독자가 자기 얘기인지 판단하는 자리',
+    });
+  }
+
+  const whenChunk = take('tool:whenToUse');
+  if (whenChunk) {
+    slides.push({
+      template: 'B1',
+      sourceSection: whenChunk.section,
+      material: `(역할: 사용 상황 — 언제 꺼내 쓰는 도구인지. 상황을 장면으로 그릴 것)\n${whenChunk.text}`,
+      alternatives: ['P1', 'B2'],
+      required: audienceChunk ? undefined : '사용 상황 — 대상 슬라이드가 없으면 이 자리가 대신한다',
+    });
+  }
+
+  // 기능은 개별 슬라이드로 흩뿌리지 말고 한 장에 대표 3개 — 5개를 낱장으로 쪼개면
+  // AI 선정에서 1개만 남고 "주요 기능"이라는 정보 단위가 사라진다.
+  const featureChunks = chunks.filter((c) => c.section.startsWith('tool:feature#'));
+  if (featureChunks.length) {
+    slides.push({
+      template: 'P1',
+      sourceSection: 'tool:features',
+      material: `(역할: 핵심 기능 — lead는 이 도구가 해주는 일 한 줄, items는 대표 기능 2~3개. 기능명은 짧게)\n${featureChunks
+        .map((c) => `${c.heading}: ${c.text}`)
+        .join('\n')}`,
+      alternatives: ['B2', 'B6', 'P5'],
+      required: '주요 기능 — 무엇을 해주는 도구인지',
+    });
+  }
+
+  const pricingChunk = take('tool:pricing');
+  if (pricingChunk) {
+    slides.push({
+      template: 'B1',
+      sourceSection: pricingChunk.section,
+      material: `(역할: 가격 — 얼마인지, 구독인지 일회성인지, 무료 체험이 있는지를 명확히. 숫자를 흐리지 말 것)\n${pricingChunk.text}`,
+      alternatives: ['P6', 'B7', 'B2'],
+      required: '가격 — 저장·공유를 만드는 정보. 재료에 있으면 반드시 낸다',
+    });
+  }
+
+  // 나머지(소개 문단·자유 섹션·설명)는 서사 살로 — 여기서만 선정을 허용한다
+  const usedSections = new Set([
+    'tool:prompt',
+    'tool:audience',
+    'tool:whenToUse',
+    'tool:pricing',
+    ...featureChunks.map((c) => c.section),
+  ]);
+  const rest = chunks.filter((c) => !usedSections.has(c.section));
+  const optional = rest.length > 2;
+  rest.slice(0, 4).forEach((c) => {
+    slides.push({
+      template: 'B2',
       sourceSection: c.section,
       material: `${c.heading}\n${c.text}`,
-      alternatives: ['B2', 'P2', 'B7', 'B4', 'B3'],
+      alternatives: ['P2', 'B4', 'B3', 'P5'],
       optional,
     });
   });

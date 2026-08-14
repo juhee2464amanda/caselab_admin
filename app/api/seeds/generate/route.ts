@@ -58,7 +58,7 @@ export async function POST(req: NextRequest) {
   // 3) seed 로드 (source_type·bucket = 생성 컨텍스트, 프롬프트에 grounding으로 주입)
   const { data: seeds, error: seedErr } = await admin
     .from('content_seeds')
-    .select('id, title, raw_text, note, suggested_angle, status, source_type, bucket')
+    .select('id, title, raw_text, note, suggested_angle, status, source_type, bucket, source_url')
     .in('id', ids);
   if (seedErr) return NextResponse.json({ error: seedErr.message }, { status: 500 });
   if (!seeds?.length) return NextResponse.json({ error: 'seed not found' }, { status: 404 });
@@ -85,7 +85,16 @@ export async function POST(req: NextRequest) {
 
     // 자료실 트랙(tool/prompt/guide) → tools 테이블. 셋 다 content_seeds.tool_id로 역추적.
     if (track === 'tool' || track === 'prompt') {
-      const libInput = { title: mergedTitle, summary: mergedSummary, direction, outline, sourceType, bucket };
+      // sourceUrl = 씨앗 원문 링크. 프롬프트 카드의 출처 칩(body.sourceUrl)이 이 값을 그대로 쓴다.
+      const libInput = {
+        title: mergedTitle,
+        summary: mergedSummary,
+        direction,
+        outline,
+        sourceType,
+        bucket,
+        sourceUrl: primary.source_url ?? undefined,
+      };
       const draft = track === 'tool' ? await generateToolDraft(libInput) : await generatePromptDraft(libInput);
       const { data: tool, error } = await admin
         .from('tools')
@@ -97,6 +106,7 @@ export async function POST(req: NextRequest) {
           body: draft.body,
           url: draft.url ?? null,
           pricing_tier: draft.pricing_tier,
+          ...(draft.jobTags?.length ? { job_tags: draft.jobTags } : {}),
           status: 'draft',
         })
         .select('id')

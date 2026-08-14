@@ -4,6 +4,13 @@ import { BlockSchema, ContentBodySchema, type ContentBody, JOB_TAGS, JOB_LABELS,
 import { runClaudeSubscription, extractJson } from '@/lib/claude-cli';
 import { BUCKETS, bucketProfile, isSeedBucket, type SeedBucket } from '@/lib/seed-curation';
 import { lintToolBody } from '@/lib/tool-body';
+import {
+  PROMPT_CATEGORIES,
+  PROMPT_CATEGORY_LABELS,
+  PROMPT_CATEGORY_CRITERIA,
+  isPromptCategory,
+  type PromptBody,
+} from '@/lib/prompt-body';
 import { sourceProfile } from '@/lib/seed-sources';
 import { PERSONA_PROMPT_BLOCK, isPersona, type DirectionProposal, type DirectionProposals } from '@/lib/personas';
 import type { SeedTrack } from '@/lib/seed-tracks';
@@ -122,25 +129,60 @@ const TOOL_SYSTEM = `당신은 케이스랩(Caselab) 자료실의 운영자 어�
   }
 }`;
 
+// 프롬프트 카드는 본가 /prompts가 body에서 4필드만 읽는다(lib/prompt-body.ts = 계약 미러).
+// 분류 기준은 그 상수에서 생성 — 화면·게이트·초안이 같은 문구를 쓴다.
 const PROMPT_SYSTEM = `당신은 케이스랩(Caselab) 자료실의 운영자 어시스턴트입니다.
 
-"프롬프트" 카드 초안을 작성합니다. 바로 복사해 쓸 수 있는 실전 프롬프트 1개를 만드세요.
-- name: 이 프롬프트를 한눈에 알 수 있는 짧은 제목
-- description: 한 문단(2~3문장) 한국어 소개. 무엇을 해주는 프롬프트이고 누구에게 유용한지.
+"바로 쓰는 프롬프트" 카드 초안을 작성합니다. 독자가 복사 버튼 한 번으로 바로 실행할 수 있는 것 1개를 만드세요.
+LLM에 넣는 프롬프트뿐 아니라 CLI 커맨드·설정 스니펫도 같은 카드 형식으로 다룹니다.
+
+[가장 중요]
+- 원문이 프롬프트 전문 없이 "이렇게 지시하면 잘 나온다"는 노하우만 담고 있어도, 그 노하우를 복사 가능한 프롬프트 전문으로 재구성해 body.prompt에 넣으세요. 복사 박스가 이 카드의 전부라 여기가 비면 카드가 성립하지 않습니다.
+- body.prompt에는 설명 문장·머리말을 섞지 마세요. 그대로 붙여넣어 실행되는 것만.
+- 독자가 채워야 하는 자리는 {{변수명}} 표기로 남기세요.
+
+[프롬프트 품질 기준 — 이 카드의 값어치는 여기서 갈립니다]
+글자 수 제한은 없습니다. 대신 아래 둘 중 하나를 분명히 해내야 합니다.
+① 결과가 달라진다 — 그냥 시켰을 때보다 눈에 띄게 쓸 만한 결과가 나온다.
+② 더 싸게 도달한다 — 같은 결과를 더 적은 토큰·더 적은 왕복으로 얻는다(되묻기·재시도를 없애거나, 길게 늘어놓던 시스템 프롬프트를 대신한다).
+쓰고 나서 자체 점검: 각 줄을 지웠을 때 결과가 어떻게 나빠지는지 한 문장으로 못 대면 그 줄을 지우세요.
+- 인사말, 역할 미화("당신은 세계 최고의…"), 같은 지시의 반복, 장황한 출력 예시는 토큰만 먹고 결과를 바꾸지 않습니다. 넣지 마세요.
+- 출력 형식은 한 번만 못박고 다른 말로 되풀이하지 마세요. 규칙은 짧은 명령문으로.
+
+- name: 무엇을 해주는지 즉시 알 수 있는 짧은 제목
+- description: 아래 3부 구조(한국어. 줄바꿈이 화면에 그대로 노출됨)
+  ① 소개 2~3문장 — 무엇을 해주고, 누가 언제 쓰는지
+  ② [전제조건] — 적극적으로 찾아서 채우세요. 복사해도 바로 못 쓰게 만드는 것을 먼저 점검합니다:
+     설치·계정·유료플랜·권한·OS/셸, 특정 모델이나 도구에서만 되는지, 미리 준비해 붙여넣어야 하는 자료.
+     하나라도 있으면 반드시 적고, 정말 아무 준비 없이 붙여넣기만 하면 되는 경우에만 블록을 생략하세요.
+  ③ [주의] — 잘못 쓰면 손해가 나는 지점이 있을 때만. 없으면 블록 자체를 생략
+  형식:
+  <소개 2~3문장>
+
+  [전제조건]
+  - …
+
+  [주의]
+  - …
+- body.promptCategory: 아래 4개 중 하나(무엇을 도와주는 프롬프트인지로 판단)
+${PROMPT_CATEGORIES.map((c) => `  - "${c}"(${PROMPT_CATEGORY_LABELS[c]}): ${PROMPT_CATEGORY_CRITERIA[c]}`).join('\n')}
+- body.source: 출처 라벨. 원문 출처가 분명하면 그 이름(예: "Anthropic 공식", "Karpathy"), 노하우를 재구성했으면 "Caselab 제작"
+- body.sourceUrl: 원문 URL. 주어진 출처 URL을 그대로 쓰고, 없으면 생략(지어내지 말 것)
 - pricing_tier: "free" 고정
-- url: 참고 출처가 명확할 때만(없으면 생략)
-- body: { "prompt": "실제 프롬프트 전문(여러 줄 가능, {{변수}} 표기 허용)", "howToUse": "어떻게 쓰는지 한두 문장", "example": "기대 결과/활용 예시" }
+- jobTags: 검색·분류용 짧은 태그 2~4개(예: "claude-code", "마케팅", "자동화")
+
+body는 prompt·promptCategory·source·sourceUrl 4개 키만 허용합니다. 다른 키는 본가가 읽지 않아 화면에서 사라집니다.
 
 광고/제휴 링크 금지. 한국어, 1인칭 톤.
 
 응답은 다음 JSON 객체만 반환:
 {
   "name": "...",
-  "description": "...",
+  "description": "소개 2~3문장\\n\\n[전제조건]\\n- …\\n\\n[주의]\\n- …",
   "category": "prompt",
   "pricing_tier": "free",
-  "url": "...",
-  "body": { "prompt": "...", "howToUse": "...", "example": "..." }
+  "jobTags": ["...", "..."],
+  "body": { "prompt": "...", "promptCategory": "${PROMPT_CATEGORIES.join('|')}", "source": "...", "sourceUrl": "https://..." }
 }`;
 
 const GUIDE_SYSTEM = `당신은 케이스랩(Caselab) 자료실의 운영자 어시스턴트입니다.
@@ -325,6 +367,8 @@ export interface ToolDraft {
   pricing_tier: 'free' | 'freemium' | 'paid' | 'custom';
   url?: string;
   body: Record<string, unknown>;
+  /** 분류·검색용 태그(tools.job_tags). 프롬프트 초안이 채운다. */
+  jobTags?: string[];
 }
 
 const PRICING_TIERS = ['free', 'freemium', 'paid', 'custom'];
@@ -337,6 +381,8 @@ export interface LibraryDraftInput {
   outline?: string[];
   sourceType?: string;
   bucket?: string;
+  /** 씨앗 원문 URL(content_seeds.source_url) — 프롬프트 카드의 출처 칩(body.sourceUrl)에 그대로 쓴다. */
+  sourceUrl?: string;
 }
 
 /** AI 도구 초안 생성. body는 본가 ToolBody 계약(lib/tool-body.ts) 검증 + 실패 시 1회 repair. */
@@ -396,27 +442,52 @@ export async function generateToolDraft(input: LibraryDraftInput): Promise<ToolD
   }
 }
 
-/** 프롬프트 카드 초안 생성. tools(category='prompt')로 적재. 파싱 실패 시 폴백. */
+/**
+ * 프롬프트 카드 초안 생성. tools(category='prompt')로 적재.
+ * body는 본가 /prompts 계약(lib/prompt-body.ts)의 4필드로 정규화한다 —
+ * 모델이 계약 밖 키(howToUse·example 등)를 붙여도 여기서 떨궈야 발행 게이트를 통과한다.
+ */
 export async function generatePromptDraft(input: LibraryDraftInput): Promise<ToolDraft> {
   const userPrompt =
     `주제/제목: ${input.title}\n참고(브리핑 원문): ${input.summary ?? ''}` +
+    (input.sourceUrl ? `\n출처 URL: ${input.sourceUrl}` : '') +
     contextBlock(input) +
     directionBlock(input.direction) +
     outlineBlock(input.outline) +
     `\n\n위 주제로 바로 쓸 수 있는 프롬프트 카드 초안 JSON만 반환하세요.`;
   const raw = await callModel(PROMPT_SYSTEM, userPrompt);
 
+  const str = (v: unknown): string => (typeof v === 'string' ? v.trim() : '');
+  /** 계약 4필드만 남긴 body. prompt가 비면 발행 게이트가 막고 운영자가 복사 박스를 채운다. */
+  const normalizeBody = (b: Record<string, unknown>, fallbackPrompt: string): Record<string, unknown> => {
+    const body: Partial<PromptBody> = {
+      prompt: str(b.prompt) || fallbackPrompt,
+      promptCategory: isPromptCategory(b.promptCategory) ? b.promptCategory : 'make',
+      // 출처 라벨이 비면 "Caselab 제작" — 노하우를 우리가 프롬프트로 재구성한 경우가 기본값이다.
+      source: str(b.source) || 'Caselab 제작',
+    };
+    const sourceUrl = str(b.sourceUrl) || str(input.sourceUrl);
+    if (sourceUrl) body.sourceUrl = sourceUrl;
+    return body as Record<string, unknown>;
+  };
+
   try {
     const parsedTop = parseModelJson(raw);
     if (parsedTop == null) throw new Error('JSON 파싱 실패');
     const parsed = parsedTop as Record<string, unknown>;
+    const rawBody = (parsed.body && typeof parsed.body === 'object' ? parsed.body : {}) as Record<string, unknown>;
+    const jobTags = Array.isArray(parsed.jobTags)
+      ? parsed.jobTags.filter((t): t is string => typeof t === 'string' && !!t.trim()).map((t) => t.trim()).slice(0, 4)
+      : undefined;
     return {
-      name: typeof parsed.name === 'string' ? parsed.name : input.title,
-      description: typeof parsed.description === 'string' ? parsed.description : input.title,
+      name: str(parsed.name) || input.title,
+      description: str(parsed.description) || input.title,
       category: 'prompt',
       pricing_tier: 'free',
-      url: typeof parsed.url === 'string' && parsed.url ? parsed.url : undefined,
-      body: (parsed.body && typeof parsed.body === 'object' ? parsed.body : { prompt: raw.slice(0, 2000) }) as Record<string, unknown>,
+      // tools.url은 본가 프롬프트 상세가 읽지 않는다(출처는 body.sourceUrl) — 역추적용으로만 보관.
+      url: str(parsed.url) || input.sourceUrl || undefined,
+      body: normalizeBody(rawBody, raw.slice(0, 2000).trim()),
+      jobTags: jobTags?.length ? jobTags : undefined,
     };
   } catch {
     return {
@@ -424,7 +495,8 @@ export async function generatePromptDraft(input: LibraryDraftInput): Promise<Too
       description: input.title,
       category: 'prompt',
       pricing_tier: 'free',
-      body: { prompt: raw.slice(0, 2000) },
+      url: input.sourceUrl || undefined,
+      body: normalizeBody({}, raw.slice(0, 2000).trim()),
     };
   }
 }
@@ -721,7 +793,7 @@ export interface SeedScore {
   suggestedAngle: string;
   /** 제목 대체용 한 줄 핵심(버킷 성격 반영) */
   headline: string;
-  /** 버킷별 상세(카드 펼침): service={what,feature,category} / trend={whyNow} / painpoint={who,pain} */
+  /** 버킷별 상세(카드 펼침): service={what,feature,category} / trend={whyNow} / painpoint={who,pain} / usecase={who,task,how,result} / prompt={purpose,who,model,gain} */
   essence: Record<string, string>;
 }
 
@@ -732,7 +804,7 @@ HERMES가 수집한 "씨앗(브리핑 원문)" 하나를 평가해 ① 목적 �
 
 [버킷]
 ${BUCKETS.map((b) => `- "${b.key}" (${b.label}): ${b.criteria}`).join('\n')}
-- "etc": 위 셋 중 어디에도 안 맞거나 광고·홍보·출처불명 루머·기존과 중복으로 가치 낮음.
+- "etc": 위 어디에도 안 맞거나 광고·홍보·출처불명 루머·기존과 중복으로 가치 낮음.
 
 [점수 4축 — 각 0~100을 매긴 뒤 버킷별 가중치로 가중평균]
 - timeliness(시의성): 지금 화제이고 최신인가
@@ -751,15 +823,19 @@ ${BUCKETS.map((b) => `- ${b.key}: 시의성 ${b.weights.timeliness} / 실무 ${b
 - service면 "서비스명 — 무엇을 하는지"(예: "Cursor — AI 페어프로그래밍 코드 에디터").
 - trend면 "무슨 트렌드인지"(예: "OpenAI GPT-5 멀티모달 에이전트 공개").
 - painpoint면 "누가 무엇에 막히는지"(예: "기획자, AI 자료조사 반복작업에 시간 낭비").
+- usecase면 "누가 무엇을 AI로 어떻게 했는지"(예: "마케터, 광고 카피 A/B안 생성을 GPT로 반나절→30분").
+- prompt면 "무슨 업무용 프롬프트인지"(예: "회의록을 결정·미결·액션아이템으로 정리하는 프롬프트").
 
 [essence] 버킷별 상세를 아래 키로. 원문에서 근거를 못 찾으면 빈 문자열(지어내지 말 것 → 그런 씨앗은 감점).
 - service: {"what":"무엇을 하는 서비스","feature":"핵심 기능","category":"도구 카테고리(예: 코드/글쓰기/이미지/리서치/자동화)","useCase":"누가 어떤 업무를 할 때 효율을 높여주는지 한 줄"}
 - trend: {"whyNow":"왜 지금 중요한지 한 줄","implication":"이 트렌드가 현재 AI 전체 흐름에서 의미하는 바·시사점(해석) 한두 줄"}
 - painpoint: {"who":"대상 직무","pain":"핵심 페인 한 줄","suggest":"그래서 어떤 서비스/기능이 이들에게 필요한지 → 케이스랩이 콘텐츠로 제안할 방향 한 줄"}
+- usecase: {"who":"누가(직무·팀)","task":"무슨 업무","how":"어떤 도구·절차로","result":"전후 변화(시간·품질·비용). 원문에 수치가 있으면 그대로"}
+- prompt: {"purpose":"무슨 목적의 프롬프트","who":"대상 직무","model":"어느 도구·모델에서 쓰는지","gain":"결과가 어떻게 달라지는지, 또는 토큰·왕복을 얼마나 아끼는지"}
 - etc: {}
 
 응답은 아래 JSON 객체 하나만 반환하세요(설명 없이):
-{ "bucket": "trend|service|painpoint|etc", "score": 0-100정수, "reason": "점수 근거 한 줄", "suggestedAngle": "콘텐츠화 각도 한 줄", "headline": "한 줄 핵심", "essence": { } }`;
+{ "bucket": "${[...BUCKETS.map((b) => b.key), 'etc'].join('|')}", "score": 0-100정수, "reason": "점수 근거 한 줄", "suggestedAngle": "콘텐츠화 각도 한 줄", "headline": "한 줄 핵심", "essence": { } }`;
 
 /** 씨앗 1개를 채점(버킷 분류 + 0~100). 로컬 작업장 전제. */
 export async function scoreSeed(input: { title: string; rawText?: string; sourceType?: string }): Promise<SeedScore> {

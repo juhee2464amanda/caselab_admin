@@ -9,6 +9,13 @@ import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { lintToolBody } from '@/lib/tool-body';
+import {
+  lintPromptBody,
+  isPromptCategory,
+  PROMPT_CATEGORIES,
+  PROMPT_CATEGORY_LABELS,
+  PROMPT_CATEGORY_CRITERIA,
+} from '@/lib/prompt-body';
 import { JOB_LABELS, JOB_TAGS } from '@/types/content';
 import type { JobTag } from '@/types/content';
 import { createSupabaseBrowserClient } from '@/lib/supabase/client';
@@ -178,6 +185,17 @@ export function ToolForm({ initial, onSaved, startInPreview }: Props) {
     }
   }, [category, bodyError, bodyJson]);
 
+  // 프롬프트 body는 본가 /prompts가 읽는 계약(prompt·promptCategory·source·sourceUrl)과 일치해야 발행 가능
+  // (복사 박스가 카드의 전부라 prompt가 비면 빈 카드가 나가고, 계약 밖 키는 화면에서 사라진다)
+  const promptBodyError = useMemo(() => {
+    if (category !== 'prompt' || bodyError) return null;
+    try {
+      return lintPromptBody(JSON.parse(bodyJson || '{}'));
+    } catch {
+      return null; // JSON 자체 오류는 bodyError 게이트가 담당
+    }
+  }, [category, bodyError, bodyJson]);
+
   const checks = [
     { id: 'name', label: '이름 입력', passed: name.trim().length > 0 },
     { id: 'slug', label: '슬러그 입력', passed: slug.trim().length > 0 },
@@ -185,6 +203,7 @@ export function ToolForm({ initial, onSaved, startInPreview }: Props) {
     { id: 'subcategory', label: '도구 분류 선택 (도구만)', passed: category !== 'tool' || !!subcategoryId },
     { id: 'body', label: '본문 JSON 파싱 가능', passed: !bodyError },
     { id: 'toolbody', label: '본문이 상세페이지 스키마와 일치 (도구만)', passed: !toolBodyError },
+    { id: 'promptbody', label: '프롬프트 전문·분류 입력 (프롬프트만)', passed: !promptBodyError },
   ];
   const canPublish = checks.every((c) => c.passed);
   // 우측 발행 준비 레일용 — 남은(미충족) 필수 항목 수. 모든 check가 차단 항목이다.
@@ -208,6 +227,21 @@ export function ToolForm({ initial, onSaved, startInPreview }: Props) {
       return null;
     }
   }, [bodyJson]);
+  /** body의 특정 키만 갱신(빈 값은 키 자체를 제거 — 계약이 optional인 필드를 빈 문자열로 남기지 않는다). */
+  function patchBody(patch: Record<string, unknown>) {
+    const merged: Record<string, unknown> = { ...(parsedBody ?? {}) };
+    for (const [k, v] of Object.entries(patch)) {
+      if (v === '' || v == null) delete merged[k];
+      else merged[k] = v;
+    }
+    syncBody(JSON.stringify(merged, null, 2));
+  }
+
+  // 프롬프트 카드 전용 body 필드 — 도구의 '도구 분류'처럼 폼에서 직접 다룬다(raw JSON 손편집 방지).
+  const promptCategory = isPromptCategory(parsedBody?.promptCategory) ? parsedBody.promptCategory : '';
+  const promptSource = typeof parsedBody?.source === 'string' ? parsedBody.source : '';
+  const promptSourceUrl = typeof parsedBody?.sourceUrl === 'string' ? parsedBody.sourceUrl : '';
+
   const sections = (parsedBody?.sections as RichSection[] | undefined) ?? [];
   function setSections(next: RichSection[]) {
     const merged: Record<string, unknown> = { ...(parsedBody ?? {}) };
@@ -419,6 +453,54 @@ export function ToolForm({ initial, onSaved, startInPreview }: Props) {
                   )}
                   <p className="mt-1 text-xs text-ink/50">
                     공개 /tools 목록의 카테고리 탭. 미선택 시 목록에 안 보임.
+                  </p>
+                </div>
+              )}
+              {category === 'prompt' && (
+                <div className="space-y-3 rounded-lg border border-border bg-muted/30 p-3">
+                  <div>
+                    <Label htmlFor="promptCategory" className="text-xs">프롬프트 분류 (공개 /prompts 탭) *</Label>
+                    <Select value={promptCategory} onValueChange={(v) => patchBody({ promptCategory: v })}>
+                      <SelectTrigger id="promptCategory" className="mt-1">
+                        <SelectValue placeholder="분류 선택" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {PROMPT_CATEGORIES.map((c) => (
+                          <SelectItem key={c} value={c}>{PROMPT_CATEGORY_LABELS[c]}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <p className="mt-1 text-xs text-ink/50">
+                      {promptCategory
+                        ? PROMPT_CATEGORY_CRITERIA[promptCategory]
+                        : '미선택이면 본가에서 사고하기로 잘못 묶입니다.'}
+                    </p>
+                  </div>
+                  <div>
+                    <Label htmlFor="promptSource" className="text-xs">출처 라벨</Label>
+                    <Input
+                      id="promptSource"
+                      className="mt-1"
+                      value={promptSource}
+                      onChange={(e) => patchBody({ source: e.target.value })}
+                      placeholder="Anthropic 공식 / Caselab 제작"
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="promptSourceUrl" className="text-xs">출처 링크</Label>
+                    <Input
+                      id="promptSourceUrl"
+                      className="mt-1"
+                      value={promptSourceUrl}
+                      onChange={(e) => patchBody({ sourceUrl: e.target.value })}
+                      placeholder="https://"
+                    />
+                    <p className="mt-1 text-xs text-ink/50">
+                      본가 프롬프트 상세의 출처 칩은 위 <code>외부 링크</code>가 아니라 이 값을 씁니다.
+                    </p>
+                  </div>
+                  <p className="text-xs text-ink/50">
+                    복사할 프롬프트 전문은 아래 미리보기의 복사 박스에서 바로 편집합니다.
                   </p>
                 </div>
               )}
