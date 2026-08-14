@@ -716,11 +716,20 @@ export function buildToolSlidePlan(row: ToolRowLite): SlidePlan {
 
   const pricingChunk = take('tool:pricing');
   if (pricingChunk) {
+    // 가격은 다크 고정(운영자 결정 2026-08-14) — 흰 카드 B1로 나가면 앞뒤 다크 슬라이드
+    // 사이에서 이 장만 톤이 튄다. 대안도 전부 다크 계열만 둬서 AI가 흰 카드를 못 고르게 한다.
+    const planCount = asArray((row.body ?? {}).pricing).length;
+    const single = planCount <= 1;
     slides.push({
-      template: 'B1',
+      // 요금제가 하나면 금액을 크게 박는 게 강하고(P6), 여러 개면 목록이 읽힌다(P5)
+      template: single ? 'P6' : 'P5',
       sourceSection: pricingChunk.section,
-      material: `(역할: 가격 — 얼마인지, 구독인지 일회성인지, 무료 체험이 있는지를 명확히. 숫자를 흐리지 말 것)\n${pricingChunk.text}`,
-      alternatives: ['P6', 'B7', 'B2'],
+      material: `(역할: 가격 — 얼마인지, 구독인지 일회성인지, 무료 체험이 있는지를 명확히. 숫자를 흐리지 말 것.${
+        single
+          ? ' 요금제가 하나뿐이니 big에 금액을 그대로("$2.99" 식), resolve에 일회성/구독·환불 조건을 한 줄로.'
+          : ' 요금제별로 이름과 금액을 items에 한 줄씩.'
+      })\n${pricingChunk.text}`,
+      alternatives: single ? ['P5', 'P1'] : ['P6', 'P1'],
       required: '가격 — 저장·공유를 만드는 정보. 재료에 있으면 반드시 낸다',
     });
   }
