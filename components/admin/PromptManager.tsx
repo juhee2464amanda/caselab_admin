@@ -10,6 +10,7 @@ import { ThumbnailField } from '@/components/admin/ThumbnailField';
 import { RichTextarea } from '@/components/admin/RichTextarea';
 import { GalleryField } from '@/components/admin/BlockListEditor';
 import { createSupabaseBrowserClient } from '@/lib/supabase/client';
+import { PROMPT_CATEGORIES, PROMPT_CATEGORY_LABELS, type PromptCategory } from '@/lib/prompt-body';
 
 type PromptImage = { url: string; caption?: string };
 
@@ -17,14 +18,8 @@ type PromptImage = { url: string; caption?: string };
 // 본가 /prompts가 읽는 계약: name, pick_order, body{prompt, promptCategory, source, sourceUrl}.
 // (본가 lib/data/prompts.ts · types/prompt.ts 정합, 2026-07-07)
 
-export const PROMPT_CATEGORIES = ['think', 'make', 'verify', 'refine'] as const;
-export type PromptCategory = (typeof PROMPT_CATEGORIES)[number];
-export const PROMPT_CATEGORY_LABELS: Record<PromptCategory, string> = {
-  think: '사고하기',
-  make: '만들기',
-  verify: '검증하기',
-  refine: '다듬기',
-};
+// 분류 상수·계약은 lib/prompt-body.ts가 단일 출처(ToolForm 발행 게이트·AI 초안과 공유).
+export { PROMPT_CATEGORIES, PROMPT_CATEGORY_LABELS, type PromptCategory };
 
 export type PromptRow = {
   id: string;

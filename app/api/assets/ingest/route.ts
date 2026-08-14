@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import crypto from 'crypto';
 import { createSupabaseAdminClient } from '@/lib/supabase/admin';
 import { verifyIngestToken } from '@/lib/ingest-auth';
+import { PROMPT_CATEGORIES } from '@/lib/prompt-body';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -16,8 +17,7 @@ export const dynamic = 'force-dynamic';
 
 const MAX_ITEMS = 20;
 
-// 본가 계약 enum — PromptManager·GuideManager와 동일 값 (컴포넌트는 'use client'라 직접 import하지 않음)
-const PROMPT_CATEGORIES = ['think', 'make', 'verify', 'refine'] as const;
+// 본가 계약 enum — 프롬프트 분류는 lib/prompt-body.ts가 단일 출처(순수 모듈이라 서버에서도 import 가능).
 const GUIDE_CATEGORIES = ['prompt', 'cases', 'education', 'skills', 'agents'] as const;
 const GUIDE_SOURCE_TYPES = ['default', 'github', 'course'] as const;
 

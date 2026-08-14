@@ -3,6 +3,7 @@
 import { useRef, useState } from 'react';
 import { ArrowUpRight, Copy, Check, ExternalLink, Upload, Loader2, Trash2, Plus } from 'lucide-react';
 import { ToolBodySchema, type ToolBody } from '@/lib/tool-body';
+import { isPromptCategory, PROMPT_CATEGORY_LABELS } from '@/lib/prompt-body';
 import { Editable } from '@/components/admin/Editable';
 import { renderBlocks } from '@/lib/content-render';
 import type { RichSection } from '@/types/content';
@@ -675,18 +676,32 @@ function PromptCardPreview({
   onPatch,
   onBody,
 }: Pick<ToolPreviewProps, 'name' | 'description' | 'url' | 'body' | 'onPatch' | 'onBody'>) {
+  // 본가 PromptDetail 렌더 순서 그대로: 분류 배지·출처 칩 → 제목 → 설명 → 복사 박스 → 참고 섹션.
+  // body에서 읽는 키도 본가와 동일(lib/prompt-body.ts 계약) — 출처는 tools.url이 아니라 body.sourceUrl이다.
   const prompt = typeof body.prompt === 'string' ? body.prompt : '';
-  const howToUse = typeof body.howToUse === 'string' ? body.howToUse : '';
-  const example = typeof body.example === 'string' ? body.example : '';
+  const promptCategory = isPromptCategory(body.promptCategory) ? body.promptCategory : null;
+  const source = typeof body.source === 'string' ? body.source : '';
+  const sourceUrl = typeof body.sourceUrl === 'string' ? body.sourceUrl : '';
   const set = onBody && ((patch: Record<string, unknown>) => onBody({ ...body, ...patch }));
   return (
     <div className="mx-auto max-w-[640px] space-y-3">
       <div className="flex items-center gap-2">
-        <span className="rounded-[5px] bg-accent-50 px-2 py-0.5 text-[11px] font-bold text-accent">프롬프트</span>
-        {url && (
-          <a href={url} target="_blank" rel="noopener noreferrer" className="text-[11px] font-semibold text-ink/50 hover:text-accent">
-            출처 ↗
-          </a>
+        <span
+          className={cn(
+            'rounded-[5px] px-2 py-0.5 text-[11px] font-bold',
+            promptCategory ? 'bg-accent-50 text-accent' : 'bg-amber-100 text-amber-800',
+          )}
+        >
+          {promptCategory ? PROMPT_CATEGORY_LABELS[promptCategory] : '분류 미선택'}
+        </span>
+        {source && (
+          <span className="text-[11px] font-semibold text-ink/50">
+            {source}
+            {sourceUrl && ' ↗'}
+          </span>
+        )}
+        {!source && url && (
+          <span className="text-[11px] text-amber-700">출처 라벨 비어 있음 (본가 칩 미노출)</span>
         )}
       </div>
       <Editable
@@ -701,20 +716,15 @@ function PromptCardPreview({
         multiline
         rich
         value={description ?? ''}
-        placeholder={onPatch ? '설명 (클릭해서 입력)' : ''}
+        placeholder={onPatch ? '소개 2~3문장 + [전제조건] + [주의] (클릭해서 입력)' : ''}
         onCommit={onPatch && ((v) => onPatch({ description: v }))}
-        className="text-sm text-ink/60 leading-relaxed break-keep block"
+        // 본가는 whitespace-pre-line으로 그리므로 [전제조건]·[주의] 블록의 줄바꿈이 그대로 보인다.
+        className="text-sm text-ink/60 leading-relaxed break-keep whitespace-pre-line block"
       />
       {(prompt || set) && <CopyBox text={prompt} onCommit={set && ((v) => set({ prompt: v }))} />}
-      <p className="text-[13px] text-ink/60 leading-relaxed">
-        <strong className="text-ink/80">사용법</strong> ·{' '}
-        <Editable value={howToUse} multiline rich placeholder={set ? '클릭해서 입력' : ''} onCommit={set && ((v) => set({ howToUse: v }))} />
+      <p className="text-[11px] text-ink/40">
+        {prompt ? '바로 복사 가능' : '복사 박스가 비어 있어요 — 프롬프트 전문을 넣어야 발행됩니다.'}
       </p>
-      <p className="text-[13px] text-ink/60 leading-relaxed">
-        <strong className="text-ink/80">예시</strong> ·{' '}
-        <Editable value={example} multiline rich placeholder={set ? '클릭해서 입력' : ''} onCommit={set && ((v) => set({ example: v }))} />
-      </p>
-      <p className="text-[11px] text-ink/40">바로 복사 가능</p>
       <SectionsPreview body={body} />
     </div>
   );
