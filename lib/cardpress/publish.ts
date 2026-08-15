@@ -59,6 +59,10 @@ export async function uploadSlides(
 // 컨테이너 생성(is_carousel_item) → 캐러셀 컨테이너 → 처리 대기 → publish
 
 const IG_BASE = 'https://graph.facebook.com/v21.0';
+// Graph API 캐러셀 상한. 인스타 앱은 20장까지 올려주지만 API는 10장에서 막는다
+// (developers.facebook.com/docs/instagram-platform/content-publishing).
+// 11장째부터 컨테이너 생성은 성공하고 캐러셀 묶는 단계에서만 터지므로, 여기서 미리 잘라 말한다.
+const IG_CAROUSEL_MAX = 10;
 
 async function igPost(path: string, params: Record<string, string>): Promise<Record<string, string>> {
   const res = await fetch(`${IG_BASE}/${path}`, {
@@ -88,9 +92,14 @@ export async function publishInstagramCarousel(imageUrls: string[], caption: str
   if (!userId || !token)
     throw new Error('INSTAGRAM_USER_ID / INSTAGRAM_ACCESS_TOKEN 미설정 — Meta 비즈니스 연결 후 env에 추가하세요');
   if (imageUrls.length < 2) throw new Error('캐러셀은 최소 2장 필요');
+  // 넘치는 장을 조용히 버리면 공들여 쓴 슬라이드가 말없이 사라진다 → 끄는 선택은 사람에게 맡긴다.
+  if (imageUrls.length > IG_CAROUSEL_MAX)
+    throw new Error(
+      `캐러셀은 최대 ${IG_CAROUSEL_MAX}장인데 활성 슬라이드가 ${imageUrls.length}장입니다 — 검수 UI에서 ${imageUrls.length - IG_CAROUSEL_MAX}장을 끄고 다시 발행하세요(zip 다운로드는 전체 장수 그대로 나갑니다)`
+    );
 
   const children: string[] = [];
-  for (const url of imageUrls.slice(0, 20)) {
+  for (const url of imageUrls) {
     const c = await igPost(`${userId}/media`, {
       image_url: url,
       is_carousel_item: 'true',
