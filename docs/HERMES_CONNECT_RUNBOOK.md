@@ -23,6 +23,10 @@ HERMES 봇 (맥 로컬, launchd 게이트웨이, 봇 1개 = 프로필 1개)
 | `trendy_aiservice_bot` | `service-scout-daily` | `service-scout` → `service-scout` | 🟢 service | 매일 09:00 | 최근 24~72h · 3~6건 |
 | `user_painpoint_ai_bot` | `painpoint-blog` | `painpoint-blog` → `blog` | 🟠 painpoint | 월수금 10:00 | 최근 1주 · 3~6건 |
 | `user_painpoint_ai_bot` | `painpoint-youtube` | `painpoint-youtube` → `youtube` | 🟠 painpoint | 화목 10:00 | 최근 1~2주 · 2~5건 |
+| `ai_casestudy_usage_bot` | `daily-ai-casestudy-usage-8am` | `ai-usecase` → `ai-usecase` | 🟣 usecase | 매일 08:00 | 1~3건(적격 없으면 [SILENT]) |
+| `ai_prompt_setting_bot` | `케이스랩 검증 프롬프트 사례 데일리 브리핑` | `prompt-scout` → `prompt-scout` | 🟡 prompt | 매일 08:00 | 최대 3건(억지로 채우지 않음) |
+
+usecase·prompt 2개는 2026-08-15 연결(기존 텔레그램 브리핑 봇에 적재 블록만 덧붙임 — 프로필 신설 없음). 두 잡 모두 실측 적재 검증 완료.
 
 수집 창·건수는 2026-07-11에 확대(인박스 선택권이 버킷당 4건 수준으로 너무 적었음). 당일 최신을 우선하되 창 내 미커버 소식을 함께 추리고, 겹침은 dedup_key가 차단하므로 재전송 걱정 없이 넓게 훑는 방식. "기준 미달을 억지로 채우지 말 것"은 전 잡 공통 유지 — 건수 하한은 목표치지 강제가 아니다.
 
@@ -60,6 +64,27 @@ HERMES_HOME=~/.hermes/profiles/<프로필> venv/bin/python -m hermes_cli.main cr
 ```
 
 `terminal`이 없으면 curl 전송을 못 해서 수집만 하고 적재에 실패한다. `deliver`는 `origin`(텔레그램 봇 대화로 결과 보고).
+
+### 2.5) 기존 브리핑 봇에 적재를 붙이는 경우 — 필수 3종
+
+이미 텔레그램 브리핑을 하던 봇에 적재만 추가할 때 **전부 걸렸던 함정**이다(2026-08-15, usecase·prompt 연결 시 실측).
+증상이 다 "수집은 했는데 적재만 안 됨"이라 원인 구분이 어렵다.
+
+| 필수 | 없으면 생기는 일 | 확인 |
+|---|---|---|
+| 프롬프트 맨 앞 **크론 preamble** | 에이전트가 프롬프트를 "잡 설정을 이렇게 바꿔줘"로 읽고 **cron edit만 하고 끝낸다**(수집·적재 0). 폴러의 '지금 수집 요청'도 같은 `chat` 경로라 동일하게 당한다 | `prompt`가 `[IMPORTANT: You are running as a scheduled cron job…`으로 시작하는지 |
+| **`approvals.mode`가 off** | `terminal` 도구가 `pending_approval`로 전환 → 게이트웨이가 승인 요청을 **텔레그램으로 발송** → 60초(=`approvals.timeout`) 무응답 → `BLOCKED: User denied this command`. 크론 실행에서도 동일 | `config.yaml`의 `approvals.mode`. YAML에서 `false`는 off로 정규화됨(`manual`이면 막힌다) |
+| **위임(서브에이전트) 최소화** | 조사 스킬이 서브에이전트를 여럿 띄우면 컨텍스트가 불어나 마지막 **전송 단계를 건너뛴다**. 게다가 "승인이 차단했다"처럼 실행하지도 않은 실패를 지어내 오진을 부른다 | 잡의 `skills`. 무거우면 `cron edit <잡ID> --clear-skills` |
+
+프롬프트에 아래 두 블록을 넣으면 마지막 함정이 재발하지 않는다(실측으로 효과 확인):
+
+```
+[단독 실행 규칙] 서브에이전트에 위임하지 마라. 웹검색 N회·원문 M페이지 상한. 조사 끝나면 지체 없이 전송.
+[전송 실행 규칙] 전송은 terminal로 실제 실행한다. 실행 전에 "승인 차단"·"환경 제약"으로 실패를 보고하지 마라.
+                 받은 HTTP 응답 본문을 그대로 인용하라 — 인용 못 하면 전송한 것이 아니다.
+```
+
+마지막 줄이 중요하다. 응답 본문 인용을 의무화하면 봇이 실패를 지어냈는지 실제로 막혔는지 로그만 보고 구분할 수 있다.
 
 ### 3) 프롬프트 작성 — 검증된 골격
 
@@ -118,6 +143,9 @@ curl -s "$NEXT_PUBLIC_SUPABASE_URL/rest/v1/content_seeds?select=created_at,lane,
 | `RuntimeError: Connection error.` | 잡 실행 시점에 맥 네트워크/DNS 미연결(슬립 후 캐치업 실행 포함) | 네트워크 확인 후 `cron run <잡ID>` 수동 재실행. errors.log에 같은 시각 Telegram DNS 에러가 같이 찍히면 확정 |
 | `Codex stream produced no bytes within 45s` | openai-codex 프로바이더 TTFB 타임아웃(일시) | 재실행. 반복되면 프로필 config.yaml의 모델/프로바이더 점검 |
 | 수집은 했는데 적재 안 됨 | 잡에 `terminal` 툴셋 없음 | jobs.json에 `enabled_toolsets: ["web","terminal"]` |
+| 수집도 안 하고 "잡을 수정했다"고 보고 | 프롬프트에 크론 preamble 없음 | 위 2.5절 — preamble을 프롬프트 맨 앞에 |
+| `BLOCKED: User denied this command` (정확히 60초 후) | `approvals.mode: manual` + 승인 요청이 텔레그램으로 가서 만료 | 위 2.5절 — `approvals.mode`를 off로 |
+| 조사는 다 했는데 "승인이 차단했다"며 전송 안 함 | 서브에이전트 위임으로 컨텍스트 소진 → 마지막 단계 누락(실제 차단 아님) | `--clear-skills` + 전송 실행 규칙 블록. 로그에 `BLOCKED` 원문이 없으면 지어낸 것 |
 | 적재됐는데 인박스에 안 보임 | 미채점 (정상 동작) | 로컬 admin에서 채점 실행. 72h 창·60점 컷도 확인 |
 | `inserted`가 보낸 수보다 적음 | dedup 차단 (정상) | 조치 불필요 |
 | source_type이 `slack-brief` | lane 오타 또는 미등록 lane | 프롬프트 lane 이름 확인 / `LANE_SOURCE` 등록 |
