@@ -11,6 +11,16 @@ import { createSupabaseBrowserClient } from '@/lib/supabase/client';
 import { renderSlide } from '@/lib/cardpress/templates';
 import { RenderSlideSchema } from '@/types/cardpress';
 import type { CardSlide, CardTemplateId, CardAccent } from '@/types/cardpress';
+import { CardTemplatePicker, type PickResult } from '@/components/admin/CardTemplatePicker';
+import { convertProps, IMAGE_KEY, PHOTO_ALT, TEMPLATE_LABEL } from '@/lib/cardpress/convert';
+import {
+  creditBlock,
+  hasCreditBlock,
+  stripCreditBlock,
+  upsertCreditBlock,
+  usedCredits,
+  type PhotoCredit,
+} from '@/lib/cardpress/credits';
 
 const ACCENT_HEX: Record<CardAccent, string> = {
   'cat-case': '#2F6BFF',
@@ -37,6 +47,8 @@ export type CardRow = {
   cta_type?: 'info_save' | 'comment_dm';
   cta_keyword?: string | null;
   cover_candidates?: Array<{ thumb: string; full: string; credit: string; creditLink: string }>;
+  /** 사진 출처 표기 — 실제로 쓰인 사진만 캡션에 넣는다 (migration 1027) */
+  photo_credits?: PhotoCredit[];
   status: 'auto_draft' | 'reviewed' | 'published';
   published_to: Array<{ channel: string; post_id: string; at: string }>;
   created_at?: string;
@@ -91,22 +103,15 @@ const STATUS_LABEL: Record<CardRow['status'], { text: string; cls: string }> = {
   published: { text: '발행됨', cls: 'bg-green-100 text-green-700' },
 };
 
-const TEMPLATE_LABEL: Record<CardTemplateId, string> = {
-  C1: 'C1 사진커버', C2: 'C2 다크커버', C3: 'C3 툴커버', C4: 'C4 VS커버', C5: 'C5 빅넘버커버',
-  B1: 'B1 타임라인', B2: 'B2 불릿', B3: 'B3 용어', B4: 'B4 선언',
-  B5: 'B5 솔직후기', B6: 'B6 스텝', B7: 'B7 숫자', B8: 'B8 프롬프트',
-  B9: 'B9 스크린샷',
-  P1: 'P1 사진+목록', P2: 'P2 사진+문단', P3: 'P3 풀사진', P4: 'P4 사진인용',
-  P5: 'P5 블랙목록', P6: 'P6 블랙빅넘버',
-};
-
-// 템플릿 교체 대안 (재료가 같은 섹션에서 서로 넘나들 수 있는 쌍)
+// 템플릿 교체 대안 (재료가 같은 섹션에서 서로 넘나들 수 있는 쌍) — 행에 바로 뜨는 지름길 버튼용.
+// 여기 없는 템플릿도 [템플릿] 버튼의 시각 피커에서 전부 고를 수 있다(사진 자리 없는 장의 막다른 길 제거).
 // P 계열은 사진 유무·정보량에 따라 서로 갈아끼운다: 사진 실패 → P5/P6로 폴백.
 const ALT_MAP: Partial<Record<CardTemplateId, CardTemplateId[]>> = {
   B2: ['P1', 'P5', 'B7', 'B6'], B7: ['P6', 'B2'], B6: ['B2'], C1: ['C2', 'C5'], C2: ['C1', 'C5'],
   C5: ['C1', 'C2'], B4: ['P4', 'P3', 'B2'],
   P1: ['P5', 'P2', 'B2'], P2: ['P1', 'P3'], P3: ['P4', 'P2'], P4: ['P3', 'B4'],
   P5: ['P1', 'P6'], P6: ['P5', 'B7'],
+  B1: ['P1'], B3: ['P2'], B5: ['P1'], B8: ['P5'], B9: ['P3'], C3: ['C1'], C4: ['C1'],
 };
 
 // 형광펜 색 팔레트 — 캐러셀 가이드 시스템(카테고리 3색+Bad 레드) + 벤치마크 골드
@@ -125,11 +130,7 @@ const HL_TARGET: Partial<Record<CardTemplateId, string>> = {
 // **강조** 마커(포인트색 볼드)를 렌더하는 필드
 const EM_FIELDS = new Set(['bullets', 'body', 'cap', 'lead', 'resolve', 'items', 'heading', 'title', 'quote', 'sub', 'good', 'bad']);
 
-// 슬라이드별 이미지가 들어가는 props 키
-const IMAGE_KEY: Partial<Record<CardTemplateId, string>> = {
-  C1: 'coverImage', C2: 'coverImage', C5: 'coverImage', B4: 'coverImage', B2: 'media', B9: 'shot',
-  P1: 'image', P2: 'image', P3: 'image', P4: 'image', P5: 'image', P6: 'image', B5: 'image',
-};
+// 슬라이드별 이미지가 들어가는 props 키 · 템플릿 라벨은 lib/cardpress/convert 에 단일 정의 (IMAGE_KEY, TEMPLATE_LABEL)
 
 // ── 템플릿별 인라인 편집 필드 정의 ──────────────────────────
 type FieldKind = 'input' | 'textarea' | 'lines' | 'pairs' | 'pair-single';
@@ -864,6 +865,8 @@ function CardEditor({ card, sourceTitle }: { card: CardRow; sourceTitle?: string
   const [selIdx, setSelIdx] = useState(0);
   const [editIdx, setEditIdx] = useState<number | null>(null);
   const [rewriting, setRewriting] = useState<number | null>(null);
+  /** 시각 템플릿 피커를 연 슬라이드 인덱스 */
+  const [pickerIdx, setPickerIdx] = useState<number | null>(null);
   const [viewMode, setViewMode] = useState<'single' | 'grid'>('single');
   const [quickEdit, setQuickEdit] = useState(false);
   const [previewMode, setPreviewMode] = useState<'live' | 'png'>('live');
@@ -936,15 +939,73 @@ function CardEditor({ card, sourceTitle }: { card: CardRow; sourceTitle?: string
   function patchStyle(key: 'accentColor' | 'overlay' | 'coverPos' | 'titleAnchor', value: unknown) {
     patchPropsAt(selIdx, { [key]: value });
   }
+  /**
+   * 이미지 배치 — 사진 자리가 없는 템플릿이면 막지 않고 사진형으로 갈아탄다.
+   * "이미지가 있는 경우가 더 중요한 장"을 살리기 위한 경로(운영자 요청 2026-08-15).
+   * 글은 로컬 변환으로 그대로 옮기므로 AI 호출·대기 없음.
+   */
   function assignImageAt(idx: number, url: string) {
     const s = slides[idx];
     if (!s) return;
     const key = IMAGE_KEY[s.template];
-    if (!key) return alert(`${TEMPLATE_LABEL[s.template]}에는 이미지 자리가 없어요. (커버·B2·B9에 놓아주세요)`);
-    patchPropsAt(idx, { [key]: url });
+    if (key) {
+      patchPropsAt(idx, { [key]: url });
+      return;
+    }
+    // 사진 자리가 없는 템플릿 — 다크 커버(C2·C3)처럼 prop만 받고 안 그리는 경우 포함 (IMAGE_KEY 주석 참고)
+    const alt = PHOTO_ALT[s.template];
+    if (!alt) return alert(`${TEMPLATE_LABEL[s.template]}에는 사진 자리가 없어요. [템플릿] 버튼에서 사진형을 골라주세요.`);
+    const { props, missing } = convertProps(s.template, alt, s.props as Record<string, unknown>);
+    if (missing.length) {
+      return alert(
+        `${TEMPLATE_LABEL[s.template]}에는 사진 자리가 없어요.\n` +
+          `${TEMPLATE_LABEL[alt]}(으)로 자동 변환하려 했지만 재료(${missing.join('·')})가 모자랍니다.\n` +
+          `[템플릿] 버튼에서 다른 사진형을 고르거나 AI 재작성을 써주세요.`
+      );
+    }
+    if (
+      !confirm(
+        `${TEMPLATE_LABEL[s.template]}에는 사진 자리가 없어요.\n` +
+          `${TEMPLATE_LABEL[alt]}(으)로 바꾸고 이 사진을 넣을까요?\n(글은 그대로 옮겨집니다 · AI 호출 없음)`
+      )
+    )
+      return;
+    const imageKey = IMAGE_KEY[alt]!;
+    patch((prev) =>
+      prev.map((x, k) => (k === idx ? { ...x, template: alt, props: { ...props, [imageKey]: url } } : x))
+    );
+    setSelIdx(idx);
+  }
+
+  /** 시각 피커에서 고른 템플릿으로 즉시 변환 (AI 없이 글만 옮김) */
+  function applyTemplatePick(idx: number, r: PickResult) {
+    patch((prev) => prev.map((x, k) => (k === idx ? { ...x, template: r.template, props: r.props } : x)));
+    setSelIdx(idx);
+    setPickerIdx(null);
   }
 
   const sel = slides[selIdx] as CardSlide | undefined;
+
+  /** 템플릿 피커 미리보기·빈 슬라이드에 미리 꽂아둘 이미지 (커버 후보 → 본문 추출 순) */
+  const trayImage = card.cover_candidates?.[0]?.full ?? card.extracted_images?.[0];
+
+  // ── 사진 출처 카탈로그 ──
+  // 저장된 출처 + 커버 후보 + 이번 세션에 트레이가 찾아온 결과를 URL로 색인해 두고,
+  // "지금 실제로 카드에 깔린 사진"만 골라 표기한다(사진을 갈아끼우면 표기도 따라 바뀐다).
+  const [trayCredits, setTrayCredits] = useState<PhotoCredit[]>([]);
+  const creditCatalog = useMemo(() => {
+    const m = new Map<string, PhotoCredit>();
+    for (const c of card.cover_candidates ?? [])
+      m.set(c.full, { url: c.full, credit: c.credit, creditLink: c.creditLink, source: 'unsplash' });
+    for (const c of card.photo_credits ?? []) m.set(c.url, c);
+    for (const c of trayCredits) m.set(c.url, c);
+    return m;
+  }, [card.cover_candidates, card.photo_credits, trayCredits]);
+
+  const activeCredits = useMemo(
+    () => usedCredits(slides, creditCatalog, threadsCover),
+    [slides, creditCatalog, threadsCover]
+  );
 
   const patch = useCallback((updater: (prev: CardSlide[]) => CardSlide[]) => {
     setSlides((prev) => renumber(updater(prev)));
@@ -1010,7 +1071,17 @@ function CardEditor({ card, sourceTitle }: { card: CardRow; sourceTitle?: string
 
   async function swapTemplate(i: number, target: CardTemplateId) {
     const s = slides[i];
-    if (!s.sourceSection) return alert('sourceSection이 없어 재작성할 수 없어요.');
+    // 원본 섹션이 없으면(수동 추가분 등) AI 재작성이 불가능 — 로컬 변환으로 대체해 막다른 길을 없앤다
+    if (!s.sourceSection) {
+      const { props, missing } = convertProps(s.template, target, s.props as Record<string, unknown>);
+      if (missing.length)
+        return alert(
+          `이 슬라이드는 원본 섹션이 없어 AI 재작성을 못 해요.\n` +
+            `그대로 옮기기도 재료(${missing.join('·')})가 모자랍니다 — 다른 템플릿을 골라주세요.`
+        );
+      applyTemplatePick(i, { template: target, props, missing });
+      return;
+    }
     setRewriting(i);
     try {
       const res = await fetch('/api/cardpress/rewrite-slide', {
@@ -1022,6 +1093,7 @@ function CardEditor({ card, sourceTitle }: { card: CardRow; sourceTitle?: string
       const { slide } = (await res.json()) as { slide: { template: CardTemplateId; props: Record<string, unknown> } };
       patch((prev) => prev.map((x, k) => (k === i ? { ...x, template: slide.template, props: slide.props } : x)));
       setSelIdx(i);
+      setPickerIdx(null);
     } catch (e) {
       alert(`템플릿 교체 실패: ${(e as Error).message}`);
     } finally {
@@ -1211,19 +1283,24 @@ function CardEditor({ card, sourceTitle }: { card: CardRow; sourceTitle?: string
   // ── 저장/상태 ──
   async function save(nextStatus?: CardRow['status']) {
     setSaving(true);
-    const { error } = await supabase
-      .from('content_cards')
-      .update({
-        slides: renumber(slides),
-        ig_caption: igCaption || null,
-        threads_text: threadsText || null,
-        threads_cover: threadsCover || null,
-        edge: edge || null,
-        cta_type: ctaType,
-        cta_keyword: ctaKeyword || null,
-        ...(nextStatus ? { status: nextStatus } : {}),
-      })
-      .eq('id', card.id);
+    const row: Record<string, unknown> = {
+      slides: renumber(slides),
+      ig_caption: igCaption || null,
+      threads_text: threadsText || null,
+      threads_cover: threadsCover || null,
+      edge: edge || null,
+      cta_type: ctaType,
+      cta_keyword: ctaKeyword || null,
+      // 실제로 쓰인 사진의 출처만 남긴다 — 갈아끼운 사진의 표기가 유령으로 남지 않게
+      photo_credits: activeCredits,
+      ...(nextStatus ? { status: nextStatus } : {}),
+    };
+    let { error } = await supabase.from('content_cards').update(row).eq('id', card.id);
+    // 1027 미적용 DB 호환 — 컬럼이 없으면 그것만 빼고 재시도(저장 자체가 막히면 안 된다)
+    if (error?.message.includes('photo_credits')) {
+      delete row.photo_credits;
+      ({ error } = await supabase.from('content_cards').update(row).eq('id', card.id));
+    }
     setSaving(false);
     if (error) return alert(`저장 실패: ${error.message}`);
     setDirty(false);
@@ -1340,17 +1417,24 @@ function CardEditor({ card, sourceTitle }: { card: CardRow; sourceTitle?: string
                   <div className="flex items-center gap-1 shrink-0 text-xs">
                     <button onClick={() => move(i, -1)} className="px-1.5 py-0.5 rounded border border-border hover:bg-ink/5" title="위로">↑</button>
                     <button onClick={() => move(i, 1)} className="px-1.5 py-0.5 rounded border border-border hover:bg-ink/5" title="아래로">↓</button>
-                    {(ALT_MAP[s.template] ?? []).map((alt) => (
+                    {(ALT_MAP[s.template] ?? []).slice(0, 2).map((alt) => (
                       <button
                         key={alt}
                         onClick={() => swapTemplate(i, alt)}
                         disabled={rewriting !== null}
                         className="px-1.5 py-0.5 rounded border border-border hover:bg-ink/5 text-accent"
-                        title={`${TEMPLATE_LABEL[alt]}(으)로 AI 재작성`}
+                        title={`${TEMPLATE_LABEL[alt]}(으)로 ${s.sourceSection ? 'AI 재작성' : '그대로 변환'}`}
                       >
                         {rewriting === i ? '…' : `→${alt}`}
                       </button>
                     ))}
+                    <button
+                      onClick={() => { setSelIdx(i); setPickerIdx(i); }}
+                      className="px-1.5 py-0.5 rounded border border-border hover:bg-ink/5 text-accent"
+                      title="템플릿 전체를 모양으로 보고 고르기 (사진 자리가 있는 것 포함)"
+                    >
+                      템플릿
+                    </button>
                     <button onClick={() => setEditIdx(editIdx === i ? null : i)} className="px-1.5 py-0.5 rounded border border-border hover:bg-ink/5 text-accent">
                       {editIdx === i ? '닫기' : '편집'}
                     </button>
@@ -1364,6 +1448,8 @@ function CardEditor({ card, sourceTitle }: { card: CardRow; sourceTitle?: string
             <AddSlidePanel
               sourceType={card.source_type}
               sourceId={card.source_id}
+              accent={card.accent}
+              fallbackImage={trayImage}
               onAdd={(slide) => {
                 patch((prev) => [...prev, { ...slide, order: prev.length + 1, enabled: true }]);
                 setSelIdx(slides.length);
@@ -1371,7 +1457,17 @@ function CardEditor({ card, sourceTitle }: { card: CardRow; sourceTitle?: string
             />
           </div>
 
-          <ImageTray card={card} onPick={(url) => assignImageAt(selIdx, url)} onCover={applyCover} onThreadsCover={(u) => { setThreadsCover(u); setDirty(true); }} />
+          <ImageTray
+            card={card}
+            onPick={(url) => assignImageAt(selIdx, url)}
+            onCover={applyCover}
+            onThreadsCover={(u) => { setThreadsCover(u); setDirty(true); }}
+            onCredits={(entries) => setTrayCredits((prev) => {
+              const m = new Map(prev.map((c) => [c.url, c]));
+              for (const e of entries) m.set(e.url, e);
+              return [...m.values()];
+            })}
+          />
 
           {/* 캡션·스레드 */}
           <div className="card p-4 space-y-3">
@@ -1387,6 +1483,14 @@ function CardEditor({ card, sourceTitle }: { card: CardRow; sourceTitle?: string
               <Label className="text-xs">스레드 커버 이미지 URL <span className="text-ink/40">(이미지 트레이에서 &ldquo;스레드 커버로&rdquo; 클릭)</span></Label>
               <Input className="mt-1" value={threadsCover} onChange={(e) => { setThreadsCover(e.target.value); setDirty(true); }} placeholder="https://…" />
             </div>
+
+            <PhotoCreditPanel
+              credits={activeCredits}
+              igCaption={igCaption}
+              threadsText={threadsText}
+              onInsertCaption={(next) => { setIgCaption(next); setDirty(true); }}
+              onInsertThreads={(next) => { setThreadsText(next); setDirty(true); }}
+            />
           </div>
 
           <PublishPanel card={card} dirty={dirty} />
@@ -1492,6 +1596,23 @@ function CardEditor({ card, sourceTitle }: { card: CardRow; sourceTitle?: string
           )}
         </div>
       </div>
+
+      {/* 템플릿 시각 피커 — 지금 슬라이드의 글을 각 템플릿에 얹은 모습으로 보고 고른다 */}
+      {pickerIdx !== null && slides[pickerIdx] && (
+        <CardTemplatePicker
+          open
+          onOpenChange={(v) => !v && setPickerIdx(null)}
+          accent={card.accent}
+          slide={slides[pickerIdx]}
+          fallbackImage={trayImage}
+          recommended={ALT_MAP[slides[pickerIdx].template] ?? []}
+          busy={rewriting !== null}
+          title={`${pickerIdx + 1}번 슬라이드 템플릿 바꾸기 · 지금 ${TEMPLATE_LABEL[slides[pickerIdx].template]}`}
+          onPick={(r) => applyTemplatePick(pickerIdx, r)}
+          // AI 재작성은 원본 섹션이 있는 슬라이드만 가능 — 없으면 재료 부족 칸을 잠근다(헛클릭 방지)
+          onAiRewrite={slides[pickerIdx].sourceSection ? (t) => swapTemplate(pickerIdx, t) : undefined}
+        />
+      )}
     </div>
   );
 }
@@ -1814,10 +1935,12 @@ function SlideThumb({ slide, accent, label, selected, onClick }: {
   );
 }
 
-// ── 슬라이드 추가 — 매핑 계획(plan API)에서 섹션 선택 → AI 단건 작성 ──
-function AddSlidePanel({ sourceType, sourceId, onAdd }: {
+// ── 슬라이드 추가 — ① 빈 슬라이드(템플릿을 모양으로 골라 즉시) ② 매핑 계획 섹션 → AI 단건 작성 ──
+function AddSlidePanel({ sourceType, sourceId, accent, fallbackImage, onAdd }: {
   sourceType: CardRow['source_type'];
   sourceId: string;
+  accent: CardAccent;
+  fallbackImage?: string;
   onAdd: (slide: Pick<CardSlide, 'template' | 'props' | 'sourceSection'>) => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -1825,6 +1948,8 @@ function AddSlidePanel({ sourceType, sourceId, onAdd }: {
   const [pick, setPick] = useState('');
   const [template, setTemplate] = useState<CardTemplateId | ''>('');
   const [busy, setBusy] = useState(false);
+  /** 시각 피커 — 'blank'는 빈 슬라이드 추가, 'ai'는 AI 작성에 쓸 템플릿 고르기 */
+  const [picker, setPicker] = useState<'blank' | 'ai' | null>(null);
 
   async function openPanel() {
     setOpen(true);
@@ -1866,46 +1991,70 @@ function AddSlidePanel({ sourceType, sourceId, onAdd }: {
 
   return (
     <div className="px-3 py-2.5">
-      {!open ? (
-        <button onClick={openPanel} className="text-xs text-accent hover:underline">+ 슬라이드 추가 (AI가 빠뜨린 항목 등)</button>
-      ) : !plan ? (
-        <p className="text-xs text-ink/40">계획 불러오는 중…</p>
-      ) : (
-        <div className="space-y-2">
-          <Label className="text-xs">본문 섹션 선택</Label>
-          <select
-            className="w-full text-sm border border-border rounded-md px-2 py-1.5 bg-transparent"
-            value={pick}
-            onChange={(e) => { setPick(e.target.value); setTemplate(''); }}
-          >
-            <option value="">— 섹션 —</option>
-            {plan.map((p) => (
-              <option key={p.sourceSection} value={p.sourceSection}>
-                [{p.template}] {p.sourceSection} · {p.materialPreview.slice(0, 40)}
-              </option>
-            ))}
-          </select>
-          {picked && (
-            <div className="flex items-center gap-1.5 flex-wrap text-xs">
-              <span className="text-ink/40">템플릿:</span>
-              {[picked.template, ...picked.alternatives].map((t) => (
-                <button
-                  key={t}
-                  onClick={() => setTemplate(t)}
-                  className={`rounded px-1.5 py-0.5 ${(template || picked.template) === t ? 'bg-accent text-white' : 'bg-ink/5 text-ink/60'}`}
-                >
-                  {TEMPLATE_LABEL[t]}
-                </button>
+      <div className="flex items-center gap-3 flex-wrap">
+        <button onClick={() => setPicker('blank')} className="text-xs text-accent hover:underline">
+          + 빈 슬라이드 추가 <span className="text-ink/40">(템플릿을 모양으로 고르고 바로 편집)</span>
+        </button>
+        {!open && (
+          <button onClick={openPanel} className="text-xs text-accent hover:underline">
+            + AI로 작성해 추가 <span className="text-ink/40">(빠뜨린 본문 섹션에서)</span>
+          </button>
+        )}
+      </div>
+      {open &&
+        (!plan ? (
+          <p className="text-xs text-ink/40 mt-2">계획 불러오는 중…</p>
+        ) : (
+          <div className="space-y-2 mt-2">
+            <Label className="text-xs">본문 섹션 선택</Label>
+            <select
+              className="w-full text-sm border border-border rounded-md px-2 py-1.5 bg-transparent"
+              value={pick}
+              onChange={(e) => { setPick(e.target.value); setTemplate(''); }}
+            >
+              <option value="">— 섹션 —</option>
+              {plan.map((p) => (
+                <option key={p.sourceSection} value={p.sourceSection}>
+                  [{p.template}] {p.sourceSection} · {p.materialPreview.slice(0, 40)}
+                </option>
               ))}
+            </select>
+            {picked && (
+              <div className="flex items-center gap-1.5 flex-wrap text-xs">
+                <span className="text-ink/40">템플릿:</span>
+                <span className="rounded px-1.5 py-0.5 bg-accent text-white">{TEMPLATE_LABEL[template || picked.template]}</span>
+                <button onClick={() => setPicker('ai')} className="text-accent hover:underline">
+                  모양 보고 바꾸기
+                </button>
+              </div>
+            )}
+            <div className="flex justify-end gap-2">
+              <Button size="sm" variant="outline" onClick={() => setOpen(false)}>취소</Button>
+              <Button size="sm" variant="accent" onClick={create} disabled={!picked || busy}>
+                {busy ? 'AI 작성 중… (수 분 소요)' : 'AI로 작성해 추가'}
+              </Button>
             </div>
-          )}
-          <div className="flex justify-end gap-2">
-            <Button size="sm" variant="outline" onClick={() => setOpen(false)}>취소</Button>
-            <Button size="sm" variant="accent" onClick={create} disabled={!picked || busy}>
-              {busy ? 'AI 작성 중… (수 분 소요)' : 'AI로 작성해 추가'}
-            </Button>
           </div>
-        </div>
+        ))}
+
+      {picker && (
+        <CardTemplatePicker
+          open
+          onOpenChange={(v) => !v && setPicker(null)}
+          accent={accent}
+          fallbackImage={fallbackImage}
+          recommended={picked ? [picked.template, ...picked.alternatives] : []}
+          title={picker === 'blank' ? '빈 슬라이드 — 템플릿 고르기' : 'AI로 쓸 템플릿 고르기'}
+          onPick={(r) => {
+            if (picker === 'blank') {
+              // AI 없이 즉시 추가 — 문구는 자리표시(샘플)라 바로 [편집]에서 갈아끼우면 된다
+              onAdd({ template: r.template, props: r.props });
+            } else {
+              setTemplate(r.template);
+            }
+            setPicker(null);
+          }}
+        />
       )}
     </div>
   );
@@ -2026,26 +2175,155 @@ function SlideForm({
   );
 }
 
-// ── 이미지 트레이 + Unsplash 인라인 검색 ──────────────────
-function ImageTray({ card, onPick, onCover, onThreadsCover }: { card: CardRow; onPick: (url: string) => void; onCover: (url: string) => void; onThreadsCover: (url: string) => void }) {
+// ── 사진 출처 표기 ──────────────────────────────────────────
+// Unsplash는 API 약관상 사진가 표기가 의무이고, 원본 콘텐츠에서 긁어온 사진은 남의 저작물이다.
+// 지금 카드에 실제로 깔린 사진만 계산해 보여주고, 캡션·스레드 글에 한 번에 넣는다(중복 삽입은 교체).
+function PhotoCreditPanel({
+  credits,
+  igCaption,
+  threadsText,
+  onInsertCaption,
+  onInsertThreads,
+}: {
+  credits: PhotoCredit[];
+  igCaption: string;
+  threadsText: string;
+  onInsertCaption: (next: string) => void;
+  onInsertThreads: (next: string) => void;
+}) {
+  const captionBlock = creditBlock(credits, false);
+  const threadsBlock = creditBlock(credits, true); // 스레드는 링크가 눌리므로 프로필 URL 포함
+  if (credits.length === 0) {
+    // 사진을 갈아끼워 표기 대상이 사라졌는데 캡션엔 옛 출처가 남아 있을 수 있다 — 지우는 건 운영자 판단
+    const stale = stripCreditBlock(igCaption) !== igCaption || stripCreditBlock(threadsText) !== threadsText;
+    return stale ? (
+      <div className="rounded-md border border-amber-300 bg-amber-50 p-2.5 flex items-center gap-2 flex-wrap">
+        <span className="text-[11px] text-amber-700">표기할 외부 사진이 없는데 글에 사진 출처가 남아 있어요.</span>
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={() => { onInsertCaption(stripCreditBlock(igCaption)); onInsertThreads(stripCreditBlock(threadsText)); }}
+        >
+          출처 줄 지우기
+        </Button>
+      </div>
+    ) : (
+      <p className="text-[11px] text-ink/30">
+        사진 출처: 표기할 외부 사진이 없어요 (본가 본문 이미지만 쓰는 중).
+      </p>
+    );
+  }
+  const inCaption = hasCreditBlock(igCaption, captionBlock);
+  const inThreads = hasCreditBlock(threadsText, threadsBlock);
+  return (
+    <div className="rounded-md border border-border p-2.5 space-y-2">
+      <div className="flex items-center gap-2 flex-wrap">
+        <span className="text-xs font-semibold">사진 출처 {credits.length}건</span>
+        {!inCaption && <span className="text-[11px] text-amber-600">캡션에 아직 안 들어갔어요</span>}
+      </div>
+      <ul className="text-[11px] text-ink/60 space-y-0.5">
+        {credits.map((c) => (
+          <li key={`${c.source}:${c.credit}`} className="truncate">
+            <span className={`badge mr-1 ${c.source === 'unsplash' ? 'bg-ink/5 text-ink/60' : 'bg-amber-100 text-amber-700'}`}>
+              {c.source === 'unsplash' ? 'Unsplash' : '웹 출처'}
+            </span>
+            {c.credit}
+            {c.source === 'web' && <span className="text-ink/30"> · 인용 표기 필요</span>}
+          </li>
+        ))}
+      </ul>
+      <pre className="text-[11px] bg-ink/5 rounded p-2 whitespace-pre-wrap break-all">{captionBlock}</pre>
+      <div className="flex items-center gap-2 flex-wrap">
+        <Button size="sm" variant="outline" onClick={() => onInsertCaption(upsertCreditBlock(igCaption, captionBlock))}>
+          {inCaption ? '캡션 표기 갱신' : '인스타 캡션에 넣기'}
+        </Button>
+        <Button size="sm" variant="outline" onClick={() => onInsertThreads(upsertCreditBlock(threadsText, threadsBlock))}>
+          {inThreads ? '스레드 표기 갱신' : '스레드 글에 넣기'}
+        </Button>
+        <span className="text-[11px] text-ink/30">해시태그가 마지막이면 그 앞에 들어갑니다</span>
+      </div>
+    </div>
+  );
+}
+
+// ── 이미지 트레이 — 원본 콘텐츠 / Unsplash 두 갈래 ──────────────────
+// 스톡 사진만으로는 "그 콘텐츠의 사진"이 안 나온다. 소스에 붙어 있는 원본 링크(씨앗 source_url ·
+// 콘텐츠 출처 · 자료실 공식 페이지)를 긁어오는 경로와, 참고 링크를 직접 붙여넣는 경로를 같이 둔다.
+type TrayImage = { id: string; thumb: string; full: string; credit?: string };
+
+function ImageTray({ card, onPick, onCover, onThreadsCover, onCredits }: {
+  card: CardRow;
+  onPick: (url: string) => void;
+  onCover: (url: string) => void;
+  onThreadsCover: (url: string) => void;
+  /** 찾아온 사진의 출처를 편집기 카탈로그에 등록 — 나중에 캡션 표기를 계산하는 근거 */
+  onCredits: (entries: PhotoCredit[]) => void;
+}) {
+  const [tab, setTab] = useState<'source' | 'unsplash'>('source');
   const [query, setQuery] = useState('');
-  const [results, setResults] = useState<Array<{ id: string; thumb: string; full: string; credit: string }>>([]);
-  const [notice, setNotice] = useState<string | null>(null);
+  const [pageUrl, setPageUrl] = useState('');
+  const [results, setResults] = useState<Record<'source' | 'unsplash', TrayImage[]>>({ source: [], unsplash: [] });
+  const [notice, setNotice] = useState<Record<'source' | 'unsplash', string | null>>({ source: null, unsplash: null });
   const [searching, setSearching] = useState(false);
+  const [sourceLinks, setSourceLinks] = useState<Array<{ label: string; url: string }>>([]);
 
   async function search(q: string) {
     if (!q.trim()) return;
     setSearching(true);
-    setNotice(null);
+    setNotice((p) => ({ ...p, unsplash: null }));
     try {
       const res = await fetch(`/api/cardpress/unsplash?query=${encodeURIComponent(q)}`);
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? `HTTP ${res.status}`);
-      setResults(data.results ?? []);
-      if (data.notice) setNotice(data.notice);
-      else if (!data.results?.length) setNotice('검색 결과가 없어요.');
+      const list = (data.results ?? []) as Array<TrayImage & { creditLink?: string }>;
+      setResults((p) => ({ ...p, unsplash: list }));
+      // Unsplash는 사진가 표기가 API 약관상 의무 — 고르는 즉시 근거를 남긴다
+      onCredits(
+        list
+          .filter((r) => r.credit)
+          .map((r) => ({ url: r.full, credit: r.credit!, creditLink: r.creditLink, source: 'unsplash' as const }))
+      );
+      if (data.notice) setNotice((p) => ({ ...p, unsplash: data.notice }));
+      else if (!data.results?.length) setNotice((p) => ({ ...p, unsplash: '검색 결과가 없어요.' }));
     } catch (e) {
-      setNotice(`검색 실패: ${(e as Error).message}`);
+      setNotice((p) => ({ ...p, unsplash: `검색 실패: ${(e as Error).message}` }));
+    } finally {
+      setSearching(false);
+    }
+  }
+
+  /** url을 주면 그 페이지만, 없으면 소스에 붙은 원본 링크들을 긁는다 */
+  async function fetchSourceImages(url?: string) {
+    setSearching(true);
+    setNotice((p) => ({ ...p, source: null }));
+    try {
+      const res = await fetch('/api/cardpress/source-images', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ sourceType: card.source_type, sourceId: card.source_id, url }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? `HTTP ${res.status}`);
+      const raw = (data.images ?? []) as Array<{ url: string; from: string }>;
+      const imgs: TrayImage[] = raw.map((im) => ({ id: im.url, thumb: im.url, full: im.url, credit: im.from }));
+      // 남의 저작물이라 인용 표기 대상 — 출처 호스트와 가져온 페이지를 함께 남긴다
+      onCredits(
+        raw.map((im) => ({
+          url: im.url,
+          credit: im.from,
+          creditLink: url ?? data.links?.find((l: { url: string }) => l.url.includes(im.from))?.url,
+          source: 'web' as const,
+        }))
+      );
+      // 링크별로 여러 번 가져올 수 있게 누적(중복 제거)
+      setResults((p) => {
+        const seen = new Set(p.source.map((x) => x.full));
+        return { ...p, source: [...p.source, ...imgs.filter((x) => !seen.has(x.full))] };
+      });
+      if (data.links?.length) setSourceLinks(data.links);
+      setNotice((p) => ({ ...p, source: data.notice ?? null }));
+    } catch (e) {
+      setNotice((p) => ({ ...p, source: `불러오기 실패: ${(e as Error).message}` }));
     } finally {
       setSearching(false);
     }
@@ -2069,7 +2347,7 @@ function ImageTray({ card, onPick, onCover, onThreadsCover }: { card: CardRow; o
 
   return (
     <div className="card p-4 space-y-3">
-      <div className="text-sm font-semibold">이미지 트레이 <span className="text-xs text-ink/40 font-normal">(호버 → 배치 · 커버/B2/B9 슬라이드 선택 후)</span></div>
+      <div className="text-sm font-semibold">이미지 트레이 <span className="text-xs text-ink/40 font-normal">(호버 → 배치 · 사진 자리가 없는 템플릿이면 사진형으로 바꿀지 물어봅니다)</span></div>
       {(card.cover_candidates?.length ?? 0) > 0 && (
         <div>
           <div className="text-[11px] text-ink/40 mb-1">커버 후보 — 클릭하면 바로 커버에 적용 (다크 커버면 사진 커버로 전환)</div>
@@ -2104,26 +2382,91 @@ function ImageTray({ card, onPick, onCover, onThreadsCover }: { card: CardRow; o
           </div>
         </div>
       )}
-      <div className="flex items-center gap-2">
-        <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Unsplash 검색 (영어)" onKeyDown={(e) => e.key === 'Enter' && search(query)} />
-        <Button size="sm" variant="outline" onClick={() => search(query)} disabled={searching}>{searching ? '검색 중…' : '검색'}</Button>
-      </div>
-      {(card.metaphor_queries?.length ?? 0) > 0 && (
-        <div className="flex items-center gap-1.5 flex-wrap">
-          <span className="text-[11px] text-ink/40">메타포 제안:</span>
-          {card.metaphor_queries!.map((q) => (
-            <button key={q} onClick={() => { setQuery(q); search(q); }} className="text-[11px] rounded px-1.5 py-0.5 bg-ink/5 text-ink/60 hover:bg-ink/10">
-              {q}
+      {/* 이미지 찾기 — 원본 콘텐츠 / 스톡(Unsplash) */}
+      <div className="border-t border-border pt-3 space-y-2">
+        <div className="flex items-center gap-1">
+          {([
+            ['source', '원본 콘텐츠에서'],
+            ['unsplash', 'Unsplash 스톡'],
+          ] as const).map(([v, label]) => (
+            <button
+              key={v}
+              onClick={() => setTab(v)}
+              className={`text-xs rounded-full px-2.5 py-1 ${tab === v ? 'bg-accent text-white' : 'bg-ink/5 text-ink/60 hover:bg-ink/10'}`}
+            >
+              {label}
             </button>
           ))}
         </div>
-      )}
-      {notice && <p className="text-xs text-ink/40">{notice}</p>}
-      {results.length > 0 && (
-        <div className="flex gap-2 overflow-x-auto pb-1">
-          {results.map((r) => <Thumb key={r.id} url={r.full} thumb={r.thumb} credit={r.credit} />)}
-        </div>
-      )}
+
+        {tab === 'source' ? (
+          <>
+            <div className="flex items-center gap-2">
+              <Button size="sm" variant="outline" onClick={() => fetchSourceImages()} disabled={searching}>
+                {searching ? '가져오는 중…' : '원본 링크에서 가져오기'}
+              </Button>
+              <span className="text-[11px] text-ink/40">
+                {card.source_type === 'seed' ? '씨앗 원본 URL' : card.source_type === 'tool' ? '공식 페이지·출처' : '본문 출처 링크'}에서 사진을 긁어옵니다
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              <Input
+                value={pageUrl}
+                onChange={(e) => setPageUrl(e.target.value)}
+                placeholder="참고 링크 직접 붙여넣기 (기사·제품·릴리스 노트 URL)"
+                onKeyDown={(e) => e.key === 'Enter' && pageUrl.trim() && fetchSourceImages(pageUrl.trim())}
+              />
+              <Button size="sm" variant="outline" onClick={() => pageUrl.trim() && fetchSourceImages(pageUrl.trim())} disabled={searching || !pageUrl.trim()}>
+                가져오기
+              </Button>
+            </div>
+            {sourceLinks.length > 0 && (
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <span className="text-[11px] text-ink/40">찾은 원본 링크:</span>
+                {sourceLinks.map((l) => (
+                  <button
+                    key={l.url}
+                    onClick={() => fetchSourceImages(l.url)}
+                    className="text-[11px] rounded px-1.5 py-0.5 bg-ink/5 text-ink/60 hover:bg-ink/10 max-w-[220px] truncate"
+                    title={l.url}
+                  >
+                    {l.label}
+                  </button>
+                ))}
+              </div>
+            )}
+          </>
+        ) : (
+          <>
+            <div className="flex items-center gap-2">
+              <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Unsplash 검색 (영어)" onKeyDown={(e) => e.key === 'Enter' && search(query)} />
+              <Button size="sm" variant="outline" onClick={() => search(query)} disabled={searching}>{searching ? '검색 중…' : '검색'}</Button>
+            </div>
+            {(card.metaphor_queries?.length ?? 0) > 0 && (
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <span className="text-[11px] text-ink/40">메타포 제안:</span>
+                {card.metaphor_queries!.map((q) => (
+                  <button key={q} onClick={() => { setQuery(q); search(q); }} className="text-[11px] rounded px-1.5 py-0.5 bg-ink/5 text-ink/60 hover:bg-ink/10">
+                    {q}
+                  </button>
+                ))}
+              </div>
+            )}
+          </>
+        )}
+
+        {notice[tab] && <p className="text-xs text-ink/40">{notice[tab]}</p>}
+        {results[tab].length > 0 && (
+          <div className="flex gap-2 overflow-x-auto pb-1">
+            {results[tab].map((r) => <Thumb key={r.id} url={r.full} thumb={r.thumb} credit={r.credit} />)}
+          </div>
+        )}
+        {tab === 'source' && (
+          <p className="text-[11px] text-ink/30">
+            WebP·AVIF·아이콘은 자동 제외돼요 (렌더에서 검게 나오는 형식). 저작권은 운영자 판단 — 남의 기사 사진은 인용 표기와 함께 쓰세요.
+          </p>
+        )}
+      </div>
     </div>
   );
 }

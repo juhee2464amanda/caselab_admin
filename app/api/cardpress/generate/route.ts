@@ -116,6 +116,8 @@ export async function POST(req: NextRequest) {
       cta_type: draft.ctaType,
       cta_keyword: draft.ctaKeyword,
       cover_candidates: draft.coverCandidates,
+      // Unsplash API Guidelines상 발행 시 표기 필수 — 지금까지 계산만 하고 버려지던 값(1027 컬럼)
+      photo_credits: draft.photoCredits.map((p) => ({ ...p, source: 'unsplash' as const })),
       status: 'auto_draft',
     };
     let { data: card, error: upsertError } = await admin
@@ -123,8 +125,8 @@ export async function POST(req: NextRequest) {
       .upsert(row, { onConflict: 'source_type,source_id' })
       .select()
       .single();
-    // 1021~1023 미적용 DB 호환 — 없는 컬럼만 빼고 재시도
-    for (const col of ['metaphor_queries', 'edge', 'cta_type', 'cta_keyword', 'cover_candidates']) {
+    // 1021~1027 미적용 DB 호환 — 없는 컬럼만 빼고 재시도
+    for (const col of ['metaphor_queries', 'edge', 'cta_type', 'cta_keyword', 'cover_candidates', 'photo_credits']) {
       if (upsertError?.message.includes(col)) {
         delete row[col];
         ({ data: card, error: upsertError } = await admin
