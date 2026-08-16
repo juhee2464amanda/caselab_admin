@@ -518,11 +518,12 @@ export function CardPressManager({
                 </>
               )}
             </div>
-            <p className="text-[11px] text-ink/40">
-              {composeCta === 'comment_dm'
-                ? `캡션·마무리가 "댓글에 '${composeKeyword || '키워드'}' 남기면 DM으로" 문법으로 생성됩니다 (리틀리 자동화 연동 전제)`
-                : CTA_TYPE_HINTS[composeCta]}
-            </p>
+            {composeCta === 'comment_dm' && (
+              <p className="text-[11px] text-ink/40">
+                {`캡션·마무리가 "댓글에 '${composeKeyword || '키워드'}' 남기면 DM으로" 문법으로 생성됩니다 (리틀리 자동화 연동 전제)`}
+              </p>
+            )}
+            <CtaEndingPicker ctaType={composeCta} preview />
             <div className="flex justify-end gap-2">
               <Button size="sm" variant="outline" onClick={() => setComposeId(null)}>취소</Button>
               <Button size="sm" variant="accent" onClick={createCard} disabled={generating !== null}>
@@ -2200,28 +2201,35 @@ function splitCaptionTail(caption: string): { body: string; tags: string } {
   return { body: lines.join('\n').trimEnd(), tags: tagLines.join('\n') };
 }
 
+// preview 모드 = 만들기 화면용. 아직 캡션이 없어 적용할 대상이 없으므로 "어떤 문장이 나올지"만 보여준다
+// (CTA 유형을 고르는 자리에서 결과를 못 보면 이름만 보고 찍게 된다).
 function CtaEndingPicker({
   ctaType,
   caption,
   onApply,
+  preview,
 }: {
   ctaType: CardCtaType;
-  caption: string;
-  onApply: (next: string) => void;
+  caption?: string;
+  onApply?: (next: string) => void;
+  preview?: boolean;
 }) {
   const endings = CTA_ENDINGS[ctaType];
   if (!endings.length)
     return (
       <p className="mt-1.5 text-[11px] text-ink/40">
-        댓글→DM 유형은 마무리가 키워드로 조립돼요 — 후보 대신 위 캡션에서 직접 손보세요.
+        {preview
+          ? '댓글→DM 유형은 마무리가 댓글 키워드로 조립돼요 — 위 키워드가 그대로 문장에 들어갑니다.'
+          : '댓글→DM 유형은 마무리가 키워드로 조립돼요 — 후보 대신 위 캡션에서 직접 손보세요.'}
       </p>
     );
 
-  const { body, tags } = splitCaptionTail(caption);
+  const { body, tags } = splitCaptionTail(caption ?? '');
   const paras = body.split(/\n{2,}/);
   const current = paras[paras.length - 1] ?? '';
 
   const apply = (text: string) => {
+    if (!onApply) return;
     const kept = paras.slice(0, -1).join('\n\n').trimEnd();
     onApply([kept, text].filter(Boolean).join('\n\n') + (tags ? `\n\n${tags}` : ''));
   };
@@ -2229,29 +2237,45 @@ function CtaEndingPicker({
   return (
     <div className="mt-1.5 rounded-md border border-ink/10 bg-ink/[0.02] p-2.5">
       <div className="flex items-baseline gap-2 flex-wrap">
-        <span className="text-[11px] font-medium text-ink/60">마무리 후보</span>
+        <span className="text-[11px] font-medium text-ink/60">
+          {preview ? '이 유형의 마무리 문장' : '마무리 후보'}
+        </span>
         <span className="text-[11px] text-ink/40">{CTA_TYPE_HINTS[ctaType]}</span>
       </div>
-      <p className="mt-1 text-[11px] text-ink/35 line-clamp-2">
-        지금 마무리: {current.replace(/\n+/g, ' ') || '(없음)'}
-      </p>
+      {!preview && (
+        <p className="mt-1 text-[11px] text-ink/35 line-clamp-2">
+          지금 마무리: {current.replace(/\n+/g, ' ') || '(없음)'}
+        </p>
+      )}
       <div className="mt-2 grid gap-1.5">
-        {endings.map((e) => (
-          <button
-            key={e.label}
-            onClick={() => apply(e.text)}
-            className="text-left rounded border border-ink/10 bg-white px-2.5 py-2 hover:border-accent/50 hover:bg-accent/[0.03]"
-          >
-            <div className="flex items-baseline gap-1.5">
-              <span className="text-[11px] font-medium text-ink/70">{e.label}</span>
-              <span className="text-[10px] text-ink/40">{e.when}</span>
+        {endings.map((e) =>
+          preview ? (
+            <div key={e.label} className="rounded border border-ink/10 bg-white px-2.5 py-2">
+              <div className="flex items-baseline gap-1.5">
+                <span className="text-[11px] font-medium text-ink/70">{e.label}</span>
+                <span className="text-[10px] text-ink/40">{e.when}</span>
+              </div>
+              <p className="mt-0.5 text-[11px] leading-relaxed text-ink/55 whitespace-pre-line">{e.text}</p>
             </div>
-            <p className="mt-0.5 text-[11px] leading-relaxed text-ink/55 whitespace-pre-line">{e.text}</p>
-          </button>
-        ))}
+          ) : (
+            <button
+              key={e.label}
+              onClick={() => apply(e.text)}
+              className="text-left rounded border border-ink/10 bg-white px-2.5 py-2 hover:border-accent/50 hover:bg-accent/[0.03]"
+            >
+              <div className="flex items-baseline gap-1.5">
+                <span className="text-[11px] font-medium text-ink/70">{e.label}</span>
+                <span className="text-[10px] text-ink/40">{e.when}</span>
+              </div>
+              <p className="mt-0.5 text-[11px] leading-relaxed text-ink/55 whitespace-pre-line">{e.text}</p>
+            </button>
+          )
+        )}
       </div>
       <p className="mt-1.5 text-[10px] text-ink/35">
-        누르면 캡션의 마지막 문단만 교체합니다 (해시태그는 유지).
+        {preview
+          ? 'AI가 이 문장들을 본보기 삼아 소재에 맞게 변주합니다. 생성 후 검수 화면에서 원클릭 교체도 됩니다.'
+          : '누르면 캡션의 마지막 문단만 교체합니다 (해시태그는 유지).'}
       </p>
     </div>
   );
