@@ -14,6 +14,12 @@ import type { CardSlide, CardTemplateId, CardAccent } from '@/types/cardpress';
 import { CardTemplatePicker, type PickResult } from '@/components/admin/CardTemplatePicker';
 import { convertProps, IMAGE_KEY, PHOTO_ALT, TEMPLATE_LABEL } from '@/lib/cardpress/convert';
 import {
+  CTA_ENDINGS,
+  CTA_TYPE_HINTS,
+  CTA_TYPE_LABELS,
+  type CardCtaType,
+} from '@/lib/cardpress/cta-endings';
+import {
   creditBlock,
   hasCreditBlock,
   stripCreditBlock,
@@ -44,7 +50,7 @@ export type CardRow = {
   threads_cover: string | null;
   metaphor_queries?: string[];
   edge?: string | null;
-  cta_type?: 'info_save' | 'comment_dm';
+  cta_type?: CardCtaType;
   cta_keyword?: string | null;
   cover_candidates?: Array<{ thumb: string; full: string; credit: string; creditLink: string }>;
   /** 사진 출처 표기 — 실제로 쓰인 사진만 캡션에 넣는다 (migration 1027) */
@@ -431,7 +437,7 @@ export function CardPressManager({
   const [composeId, setComposeId] = useState<string | null>(null);
   const [composeKind, setComposeKind] = useState<'content' | 'tool' | 'seed'>('content');
   const [composeEdge, setComposeEdge] = useState('');
-  const [composeCta, setComposeCta] = useState<'comment_dm' | 'info_save'>('comment_dm');
+  const [composeCta, setComposeCta] = useState<CardCtaType>('comment_dm');
   const [composeKeyword, setComposeKeyword] = useState('프롬프트');
 
   function startCompose(kind: 'content' | 'tool' | 'seed', sourceId: string) {
@@ -496,16 +502,13 @@ export function CardPressManager({
             </div>
             <div className="flex items-center gap-2 flex-wrap">
               <Label className="text-xs shrink-0">CTA</Label>
-              {([
-                ['comment_dm', '댓글→DM 참여형'],
-                ['info_save', '정보 제공형'],
-              ] as const).map(([v, label]) => (
+              {(Object.keys(CTA_TYPE_LABELS) as CardCtaType[]).map((v) => (
                 <button
                   key={v}
                   onClick={() => setComposeCta(v)}
                   className={`text-xs rounded-full px-2.5 py-1 ${composeCta === v ? 'bg-accent text-white' : 'bg-ink/5 text-ink/60 hover:bg-ink/10'}`}
                 >
-                  {label}
+                  {CTA_TYPE_LABELS[v]}
                 </button>
               ))}
               {composeCta === 'comment_dm' && (
@@ -517,8 +520,8 @@ export function CardPressManager({
             </div>
             <p className="text-[11px] text-ink/40">
               {composeCta === 'comment_dm'
-                ? `캡션·마무리가 "댓글에 '${composeKeyword || '키워드'}' 남기면 DM으로" 문법으로 생성됩니다 (ManyChat 자동화 연동 전제)`
-                : '캡션에 대표 프롬프트 전문 + 프로필 링크 유도 문법으로 생성됩니다'}
+                ? `캡션·마무리가 "댓글에 '${composeKeyword || '키워드'}' 남기면 DM으로" 문법으로 생성됩니다 (리틀리 자동화 연동 전제)`
+                : CTA_TYPE_HINTS[composeCta]}
             </p>
             <div className="flex justify-end gap-2">
               <Button size="sm" variant="outline" onClick={() => setComposeId(null)}>취소</Button>
@@ -858,7 +861,7 @@ function CardEditor({ card, sourceTitle }: { card: CardRow; sourceTitle?: string
   const [threadsText, setThreadsText] = useState(card.threads_text ?? '');
   const [threadsCover, setThreadsCover] = useState(card.threads_cover ?? '');
   const [edge, setEdge] = useState(card.edge ?? '');
-  const [ctaType, setCtaType] = useState<'info_save' | 'comment_dm'>(card.cta_type ?? 'comment_dm');
+  const [ctaType, setCtaType] = useState<CardCtaType>(card.cta_type ?? 'comment_dm');
   const [ctaKeyword, setCtaKeyword] = useState(card.cta_keyword ?? '프롬프트');
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -1367,16 +1370,13 @@ function CardEditor({ card, sourceTitle }: { card: CardRow; sourceTitle?: string
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           <Label className="text-xs shrink-0">CTA</Label>
-          {([
-            ['comment_dm', '댓글→DM 참여형'],
-            ['info_save', '정보 제공형'],
-          ] as const).map(([v, label]) => (
+          {(Object.keys(CTA_TYPE_LABELS) as CardCtaType[]).map((v) => (
             <button
               key={v}
               onClick={() => { setCtaType(v); setDirty(true); }}
               className={`text-xs rounded-full px-2.5 py-1 ${ctaType === v ? 'bg-accent text-white' : 'bg-ink/5 text-ink/60 hover:bg-ink/10'}`}
             >
-              {label}
+              {CTA_TYPE_LABELS[v]}
             </button>
           ))}
           {ctaType === 'comment_dm' && (
@@ -1387,7 +1387,7 @@ function CardEditor({ card, sourceTitle }: { card: CardRow; sourceTitle?: string
                 onChange={(e) => { setCtaKeyword(e.target.value); setDirty(true); }}
                 className="text-sm w-28"
               />
-              <span className="text-[11px] text-ink/40">ManyChat 코멘트 자동화에 같은 키워드 세팅 필요</span>
+              <span className="text-[11px] text-ink/40">리틀리 댓글 자동화·숏링크에 같은 키워드 세팅 필요</span>
             </>
           )}
           <span className="text-[11px] text-ink/40 ml-auto hidden lg:block">수정 후 [AI 전체 재생성] = 이 방향·문법으로 재작성</span>
@@ -1474,6 +1474,11 @@ function CardEditor({ card, sourceTitle }: { card: CardRow; sourceTitle?: string
             <div>
               <Label className="text-xs">인스타 캡션</Label>
               <Textarea className="mt-1" rows={7} value={igCaption} onChange={(e) => { setIgCaption(e.target.value); setDirty(true); }} />
+              <CtaEndingPicker
+                ctaType={ctaType}
+                caption={igCaption}
+                onApply={(next) => { setIgCaption(next); setDirty(true); }}
+              />
             </div>
             <div>
               <Label className="text-xs">스레드 글 <span className="text-ink/40">(본가 링크 포함)</span></Label>
@@ -2177,6 +2182,81 @@ function SlideForm({
 
 // ── 사진 출처 표기 ──────────────────────────────────────────
 // Unsplash는 API 약관상 사진가 표기가 의무이고, 원본 콘텐츠에서 긁어온 사진은 남의 저작물이다.
+// 캡션 마무리(CTA) 교체기 — 문구 정의는 lib/cardpress/cta-endings.ts (생성 프롬프트와 공유).
+//
+// 왜 필요한가: AI가 쓴 마무리가 어긋나는 일이 잦다. 실제로 도구 소개 카드에 "원본 링크에서
+// 확인해보세요"가 붙어 나갔는데, 인스타 캡션의 URL은 클릭이 안 돼 갈 곳 없는 CTA였다.
+// 매번 손으로 고쳐 쓰면 톤이 흔들리므로, 검증된 후보를 한 번에 갈아끼운다.
+//
+// 교체 규칙: 캡션 = 본문 + 해시태그 줄. 본문의 **마지막 문단**을 마무리로 보고 그것만 바꾼다
+// (해시태그는 그대로 유지). 마무리가 여러 문단이면 사람이 직접 손보는 게 맞다.
+function splitCaptionTail(caption: string): { body: string; tags: string } {
+  const lines = caption.trimEnd().split('\n');
+  const tagLines: string[] = [];
+  while (lines.length && (lines[lines.length - 1].trim().startsWith('#') || !lines[lines.length - 1].trim())) {
+    const line = lines.pop() as string;
+    if (line.trim()) tagLines.unshift(line);
+  }
+  return { body: lines.join('\n').trimEnd(), tags: tagLines.join('\n') };
+}
+
+function CtaEndingPicker({
+  ctaType,
+  caption,
+  onApply,
+}: {
+  ctaType: CardCtaType;
+  caption: string;
+  onApply: (next: string) => void;
+}) {
+  const endings = CTA_ENDINGS[ctaType];
+  if (!endings.length)
+    return (
+      <p className="mt-1.5 text-[11px] text-ink/40">
+        댓글→DM 유형은 마무리가 키워드로 조립돼요 — 후보 대신 위 캡션에서 직접 손보세요.
+      </p>
+    );
+
+  const { body, tags } = splitCaptionTail(caption);
+  const paras = body.split(/\n{2,}/);
+  const current = paras[paras.length - 1] ?? '';
+
+  const apply = (text: string) => {
+    const kept = paras.slice(0, -1).join('\n\n').trimEnd();
+    onApply([kept, text].filter(Boolean).join('\n\n') + (tags ? `\n\n${tags}` : ''));
+  };
+
+  return (
+    <div className="mt-1.5 rounded-md border border-ink/10 bg-ink/[0.02] p-2.5">
+      <div className="flex items-baseline gap-2 flex-wrap">
+        <span className="text-[11px] font-medium text-ink/60">마무리 후보</span>
+        <span className="text-[11px] text-ink/40">{CTA_TYPE_HINTS[ctaType]}</span>
+      </div>
+      <p className="mt-1 text-[11px] text-ink/35 line-clamp-2">
+        지금 마무리: {current.replace(/\n+/g, ' ') || '(없음)'}
+      </p>
+      <div className="mt-2 grid gap-1.5">
+        {endings.map((e) => (
+          <button
+            key={e.label}
+            onClick={() => apply(e.text)}
+            className="text-left rounded border border-ink/10 bg-white px-2.5 py-2 hover:border-accent/50 hover:bg-accent/[0.03]"
+          >
+            <div className="flex items-baseline gap-1.5">
+              <span className="text-[11px] font-medium text-ink/70">{e.label}</span>
+              <span className="text-[10px] text-ink/40">{e.when}</span>
+            </div>
+            <p className="mt-0.5 text-[11px] leading-relaxed text-ink/55 whitespace-pre-line">{e.text}</p>
+          </button>
+        ))}
+      </div>
+      <p className="mt-1.5 text-[10px] text-ink/35">
+        누르면 캡션의 마지막 문단만 교체합니다 (해시태그는 유지).
+      </p>
+    </div>
+  );
+}
+
 // 지금 카드에 실제로 깔린 사진만 계산해 보여주고, 캡션·스레드 글에 한 번에 넣는다(중복 삽입은 교체).
 function PhotoCreditPanel({
   credits,

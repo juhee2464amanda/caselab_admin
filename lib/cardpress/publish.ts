@@ -55,10 +55,22 @@ export async function uploadSlides(
   return urls;
 }
 
-// ── Instagram Graph API — 캐러셀 발행 ──────────────────────
+// ── Instagram API (Instagram Login) — 캐러셀 발행 ──────────
 // 컨테이너 생성(is_carousel_item) → 캐러셀 컨테이너 → 처리 대기 → publish
-
-const IG_BASE = 'https://graph.facebook.com/v21.0';
+//
+// 호스트가 graph.facebook.com이 아니라 graph.instagram.com인 이유(2026-08-15 전환):
+//   Instagram 발행에는 두 경로가 있다. ① Facebook Login(graph.facebook.com, instagram_content_publish)
+//   ② Instagram Login(graph.instagram.com, instagram_business_content_publish).
+//   ①로 가려 했으나 신규 앱의 Facebook Login for Business 구성에서 인스타 권한이 아예 검색되지 않았다
+//   ("No matching results") — Meta가 신규 앱을 ②로 몰고 있다. 그래서 ②로 전환.
+//   엔드포인트 경로·파라미터는 양쪽이 완전히 동일해서 바뀐 건 이 호스트 한 줄뿐이다.
+//   대가: 토큰이 만료 없는 페이지 토큰이 아니라 60일짜리 IG 토큰이라 갱신이 필요하다
+//        (scripts/instagram-connect.mjs --refresh, 만료 임박은 --verify가 경고).
+const IG_BASE = 'https://graph.instagram.com/v21.0';
+// Graph API 캐러셀 상한. 인스타 앱은 20장까지 올려주지만 API는 10장에서 막는다
+// (developers.facebook.com/docs/instagram-platform/content-publishing).
+// 11장째부터 컨테이너 생성은 성공하고 캐러셀 묶는 단계에서만 터지므로, 여기서 미리 잘라 말한다.
+const IG_CAROUSEL_MAX = 10;
 
 async function igPost(path: string, params: Record<string, string>): Promise<Record<string, string>> {
   const res = await fetch(`${IG_BASE}/${path}`, {
@@ -88,9 +100,14 @@ export async function publishInstagramCarousel(imageUrls: string[], caption: str
   if (!userId || !token)
     throw new Error('INSTAGRAM_USER_ID / INSTAGRAM_ACCESS_TOKEN 미설정 — Meta 비즈니스 연결 후 env에 추가하세요');
   if (imageUrls.length < 2) throw new Error('캐러셀은 최소 2장 필요');
+  // 넘치는 장을 조용히 버리면 공들여 쓴 슬라이드가 말없이 사라진다 → 끄는 선택은 사람에게 맡긴다.
+  if (imageUrls.length > IG_CAROUSEL_MAX)
+    throw new Error(
+      `캐러셀은 최대 ${IG_CAROUSEL_MAX}장인데 활성 슬라이드가 ${imageUrls.length}장입니다 — 검수 UI에서 ${imageUrls.length - IG_CAROUSEL_MAX}장을 끄고 다시 발행하세요(zip 다운로드는 전체 장수 그대로 나갑니다)`
+    );
 
   const children: string[] = [];
-  for (const url of imageUrls.slice(0, 20)) {
+  for (const url of imageUrls) {
     const c = await igPost(`${userId}/media`, {
       image_url: url,
       is_carousel_item: 'true',

@@ -26,7 +26,9 @@ import {
 // 슬라이드 규격(줄수·글자수)에 맞게 압축하고, 캡션·스레드 글·커버 메타포 검색어까지 한 번에.
 // 규격 위반 시 위반 목록을 피드백으로 재압축 루프(최대 2회 추가 호출).
 
-export type CardCtaType = 'info_save' | 'comment_dm';
+// CTA 유형·마무리 문구는 lib/cardpress/cta-endings.ts가 단일 정의 (검수 UI와 공유).
+import { ctaEndingExamples, type CardCtaType } from './cta-endings';
+export type { CardCtaType } from './cta-endings';
 
 /**
  * 카드 소스 3원화 — 본가에 발행돼 유저에게 보이는 것 전부 + 미발행 씨앗 원석.
@@ -87,12 +89,48 @@ export type CardSetDraft = {
   photoCredits: { url: string; credit: string; creditLink: string }[];
 };
 
-const FIXED_TAGS = ['#케이스랩', '#AI활용', '#일잘러', '#업무효율', '#AI실험'];
+// 해시태그 = 브랜드 1 + 분류 1 + 소재별 2~3(AI 생성).
+// 왜 고정 태그를 5개에서 1개로 줄였나: 전에는 #케이스랩 #AI활용 #일잘러 #업무효율 #AI실험이
+// 모든 카드에 똑같이 붙었다. ① #AI활용·#AI실험·#AI실전이 같은 말이라 자리만 먹고
+// ② 초대형 경쟁 태그라 노출 기여가 사실상 없으며 ③ 매 게시물 동일 태그 세트는
+// 인스타가 스팸 신호로 읽는다(계정이 새것일수록 위험). 소재를 가리키는 구체 태그가 실효가 크다.
+const FIXED_TAGS = ['#케이스랩'];
 const CATEGORY_TAGS: Record<CardAccent, string[]> = {
-  'cat-case': ['#AI실전', '#업무자동화'],
-  'cat-trend': ['#AI트렌드', '#AI소식'],
-  'cat-tool': ['#AI도구', '#생산성툴'],
+  'cat-case': ['#업무자동화'],
+  'cat-trend': ['#AI트렌드'],
+  'cat-tool': ['#AI도구'],
 };
+const TOPIC_TAG_MAX = 3;
+
+/** 인스타·스레드는 마크다운을 렌더하지 않는다 — 기호가 그대로 노출된다.
+ *  프롬프트로 금지해도 모델이 코드·강조를 만나면 습관적으로 백틱을 붙이므로 여기서 결정적으로 벗긴다.
+ *  (실제로 `caffeinate`·`sudo pmset ...`이 백틱째 캡션에 실려 발행 직전까지 갔다) */
+export function stripMarkdown(text: string): string {
+  return text
+    .replace(/```[a-z]*\n?([\s\S]*?)```/gi, '$1') // 코드 펜스
+    .replace(/`([^`\n]+)`/g, '$1') // 인라인 코드
+    .replace(/\*\*([^*\n]+)\*\*/g, '$1') // 굵게
+    .replace(/(^|[\s(])_([^_\n]+)_(?=[\s).,!?]|$)/g, '$1$2') // 기울임 (snake_case 보존)
+    .replace(/\[([^\]\n]+)\]\((?:[^)\s]+)\)/g, '$1') // [텍스트](url)
+    .replace(/^#{1,6}\s+/gm, '') // 머리말
+    .replace(/[ \t]+$/gm, '')
+    .trim();
+}
+
+/** AI가 낸 소재 태그 정리 — #보정·중복/고정태그 제거·길이 제한. */
+function normalizeTopicTags(raw: string[] | undefined, base: string[]): string[] {
+  const seen = new Set(base.map((t) => t.toLowerCase()));
+  const out: string[] = [];
+  for (const t of raw ?? []) {
+    const tag = `#${String(t).trim().replace(/^#+/, '').replace(/\s+/g, '')}`;
+    if (tag.length < 3 || tag.length > 20) continue; // '#a' 같은 쓰레기와 문장형 태그 배제
+    if (seen.has(tag.toLowerCase())) continue;
+    seen.add(tag.toLowerCase());
+    out.push(tag);
+    if (out.length >= TOPIC_TAG_MAX) break;
+  }
+  return out;
+}
 
 const GenOutputSchema = z.object({
   edge: z.string().min(1),
@@ -113,6 +151,8 @@ const GenOutputSchema = z.object({
   ),
   igCaption: z.string().min(1),
   threadsText: z.string().min(1),
+  /** 이 소재를 가리키는 구체 해시태그 2~3개 (브랜드·분류 태그는 시스템이 붙임) */
+  topicTags: z.array(z.string()).optional(),
   metaphorQueries: z.array(z.string()).optional(),
 });
 
@@ -397,7 +437,17 @@ ${TEMPLATE_SPECS}
 
 [CTA 유형 — 캡션·스레드·마무리의 문법을 결정]
 - comment_dm: 댓글 참여형. 캡션 마지막은 '댓글에 "키워드"를 남기면 DM으로 전문/자료를 보내드려요' 문구. ctaKeyword 필드로 짧은 한글 키워드(≤6자, 예: "프롬프트")를 제안하세요. 캡션에 프롬프트 전문을 넣지 말 것(DM 유인이 죽음) — 대신 맛보기와 효과로 욕망을 만들 것.
-- info_save: 정보 제공형. 캡션에 대표 프롬프트 1개 전문 포함(따옴표 블록) + "나머지는 프로필 링크에서".
+- info_save: 링크 유도형. 프롬프트가 있는 소재면 대표 1개 전문 포함(따옴표 블록).
+  마무리는 반드시 **"프로필 링크"** 로 지칭할 것. ❌ "원본 링크에서" / "아래 링크" / "링크 클릭" 금지 —
+  **인스타 캡션의 URL은 클릭이 안 되고 프로필 링크가 유일한 출구다.** 독자가 찾을 수 없는 곳을 가리키면 CTA가 죽는다.
+  마무리 본보기(그대로 베끼지 말고 소재에 맞게 변주할 것 — 매번 같은 문장이면 금방 지겨워진다):
+${ctaEndingExamples('info_save')}
+- channel_intro: 채널 안내형. 보낼 곳을 만들지 않고 **"이 계정이 뭘 하는 곳인지"** 를 각인시켜 팔로우로 잇는다.
+  소재가 그 자체로 완결적이라 더 보낼 데가 없을 때, 또는 팔로워를 늘리고 싶을 때 쓴다.
+  메시지 축: **"유료 강의 결제하지 않아도 된다 · 검증한 것만 골라 올린다 · 한 번에 하나씩"**.
+  ❌ 링크·저장·댓글 유도를 섞지 말 것 (그건 다른 두 유형의 몫이다). ❌ 과장·구독 구걸 톤 금지.
+  마무리 본보기(변주할 것):
+${ctaEndingExamples('channel_intro')}
 
 [함께 생성]
 - igCaption: 인스타 캡션 — **카드뉴스를 다 넘겨본 사람에게 이어서 말을 거는 글**. 요약 리포트가 아니다.
@@ -410,7 +460,16 @@ ${TEMPLATE_SPECS}
   ④ CTA 유형에 맞는 마무리.
   톤: 말하듯이. 문장을 짧게 끊고, 문단 사이를 비운다. 앞 문장이 다음 문장을 부르게 이어 쓸 것
   (한 문장씩 독립된 정보를 나열하지 말 것 — 그게 '요약체'가 되는 원인).
-  해시태그는 쓰지 말 것(시스템이 붙임). 이모지는 절제.
+  **한 문단은 3문장 이하.** 4문장을 넘기면 폰에서 글자 벽으로 보여 그냥 넘긴다.
+  ③은 ②에서 이미 말한 내용을 다시 정리하는 자리가 아니다. ②에 결론을 미리 쓰지 말 것 —
+  "핵심은/진짜 포인트는" 류의 뒤집기 표현은 **캡션 전체에서 한 번만** 쓴다.
+  ⚠️ **마크다운을 쓰지 말 것** — 인스타는 렌더하지 않아 기호가 그대로 노출된다.
+  백틱(\`code\`)·**굵게**·_기울임_·[링크](url)·머리말 # 전부 금지.
+  명령어나 코드를 언급해야 하면 기호 없이 평문으로 쓸 것 (예: caffeinate 명령어로는, pmset 설정은).
+  해시태그는 캡션 본문에 쓰지 말 것(시스템이 붙임). 이모지는 절제.
+- topicTags: 이 소재를 가리키는 **구체** 해시태그 2~3개 (#포함, 공백 없이). 브랜드·분류 태그는 시스템이 붙이므로 내지 말 것.
+  소재의 고유명사·도구·상황을 담을 것 (예: #AI에이전트 #맥북활용 #클로드코드).
+  ❌ #AI활용 #일잘러 #업무효율 #생산성 같은 초대형 범용어 금지 — 노출 기여가 없고 매 게시물 같은 태그는 스팸 신호가 된다.
 - threadsText: 스레드 네이티브 톤으로 재작성한 글 300~450자 — 대화하듯, 핵심 발견 1~2개 + 솔직 후기 한 줄. 링크는 쓰지 말 것(시스템이 붙임).
 - metaphorQueries: 커버 배경 이미지 검색어 3개 — 제목·후킹 문장 속 "구체적 사물/장면"을 영어로 (주제어 말고 명사. 예: "airplane cabin aisle interior", "colored pencils macro"). 구체 명사가 없으면 개념을 사물로 치환(집중→과녁, 선택→갈림길). 어둡고 대비 강한 톤 선호("dark", "moody", "silhouette" 등 톤 단어 1개 포함), 알아볼 수 있는 얼굴은 피할 것(뒷모습·손·오브젝트 위주).
 
@@ -431,7 +490,7 @@ ${TEMPLATE_SPECS}
 - 사진이 필요 없거나 떠오르지 않으면 imageQueries를 생략하세요(그라데이션으로 렌더됨)
 
 [출력 — JSON 하나만, 설명 없이]
-{"edge":"이 콘텐츠의 엣지 한 줄","ctaKeyword":"댓글 키워드(comment_dm일 때)","slides":[{"template":"C1","sourceSection":"계획의 sourceSection 그대로","props":{...},"imageQueries":["1순위","2순위","3순위"]} 또는 {"skip":true,"sourceSection":"..."}, ...],"igCaption":"...","threadsText":"...","metaphorQueries":["...","...","..."]}
+{"edge":"이 콘텐츠의 엣지 한 줄","ctaKeyword":"댓글 키워드(comment_dm일 때)","slides":[{"template":"C1","sourceSection":"계획의 sourceSection 그대로","props":{...},"imageQueries":["1순위","2순위","3순위"]} 또는 {"skip":true,"sourceSection":"..."}, ...],"igCaption":"...","topicTags":["#소재태그2~3개"],"threadsText":"...","metaphorQueries":["...","...","..."]}
 슬라이드 배열의 순서·개수는 계획과 1:1 동일해야 합니다(선정 제외는 skip 객체로 자리를 지킬 것).`;
 
 function planPrompt(
@@ -964,13 +1023,13 @@ ${lastIssues.map((i) => `- ${i}`).join('\n')}`;
     throw new Error(`카드 생성 실패: ${lastIssues.slice(0, 5).join(' / ') || 'AI 응답 파싱 불가'}`);
   }
 
-  const tags = [...FIXED_TAGS, ...CATEGORY_TAGS[plan.accent]];
+  const baseTags = [...FIXED_TAGS, ...CATEGORY_TAGS[plan.accent]];
+  const tags = [...baseTags, ...normalizeTopicTags(lastRaw.topicTags, baseTags)];
   // 씨앗 소스는 본가 페이지가 없음 — 스레드에 URL을 붙이지 않는다
   const url = sourceUrl(source);
+  const threadsBody = stripMarkdown(lastRaw.threadsText); // 스레드도 마크다운 미렌더
   const threads =
-    !url || lastRaw.threadsText.includes(url)
-      ? lastRaw.threadsText.trim()
-      : `${lastRaw.threadsText.trim()}\n\n👉 전체 과정: ${url}`;
+    !url || threadsBody.includes(url) ? threadsBody : `${threadsBody}\n\n👉 전체 과정: ${url}`;
   const ctaKeyword = opts?.ctaKeyword?.trim() || lastRaw.ctaKeyword?.trim() || '프롬프트';
   const metaphorQueries = lastRaw.metaphorQueries ?? [];
 
@@ -983,7 +1042,7 @@ ${lastIssues.map((i) => `- ${i}`).join('\n')}`;
     slides: finalSlides,
     extractedImages: plan.images,
     photoCredits,
-    igCaption: `${lastRaw.igCaption.trim()}\n\n${tags.join(' ')}`,
+    igCaption: `${stripMarkdown(lastRaw.igCaption)}\n\n${tags.join(' ')}`,
     threadsText: threads,
     metaphorQueries,
     edge: opts?.edge?.trim() || lastRaw.edge.trim(),
