@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>ai.caselab.collect-poller</string>
+
+    <!-- admin '지금 수집 요청' 큐를 소진하는 폴러. HERMES default 게이트웨이의 cron tick에
+         의존하던 것을 launchd 독립 실행으로 분리(게이트웨이가 2026-07-16 비정상 종료 후
+         한 달간 미등록 상태여서 버튼이 동작하지 않았음).
+         저장소 문서: caselab_admin/scripts/README-collect-poller.md "launchd 대안" 절. -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/amanda/.hermes/hermes-agent/venv/bin/python</string>
+        <string>/Users/amanda/.hermes/scripts/caselab_collect_poller.py</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/amanda/.hermes</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <!-- launchd는 PATH가 최소라 hermes 바이너리를 절대경로로 찾게 해준다
+             (폴러의 hermes_bin()이 shutil.which → ~/.local/bin 순으로 해석). -->
+        <key>PATH</key>
+        <string>/Users/amanda/.hermes/hermes-agent/venv/bin:/Users/amanda/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+        <key>HERMES_HOME</key>
+        <string>/Users/amanda/.hermes</string>
+    </dict>
+
+    <!-- 로그인 직후 1회 + 10분 간격. 큐가 비어 있으면 몇 초 만에 종료(비용 0). -->
+    <key>RunAtLoad</key>
+    <true/>
+    <key>StartInterval</key>
+    <integer>600</integer>
+
+    <!-- 봇 수집은 프로필당 10분 이상 걸릴 수 있다. 겹쳐 뜨지 않게 상주 금지 + 폴러 자체 락으로 이중 방어. -->
+    <key>KeepAlive</key>
+    <false/>
+
+    <key>StandardOutPath</key>
+    <string>/Users/amanda/.hermes/logs/caselab-collect-poller.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/amanda/.hermes/logs/caselab-collect-poller.error.log</string>
+</dict>
+</plist>

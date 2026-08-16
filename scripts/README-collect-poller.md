@@ -57,7 +57,27 @@ hermes cron create --name caselab-collect-poller \
 
 버튼은 논블로킹: 요청 후 화면을 떠나도 되고, 완료되면 목록이 자동 새로고침된다(10초 폴링).
 
-### launchd 대안(게이트웨이 tick이 불안정할 때)
+### launchd 독립 실행 (2026-08-16~ 현행)
 
-hermes 게이트웨이가 항상 떠 있지 않으면, launchd로 `RunAtLoad`(로그인 즉시 1회)+`StartInterval=600`을
-걸어 독립 실행할 수 있다. `python3 ~/.hermes/scripts/caselab_collect_poller.py`를 실행하는 LaunchAgent plist.
+**HERMES 크론 tick에 의존하지 않는다.** default 프로필 게이트웨이가 2026-07-16 비정상 종료
+(`~/.hermes/logs/gateway-exit-diag.log`의 `gateway.exit_nonzero`) 후 launchctl에 재등록되지 않아
+**한 달간 버튼이 조용히 죽어 있었다.** 폴러 잡(`caselab-collect-poller`, `*/3`)은 `enabled=True`로
+멀쩡했지만 tick을 돌릴 주체가 없었다 — 즉 `cron list`만 봐서는 정상으로 보이는 고장이다.
+
+그래서 폴러만 launchd로 분리했다: `~/Library/LaunchAgents/ai.caselab.collect-poller.plist`
+(`RunAtLoad` + `StartInterval=600`, `KeepAlive=false`). 프로필별 봇 게이트웨이와 무관하게 돈다.
+
+```bash
+launchctl list | grep caselab                 # 등록 확인 (PID '-' + exit 0 = 정상 종료)
+launchctl kickstart -k gui/$(id -u)/ai.caselab.collect-poller   # 즉시 1회 실행
+tail -f ~/.hermes/logs/caselab-collect-poller.log
+launchctl bootout gui/$(id -u)/ai.caselab.collect-poller        # 해제
+```
+
+**증상별 진단**
+
+| 증상 | 확인 | 원인 |
+|---|---|---|
+| 버튼 눌러도 "수집 대기 중"에서 안 넘어감 | `seed_collect_requests`에 `pending`이 쌓이고 `claimed_at`이 계속 null | 폴러가 안 돔 → 위 `launchctl list` 확인 |
+| `hermes cron list`는 정상인데 안 돌아감 | `launchctl list \| grep hermes`에 해당 프로필 게이트웨이가 있는지 | 게이트웨이 죽음 (cron 잡 상태로는 안 보임) |
+| claim은 되는데 씨앗이 안 늘어남 | 봇 잡의 preamble·toolsets·approvals (docs/HERMES_CONNECT_RUNBOOK.md 2.5절) | 봇 쪽 문제 |
