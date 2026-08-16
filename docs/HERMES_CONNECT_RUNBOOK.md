@@ -142,6 +142,8 @@ curl -s "$NEXT_PUBLIC_SUPABASE_URL/rest/v1/content_seeds?select=created_at,lane,
 | `401 unauthorized` | 토큰 불일치/누락 | 프로필 `.env`와 Vercel의 `HERMES_INGEST_TOKEN` 값 대조 |
 | `RuntimeError: Connection error.` | 잡 실행 시점에 맥 네트워크/DNS 미연결(슬립 후 캐치업 실행 포함) | 네트워크 확인 후 `cron run <잡ID>` 수동 재실행. errors.log에 같은 시각 Telegram DNS 에러가 같이 찍히면 확정 |
 | `Codex stream produced no bytes within 45s` | openai-codex 프로바이더 TTFB 타임아웃(일시) | 재실행. 반복되면 프로필 config.yaml의 모델/프로바이더 점검 |
+| 전 봇이 `401 token_expired` | HERMES 자격증명 만료 | 아래 "인증 만료" 절 — `codex login`으로는 안 고쳐진다 |
+| `429 The usage limit has been reached` | 계정 사용량 한도(인증은 정상) | 리셋 대기, 또는 다른 계정을 풀에 추가 |
 | 수집은 했는데 적재 안 됨 | 잡에 `terminal` 툴셋 없음 | jobs.json에 `enabled_toolsets: ["web","terminal"]` |
 | 수집도 안 하고 "잡을 수정했다"고 보고 | 프롬프트에 크론 preamble 없음 | 위 2.5절 — preamble을 프롬프트 맨 앞에 |
 | `BLOCKED: User denied this command` (정확히 60초 후) | `approvals.mode: manual` + 승인 요청이 텔레그램으로 가서 만료 | 위 2.5절 — `approvals.mode`를 off로 |
@@ -149,6 +151,43 @@ curl -s "$NEXT_PUBLIC_SUPABASE_URL/rest/v1/content_seeds?select=created_at,lane,
 | 적재됐는데 인박스에 안 보임 | 미채점 (정상 동작) | 로컬 admin에서 채점 실행. 72h 창·60점 컷도 확인 |
 | `inserted`가 보낸 수보다 적음 | dedup 차단 (정상) | 조치 불필요 |
 | source_type이 `slack-brief` | lane 오타 또는 미등록 lane | 프롬프트 lane 이름 확인 / `LANE_SOURCE` 등록 |
+
+## 인증 만료 — 전 봇이 401로 죽을 때 (2026-08-16 실측)
+
+증상: 모든 레인이 즉시 `rc=1`, stderr에 `401 token_expired` 또는 `unauthorized_unknown`.
+매일 08:00 크론도 '지금 수집 요청'도 전부 실패한다. 씨앗이 안 쌓이는 것 말고 다른 신호가 없다.
+
+**함정 3개**
+
+1. **`codex login`으로는 안 고쳐진다.** 그건 `~/.codex/auth.json`(codex CLI 전용)만 갱신한다.
+   HERMES는 `~/.hermes/auth.json`의 `credential_pool.openai-codex`를 따로 쓴다.
+2. **`hermes auth status openai-codex`가 `logged in`이라고 답한다.** 풀에 항목이 있는지만 보고
+   만료는 검사하지 않는다 — 이 명령으로는 이번 고장을 못 잡는다. 토큰 exp를 직접 까봐야 한다.
+3. **프로필마다 `auth.json`이 따로다.** `hermes auth add`는 실행한 HERMES_HOME에만 저장되므로,
+   글로벌에 추가해도 봇 프로필은 계속 만료본을 쓴다. 프로필 수만큼 재로그인하거나 아래처럼 배포해야 한다.
+
+```bash
+# ① 만료 확인 (전 프로필)
+python3 - <<'EOF'
+import json,os,base64,time,glob
+def exp(c):
+    t=c.get('access_token','');  p=t.split('.')[1]; p+='='*(-len(p)%4)
+    return json.loads(base64.urlsafe_b64decode(p)).get('exp',0)
+for f in [os.path.expanduser('~/.hermes/auth.json')]+glob.glob(os.path.expanduser('~/.hermes/profiles/*/auth.json')):
+    pool=json.load(open(f)).get('credential_pool',{}).get('openai-codex',[])
+    print(f, [('유효' if exp(c)>time.time() else '만료') for c in pool])
+EOF
+
+# ② 새 자격증명 1회 발급 (디바이스 코드 — 브라우저에서 코드 입력)
+cd ~/.hermes/hermes-agent && HERMES_HOME=~/.hermes PYTHONUNBUFFERED=1 \
+  venv/bin/python -m hermes_cli.main auth add openai-codex --type oauth --no-browser --label $(date +%Y-%m-%d)
+# PYTHONUNBUFFERED=1 없으면 URL·코드가 버퍼링돼 안 보인다. 승인 대기가 2분을 넘으니 백그라운드로 띄울 것.
+
+# ③ 유효한 것만 전 프로필에 배포 (①의 스크립트를 쓰기 모드로 — 백업 필수)
+```
+
+`hermes login`은 제거됐다(`auth add`로 대체). 배포 후 스모크 테스트:
+`hermes --profile <봇> chat -Q -q "'인증OK'라고만 답해라. 도구 사용 금지."`
 
 ## 참조
 
