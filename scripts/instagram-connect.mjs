@@ -1,25 +1,28 @@
 #!/usr/bin/env node
 /**
- * Instagram 발행 연결 — 토큰 발급 뒷정리 · 검증 · 등록을 한 번에.
+ * Instagram 발행 연결 — 토큰 뒷정리 · 검증 · 갱신 · 등록.
  *
- * 왜: lib/cardpress/publish.ts 의 캐러셀 발행 코드는 완성돼 있고 막히는 건 자격증명 2개
- *   (INSTAGRAM_USER_ID / INSTAGRAM_ACCESS_TOKEN)뿐이다. 그런데 이 2개를 손으로 만들면
- *   조용히 틀리는 지점이 셋이다.
- *   ① IG 계정 id ≠ 페이지 id ≠ IG 로그인 id — 눈으로 구분이 안 돼 엉뚱한 id를 넣고
- *      발행 때 "Unsupported get request"만 본다.
- *   ② 그래프 탐색기가 주는 토큰은 1~2시간짜리다. 오늘 발행에 성공하고 내일 실패한다.
- *   ③ instagram_content_publish 권한이 빠져도 다른 호출은 전부 성공한다 → 발행 순간에만 터진다.
- *   그래서 사람이 하는 일은 "그래프 탐색기에서 토큰 복사" 하나로 줄이고, 나머지(장기 토큰 교환·
- *   페이지/IG 계정 탐색·권한 점검·env 기록·Vercel 등록)는 전부 여기서 한다.
+ * 경로: **Instagram API with Instagram Login** (`graph.instagram.com`).
+ *   원래는 Facebook Login(`graph.facebook.com`) 경로로 만들었는데, 신규 앱의
+ *   "Facebook Login for Business" 구성에서 인스타 권한이 아예 검색되지 않아(No matching results)
+ *   2026-08-15 이쪽으로 전환했다. 발행 엔드포인트는 양쪽이 동일해서 lib/cardpress/publish.ts는
+ *   호스트 한 줄만 바뀌었다.
+ *
+ * 왜 스크립트가 필요한가 — 손으로 하면 조용히 틀리는 지점이 셋이다.
+ *   ① 대시보드가 주는 토큰이 단기일 수 있다. 오늘 발행되고 내일 실패한다.
+ *   ② IG 사용자 id는 화면에 안 보인다. 페이지 id·IG 로그인 id와 헷갈려 엉뚱한 값을 넣기 쉽다.
+ *   ③ instagram_business_content_publish가 빠져도 프로필 조회는 성공한다 → 발행 순간에만 터진다.
+ *   그래서 사람이 하는 일은 "대시보드에서 토큰 복사" 하나로 줄이고 나머지는 여기서 한다.
  *
  * 사용:
- *   node scripts/instagram-connect.mjs --token "EAAB..." --app-id <id> --app-secret <secret> --write
- *      → 장기 토큰 교환 + IG 계정 자동 탐색 + 권한 점검 + .env.local 기록
+ *   node scripts/instagram-connect.mjs --token "IGAA..." [--app-secret <시크릿>] --write
+ *      → 장기 토큰 교환(가능하면) + IG id 자동 조회 + 발행 권한 실호출 검증 + .env.local 기록
  *   node scripts/instagram-connect.mjs --verify
- *      → .env.local(또는 현재 env)의 값으로 실제 호출해 발행 가능 상태인지 확인
+ *      → 현재 값으로 실제 발행이 되는 상태인지 확인 (만료 임박도 경고)
+ *   node scripts/instagram-connect.mjs --refresh
+ *      → 60일 토큰을 60일 더 연장하고 .env.local 갱신 (만료 24시간 전~60일 사이에만 가능)
  *   node scripts/instagram-connect.mjs --push-vercel
- *      → .env.local 값을 Vercel(caselab-admin) 환경변수에 등록. VERCEL_TOKEN 필요.
- *        (Vercel CLI는 stdin으로 값을 받을 때 깨지는 버그가 있어 REST API로 넣는다)
+ *      → .env.local 값을 Vercel(caselab-admin)에 등록. 로컬 전용 운영이면 쓸 일 없다.
  *
  * 토큰은 화면에 마스킹해서만 찍는다. 전체 값은 .env.local 에만 들어간다.
  */
@@ -28,17 +31,10 @@ import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
-const GRAPH = 'https://graph.facebook.com/v21.0';
+const IG = 'https://graph.instagram.com';
+const IG_V = `${IG}/v21.0`;
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const ENV_PATH = path.join(ROOT, '.env.local');
-
-// 발행에 실제로 필요한 권한. 이 중 하나라도 빠지면 발행 순간에만 실패한다.
-const REQUIRED_SCOPES = [
-  'instagram_basic',
-  'instagram_content_publish',
-  'pages_show_list',
-  'pages_read_engagement',
-];
 
 const args = process.argv.slice(2);
 const has = (n) => args.includes(n);
@@ -51,11 +47,12 @@ const mask = (t) => (t && t.length > 16 ? `${t.slice(0, 8)}…${t.slice(-4)}` : 
 const ok = (m) => console.log(`  ✅ ${m}`);
 const warn = (m) => console.log(`  ⚠️  ${m}`);
 const fail = (m) => console.log(`  ❌ ${m}`);
+const days = (sec) => Math.round(sec / 86400);
 
 // ── Graph 호출 ─────────────────────────────────────────────
-async function graph(pathname, params = {}) {
+async function ig(url, params = {}) {
   const qs = new URLSearchParams(params).toString();
-  const res = await fetch(`${GRAPH}/${pathname}${qs ? `?${qs}` : ''}`);
+  const res = await fetch(`${url}${qs ? `?${qs}` : ''}`);
   const data = await res.json();
   if (!res.ok || data.error) {
     const e = data.error ?? {};
@@ -95,128 +92,99 @@ async function writeEnvLocal(pairs) {
   await writeFile(ENV_PATH, raw, 'utf8');
 }
 
-// ── 1) 연결: 토큰 → 장기 토큰 → IG 계정 탐색 ───────────────
-async function connect() {
-  const shortToken = argOf('--token');
-  if (!shortToken) {
-    console.error('--token 이 필요합니다. docs/10_instagram_connect_runbook.md 1~4단계 참고.');
-    process.exit(1);
-  }
-  const appId = argOf('--app-id', process.env.META_APP_ID);
-  const appSecret = argOf('--app-secret', process.env.META_APP_SECRET);
-
-  console.log('\n[1/4] 토큰 점검');
-  let token = shortToken;
-  let info;
-  try {
-    info = (await graph('debug_token', { input_token: token, access_token: token })).data;
-  } catch (e) {
-    fail(`토큰이 유효하지 않습니다 — ${e.message}`);
-    console.log('     그래프 탐색기에서 토큰을 다시 생성해 주세요(만료됐을 가능성이 큽니다).');
-    process.exit(1);
-  }
-  const scopes = info.scopes ?? [];
-  const missing = REQUIRED_SCOPES.filter((s) => !scopes.includes(s));
-  ok(`앱 ${info.app_id} · 토큰 ${mask(token)}`);
-  if (missing.length) {
-    fail(`권한 누락: ${missing.join(', ')}`);
-    console.log('     그래프 탐색기 → Permissions 에서 위 권한을 체크하고 Generate Access Token 을 다시 누르세요.');
-    process.exit(1);
-  }
-  ok(`권한 ${REQUIRED_SCOPES.length}종 모두 있음`);
-  const expiresAt = info.expires_at ? new Date(info.expires_at * 1000) : null;
-  if (expiresAt) warn(`현재 토큰 만료: ${expiresAt.toLocaleString('ko-KR')} — 장기 토큰으로 교환합니다`);
-
-  console.log('\n[2/4] 장기 토큰 교환');
-  if (appId && appSecret) {
-    try {
-      const ex = await graph('oauth/access_token', {
-        grant_type: 'fb_exchange_token',
-        client_id: appId,
-        client_secret: appSecret,
-        fb_exchange_token: token,
-      });
-      token = ex.access_token;
-      ok(`60일짜리 사용자 토큰으로 교환 (${mask(token)})`);
-    } catch (e) {
-      fail(`교환 실패 — ${e.message}`);
-      warn('단기 토큰으로 계속 진행합니다. 몇 시간 뒤 발행이 실패합니다.');
-    }
-  } else {
-    warn('--app-id / --app-secret 없음 → 교환 생략. 장기 토큰이 아니면 곧 만료됩니다.');
-    warn('앱 대시보드 → 설정 → 기본 설정 에서 앱 ID·시크릿 코드를 확인해 다시 실행하세요.');
-  }
-
-  console.log('\n[3/4] Instagram 비즈니스 계정 탐색');
-  const pages = await graph('me/accounts', {
-    fields: 'id,name,access_token,instagram_business_account{id,username,name}',
-    access_token: token,
-    limit: '100',
-  });
-  const linked = (pages.data ?? []).filter((p) => p.instagram_business_account);
-  if (!linked.length) {
-    fail('IG 비즈니스 계정이 연결된 페이스북 페이지를 찾지 못했습니다.');
-    console.log(`     보이는 페이지: ${(pages.data ?? []).map((p) => p.name).join(', ') || '없음'}`);
-    console.log('     → Instagram 앱에서 프로페셔널 계정 전환 + 페이스북 페이지 연결이 선행돼야 합니다.');
-    console.log('       (docs/10_instagram_connect_runbook.md 1단계)');
-    process.exit(1);
-  }
-  linked.forEach((p, i) =>
-    console.log(`  ${i + 1}) 페이지 "${p.name}" → @${p.instagram_business_account.username} (id ${p.instagram_business_account.id})`)
-  );
-  const wantUser = argOf('--ig-username');
-  const picked = wantUser
-    ? linked.find((p) => p.instagram_business_account.username === wantUser.replace(/^@/, ''))
-    : linked[0];
-  if (!picked) {
-    fail(`@${wantUser} 를 위 목록에서 찾지 못했습니다.`);
-    process.exit(1);
-  }
-  if (linked.length > 1 && !wantUser)
-    warn(`계정이 여러 개라 1번을 골랐습니다. 다른 계정이면 --ig-username @핸들 로 다시 실행하세요.`);
-
-  const igId = picked.instagram_business_account.id;
-  // 페이지 토큰(장기 사용자 토큰에서 파생된 것)은 만료가 없다 → 발행용으로 이쪽이 낫다.
-  const finalToken = picked.access_token ?? token;
-  const tokenKind = picked.access_token ? '페이지 토큰(만료 없음)' : '사용자 토큰';
-  ok(`선택: @${picked.instagram_business_account.username} (id ${igId}) · ${tokenKind}`);
-
-  console.log('\n[4/4] 발행 가능 여부 확인');
-  await probe(igId, finalToken);
-
-  if (has('--write')) {
-    await writeEnvLocal({ INSTAGRAM_USER_ID: igId, INSTAGRAM_ACCESS_TOKEN: finalToken });
-    // Next dev는 .env.local 변경을 자동 리로드한다(터미널 "Reload env" 로그) — 재시작 안내는 과잉.
-    ok(`.env.local 기록 완료 — dev 서버가 자동 리로드합니다("Reload env" 로그 확인)`);
-    console.log('\n다음: node scripts/instagram-connect.mjs --verify  (발행 가능 상태 재확인)');
-  } else {
-    console.log('\n아래를 .env.local 에 넣으세요 (또는 --write 로 자동 기록):');
-    console.log(`INSTAGRAM_USER_ID=${igId}`);
-    console.log(`INSTAGRAM_ACCESS_TOKEN=${finalToken}`);
-  }
+/** 만료 시각을 사람이 읽는 값으로. Instagram Login 토큰은 expires_in(초)만 준다. */
+function stampExpiry(expiresInSec) {
+  const at = new Date(Date.now() + expiresInSec * 1000);
+  return at.toISOString();
 }
 
-// ── 2) 검증: 지금 값으로 실제 발행이 되는 상태인가 ─────────
-async function probe(igId, token) {
-  const me = await graph(igId, { fields: 'id,username,name,followers_count', access_token: token });
-  ok(`계정 조회 성공 — @${me.username}${me.followers_count != null ? ` (팔로워 ${me.followers_count})` : ''}`);
+// ── 공통: 계정 조회 + 발행 권한 실호출 ─────────────────────
+async function probe(token) {
+  let me;
   try {
-    const limit = await graph(`${igId}/content_publishing_limit`, {
+    me = await ig(`${IG_V}/me`, { fields: 'id,username,account_type', access_token: token });
+  } catch (e) {
+    // 여기서 죽으면 대개 토큰 문제다. 원문(Failed to decrypt 등)만 던지면 뭘 해야 할지 안 보인다.
+    fail(`토큰이 유효하지 않습니다 — ${e.message}`);
+    console.log('     앱 대시보드 → Use cases → Customize → "2. Generate access tokens" 에서');
+    console.log('     토큰을 다시 발급받아 복사 누락 없이 넣어주세요.');
+    return null;
+  }
+  ok(`계정 조회 성공 — @${me.username} (id ${me.id}${me.account_type ? ` · ${me.account_type}` : ''})`);
+  try {
+    const limit = await ig(`${IG_V}/${me.id}/content_publishing_limit`, {
       fields: 'config,quota_usage',
       access_token: token,
     });
     const row = limit.data?.[0];
-    if (row)
-      ok(`발행 쿼터 ${row.quota_usage ?? 0}/${row.config?.quota_total ?? 100} (24시간 기준) — 발행 권한 확인됨`);
+    ok(
+      `발행 쿼터 ${row?.quota_usage ?? 0}/${row?.config?.quota_total ?? 100} (24시간 기준) — 발행 권한 확인됨`
+    );
+    return me;
   } catch (e) {
-    // 이 호출이 막히면 instagram_content_publish 가 없다는 뜻 → 발행에서 터진다.
+    // 이 호출이 막히면 instagram_business_content_publish가 없다는 뜻 → 발행에서만 터진다.
     fail(`발행 쿼터 조회 실패 — ${e.message}`);
-    fail('instagram_content_publish 권한이 실제로는 없을 가능성이 높습니다. 발행이 실패합니다.');
-    return false;
+    fail('instagram_business_content_publish 권한이 실제로는 없을 가능성이 높습니다.');
+    console.log(
+      '     앱 대시보드 → Use cases → Customize → 권한 목록에서 추가한 뒤 토큰을 다시 발급하세요.'
+    );
+    return null;
   }
-  return true;
 }
 
+// ── 1) 연결 ────────────────────────────────────────────────
+async function connect() {
+  const shortToken = argOf('--token');
+  if (!shortToken) {
+    console.error('--token 이 필요합니다. docs/10_instagram_connect_runbook.md C단계 참고.');
+    process.exit(1);
+  }
+  const appSecret = argOf('--app-secret', process.env.META_APP_SECRET);
+
+  console.log('\n[1/3] 장기 토큰 교환');
+  let token = shortToken;
+  let expiresIn = null;
+  if (appSecret) {
+    try {
+      const ex = await ig(`${IG}/access_token`, {
+        grant_type: 'ig_exchange_token',
+        client_secret: appSecret,
+        access_token: token,
+      });
+      token = ex.access_token;
+      expiresIn = ex.expires_in;
+      ok(`장기 토큰 확보 — ${days(expiresIn)}일 유효 (${mask(token)})`);
+    } catch (e) {
+      // 대시보드가 이미 장기 토큰을 준 경우 여기서 "already long-lived" 류로 거절된다 → 정상.
+      warn(`교환 생략 — ${e.message}`);
+      warn('대시보드가 이미 장기 토큰을 줬다면 정상입니다. 아래 검증에서 만료일을 확인하세요.');
+    }
+  } else {
+    warn('--app-secret 없음 → 장기 토큰 교환 생략.');
+    warn('대시보드 토큰이 단기면 몇 시간 뒤 발행이 실패합니다. App settings → Basic 의 시크릿을 넣고 다시 실행하세요.');
+  }
+
+  console.log('\n[2/3] 계정 조회 + 발행 권한 확인');
+  const me = await probe(token);
+  if (!me) process.exit(1);
+
+  console.log('\n[3/3] 기록');
+  if (has('--write')) {
+    const pairs = { INSTAGRAM_USER_ID: me.id, INSTAGRAM_ACCESS_TOKEN: token };
+    if (expiresIn) pairs.INSTAGRAM_TOKEN_EXPIRES_AT = stampExpiry(expiresIn);
+    await writeEnvLocal(pairs);
+    ok('.env.local 기록 완료 — dev 서버가 자동 리로드합니다("Reload env" 로그 확인)');
+    console.log('\n다음: node scripts/instagram-connect.mjs --verify');
+    if (expiresIn)
+      console.log(`갱신: ${days(expiresIn)}일 안에 node scripts/instagram-connect.mjs --refresh`);
+  } else {
+    console.log('\n아래를 .env.local 에 넣으세요 (또는 --write 로 자동 기록):');
+    console.log(`INSTAGRAM_USER_ID=${me.id}`);
+    console.log(`INSTAGRAM_ACCESS_TOKEN=${token}`);
+  }
+}
+
+// ── 2) 검증 ────────────────────────────────────────────────
 async function verify() {
   const env = { ...(await readEnvLocal()), ...process.env };
   const igId = env.INSTAGRAM_USER_ID;
@@ -224,30 +192,60 @@ async function verify() {
   console.log('\nInstagram 발행 자격증명 검증');
   if (!igId || !token) {
     fail('INSTAGRAM_USER_ID / INSTAGRAM_ACCESS_TOKEN 미설정 — 아직 연결 전입니다.');
-    console.log('     node scripts/instagram-connect.mjs --token "..." --app-id ... --app-secret ... --write');
+    console.log('     node scripts/instagram-connect.mjs --token "IGAA..." --app-secret ... --write');
     process.exit(1);
   }
   ok(`id ${igId} · 토큰 ${mask(token)}`);
-  try {
-    const info = (await graph('debug_token', { input_token: token, access_token: token })).data;
-    if (info.expires_at === 0) ok('토큰 만료 없음(페이지 토큰)');
-    else if (info.expires_at) {
-      const d = new Date(info.expires_at * 1000);
-      const days = Math.round((d - new Date()) / 86400000);
-      (days < 7 ? warn : ok)(`토큰 만료 ${d.toLocaleDateString('ko-KR')} (${days}일 남음)`);
-    }
-    const missing = REQUIRED_SCOPES.filter((s) => !(info.scopes ?? []).includes(s));
-    if (missing.length) fail(`권한 누락: ${missing.join(', ')}`);
-  } catch (e) {
-    warn(`토큰 메타 조회 생략 — ${e.message}`);
+
+  const expAt = env.INSTAGRAM_TOKEN_EXPIRES_AT;
+  if (expAt) {
+    const left = Math.round((new Date(expAt) - new Date()) / 86400000);
+    if (left < 0) fail(`토큰 만료됨 (${expAt}) — --refresh 로는 못 살립니다. 대시보드에서 재발급하세요.`);
+    else if (left < 10) warn(`토큰 만료까지 ${left}일 — 지금 --refresh 하세요`);
+    else ok(`토큰 만료까지 ${left}일`);
+  } else {
+    warn('만료일 기록 없음 — --refresh 로 갱신하면 이후부터 기록됩니다');
   }
-  const good = await probe(igId, token);
-  console.log(good ? '\n발행 준비 완료.\n' : '\n발행 불가 — 위 항목을 고쳐야 합니다.\n');
-  if (!good) process.exit(1);
+
+  const me = await probe(token);
+  if (!me) {
+    console.log('\n발행 불가 — 위 항목을 고쳐야 합니다.\n');
+    process.exit(1);
+  }
+  if (me.id !== igId)
+    warn(`env의 id(${igId})와 토큰의 실제 계정 id(${me.id})가 다릅니다 — --write 로 다시 기록하세요`);
+  console.log('\n발행 준비 완료.\n');
 }
 
-// ── 3) Vercel 등록 ─────────────────────────────────────────
-/** 이미 `vercel login` 을 했다면 CLI가 저장해둔 토큰을 재사용한다 — 토큰 재발급 단계를 없앤다. */
+// ── 3) 토큰 갱신 (60일 연장) ───────────────────────────────
+async function refresh() {
+  const env = await readEnvLocal();
+  const token = env.INSTAGRAM_ACCESS_TOKEN;
+  console.log('\nInstagram 토큰 갱신');
+  if (!token) {
+    fail('.env.local 에 INSTAGRAM_ACCESS_TOKEN 이 없습니다.');
+    process.exit(1);
+  }
+  try {
+    const r = await ig(`${IG}/refresh_access_token`, {
+      grant_type: 'ig_refresh_token',
+      access_token: token,
+    });
+    await writeEnvLocal({
+      INSTAGRAM_ACCESS_TOKEN: r.access_token,
+      INSTAGRAM_TOKEN_EXPIRES_AT: stampExpiry(r.expires_in),
+    });
+    ok(`${days(r.expires_in)}일 연장 완료 (${mask(r.access_token)})`);
+    console.log('  .env.local 갱신됨 — dev 서버 자동 리로드\n');
+  } catch (e) {
+    fail(`갱신 실패 — ${e.message}`);
+    console.log('     갱신은 발급 후 24시간이 지난 유효 토큰에만 됩니다.');
+    console.log('     이미 만료됐다면 앱 대시보드 → Use cases → Generate access tokens 에서 재발급하세요.');
+    process.exit(1);
+  }
+}
+
+// ── 4) Vercel 등록 (로컬 전용 운영이면 불필요) ─────────────
 async function vercelToken() {
   if (process.env.VERCEL_TOKEN) return process.env.VERCEL_TOKEN;
   const candidates = [
@@ -271,7 +269,6 @@ async function pushVercel() {
   const token = await vercelToken();
   if (!token) {
     fail('Vercel 토큰을 찾지 못했습니다 — `vercel login` 을 하거나');
-    console.log('     https://vercel.com/account/tokens 에서 발급 후');
     console.log('     VERCEL_TOKEN=... node scripts/instagram-connect.mjs --push-vercel');
     process.exit(1);
   }
@@ -300,11 +297,18 @@ async function pushVercel() {
     if (!res.ok) fail(`${key} 등록 실패 — ${data.error?.message ?? res.status}`);
     else ok(`${key} 등록 (${proj.projectName})`);
   }
-  console.log('\n반영하려면 재배포가 필요합니다: vercel --prod\n');
+  console.log('\n반영하려면 재배포가 필요합니다: vercel --prod');
+  warn('60일마다 --refresh 후 --push-vercel 을 다시 해야 prod가 안 죽습니다.\n');
 }
 
 // ── 진입점 ─────────────────────────────────────────────────
-const mode = has('--verify') ? verify : has('--push-vercel') ? pushVercel : connect;
+const mode = has('--verify')
+  ? verify
+  : has('--refresh')
+    ? refresh
+    : has('--push-vercel')
+      ? pushVercel
+      : connect;
 mode().catch((e) => {
   console.error(`\n실패: ${e.message}\n`);
   process.exit(1);

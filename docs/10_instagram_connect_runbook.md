@@ -68,16 +68,22 @@ A. 인스타 계정 공사 ........ ✅ 완료 (2026-08-15)
    A1 프로페셔널 전환 ..... ✅ 크리에이터 / 디지털 크리에이터
    A2 페이스북 페이지 연결 . ✅ 페이지 "Caselab" ↔ @caselab_ai_ (개인 FB 계정 소유)
    A3 확인 ................ ✅ Settings → Linked accounts 에 연결 확인
-B. Meta 개발자 앱 (10분)    ⬜ ← 여기부터. 카드뉴스 발행 전용
-C. 토큰 → 스크립트 (3분)    ⬜ 사람이 하는 마지막 수동 단계
-D. 첫 발행 (5분)            ⬜
+B. Meta 개발자 앱 .......... ✅ 완료 (앱 caselab-cardpress · Instagram use case)
+C. 토큰 → 스크립트 ......... ✅ 완료 — @caselab_ai_ (id 28235322696154850, BUSINESS)
+                              발행 쿼터 0/100 확인 · 토큰 60일 · 만료일 .env.local 기록
+D. 첫 발행 ................. 🔸 dryRun 통과(9장 렌더·업로드·공개 URL 200). 실게시만 남음
 F. 리틀리 자동DM (5분)      ⬜ 지금 바로 가능 (A만 필요 · B·C와 독립)
 ```
 
-남은 시간 ≈ **20분**. 리틀리(F)는 이미 붙일 수 있는 상태.
+**연결은 끝났다.** 남은 건 실제 게시 버튼과 리틀리(F)뿐.
 
-> B~C는 반드시 **A2의 페이지를 만든 그 페이스북 개인 계정**으로 진행할 것.
-> 계정이 섞이면 C1 그래프 탐색기의 페이지 목록에 `Caselab` 이 안 나오고 원인 찾기가 까다롭다.
+> **가장 중요한 교훈**: 대시보드에서 `instagram_business_content_publish` **Add가 계속 실패했지만
+> 권한은 실제로 붙어 있었다.** 화면 상태를 믿지 말고 `--verify`(content_publishing_limit 실호출)로
+> 판정할 것. Add 오류에 매달리느라 한 시간을 썼다.
+
+> **경로 확정(2026-08-15)**: Facebook Login이 아니라 **Instagram Login(`graph.instagram.com`)**.
+> 이유와 막다른 길은 C장 머리말 참고. A장의 페이지 연결은 이 경로에선 발행에 쓰이지 않지만
+> 리틀리·인사이트에서 쓸모가 있으니 그대로 둔다.
 
 (E단계였던 Vercel 반영은 로컬 전용이라 삭제. 나중에 필요해지면 맨 아래 부록)
 
@@ -100,16 +106,14 @@ F. 리틀리 자동DM (5분)      ⬜ 지금 바로 가능 (A만 필요 · B·C�
 
 ### A2. 페이스북 페이지 연결 ← **지금 남은 유일한 수동 작업**
 
-발행 코드가 쓰는 경로(`graph.facebook.com`)는
-**"IG 프로페셔널 계정 ← 연결 → FB 페이지 ← 관리 → 내 페이스북 계정"** 사슬로 권한을 확인한다.
-페이지는 이 사슬의 고리일 뿐이고 **게시물은 인스타에만 올라간다.**
-페이지를 운영할 필요 없다 — 만들어두고 방치해도 무방하다.
+> ⚠️ **결과적으로 이 단계는 발행에 필수가 아니었다.** 최종 경로가 Instagram Login으로 바뀌면서
+> 페이지 연결은 발행 사슬에서 빠졌다(C장 머리말). 다만 **리틀리 자동DM·인사이트·나중에 Facebook
+> Login으로 되돌아갈 때** 쓰이므로 만들어둔 걸 되돌릴 필요는 없다.
+> 아래는 페이지가 필요해질 때를 위해 남겨둔 절차다 — 처음부터 다시 한다면 **A2를 건너뛰고 B로 가도 된다.**
 
-> **"크리에이터는 페이지 없이도 된다던데?"** — 맞는 말이지만 그건 다른 API 경로(`graph.instagram.com`,
-> Instagram Login) 얘기다. 그 경로로 가려면 **https 리다이렉트 URI가 필요**해서 로컬 전용 운영과 안 맞고,
-> 토큰도 60일마다 갱신해야 한다. 지금 경로(Facebook Login)는 **만료 없는 페이지 토큰**을 주고
-> 그래프 탐색기에서 토큰을 바로 받아 리다이렉트 URI가 아예 필요 없다.
-> **페이지 한 번 만드는 게 훨씬 싸다** — 그래서 코드를 안 바꾸고 이 경로를 유지한다.
+원래 의도: Facebook Login 경로(`graph.facebook.com`)는
+**"IG 프로페셔널 계정 ← 연결 → FB 페이지 ← 관리 → 내 페이스북 계정"** 사슬로 권한을 확인하고,
+페이지는 그 사슬의 고리일 뿐이다. 게시물은 어느 경로든 **인스타에만** 올라간다.
 
 #### 현재 상태 (2026-08-15 확인)
 
@@ -190,9 +194,9 @@ Profile"만, 팔로워 카운트도 인스타 하나. **페이지는 아직 없�
 
 **A가 끝나면 리틀리(F)는 바로 된다.** 카드뉴스 발행까지 원하면 B로.
 
-> 크리에이터 계정의 발행 가능 여부는 **C2 스크립트 4/4 단계(`content_publishing_limit` 실호출)가
+> 크리에이터 계정의 발행 가능 여부는 **C3 스크립트의 `content_publishing_limit` 실호출이
 > 최종 판정**한다. 거기서 ✅가 뜨면 실제로 발행되는 상태이고, ❌면 계정 유형이 아니라
-> 권한(B2·C1) 문제일 가능성이 높다 — 트러블슈팅 표 참고.
+> 권한(C1) 문제다 — `instagram_business_content_publish` 누락을 먼저 의심할 것.
 
 ---
 
@@ -214,7 +218,7 @@ Profile"만, 팔로워 카운트도 인스타 하나. **페이지는 아직 없�
 |---|---|---|
 | **App name** | `caselab-cardpress` | 아무거나 무방 |
 | **Business portfolio** | **선택하지 않음**(No business portfolio) | 붙이면 나중에 **사업자 인증 서류**를 요구받을 수 있다 |
-| **Use case** | 좌측 필터 **Others** → **"Create an app without a use case"** (2026-08 기준 이름. 예전 "Other") → 앱 유형 **Business** | 다른 use case를 고르면 권한이 그 용도로 묶인다. 특히 "Manage messaging & content on Instagram"은 **Instagram Login(`graph.instagram.com`)** 쪽으로 세팅해 우리 코드 경로(`graph.facebook.com`)와 어긋난다 |
+| **Use case** | 좌측 필터 **Others** → **"Create an app without a use case"** (2026-08 기준 이름. 예전 "Other") → 앱 유형 **Business** | 앱 생성 시엔 비워둔다. 생성 직후 B2에서 Instagram use case를 붙인다 |
 
 3. **Create app** → 페이스북 비밀번호 재확인
 
@@ -234,8 +238,27 @@ Profile"만, 팔로워 카운트도 인스타 하나. **페이지는 아직 없�
 묶어버리므로 비워두고, 앱이 만들어진 뒤 필요한 것만 붙이는 순서다.)
 
 **성공 신호**: 좌측 내비에 **`Facebook Login for Business`** 가 나타난다.
-= Facebook Login 방식(`graph.facebook.com`)으로 붙었다는 뜻 = 우리 코드 경로와 일치.
-여기에 `Instagram Login` 만 보이면 잘못 붙은 것이니 use case를 지우고 다시.
+> 이게 보이면 Facebook Login 경로가 열린 것처럼 보이지만 **아니다.** 구성(configuration)을
+> 만들어 보면 권한 검색에서 `instagram` 이 하나도 안 나온다(C장 머리말). 신규 앱의 실제 경로는
+> **Instagram Login** 이다 — 이 항목은 무시하고 C장으로 간다.
+
+#### ⚠️ "Add account" 를 누르면 인스타 로그인 창에 "개발자 역할 권한이 부족합니다"
+
+이 use case의 **"2. Generate access tokens → Add account"** 는 인스타 계정이 **이 앱의 테스터**로
+등록돼 있어야 동작한다. 안 되어 있으면 로그인 창이 빈 화면 + 저 문구만 띄우고 끝난다.
+(같은 화면 설명문에 조건이 적혀 있지만 눈에 안 들어온다 — "assign the Instagram Tester role in the Roles tab")
+
+**해결 — 초대 보내고, 인스타에서 수락까지 해야 끝난다 (2단계다):**
+
+1. 앱 대시보드 → 좌측 **App roles** → **Roles**
+2. **Instagram Testers** 섹션 → **Add people**(또는 Add Instagram Testers)
+3. `caselab_ai_` 입력 → 초대 발송 → 상태가 **Pending** 으로 뜬다
+4. **인스타 계정으로 수락** ← 여기를 빼먹으면 Pending 그대로라 계속 실패한다
+   - 직행: [instagram.com/accounts/manage_access](https://www.instagram.com/accounts/manage_access/)
+     → **테스터 초대(Tester invites)** 탭 → **수락**
+   - 앱 경로: Instagram 앱 → 설정 및 개인정보 → **웹사이트 권한** / **앱 및 웹사이트** → 테스터 초대
+   - ⚠️ 반드시 `@caselab_ai_` 로 로그인한 상태에서 수락할 것
+5. 앱 대시보드로 돌아와 **Add account** 다시 → 이번엔 로그인 창이 정상 진행
 
 **무시할 것 2가지** (대시보드에 같이 뜬다):
 - **Become a Tech Provider** — App Review·타사 데이터 접근용. 우리는 내 계정만 쓰므로 불필요
@@ -256,113 +279,97 @@ Profile"만, 팔로워 카운트도 인스타 하나. **페이지는 아직 없�
   혼자 쓰는 한 영원히 필요 없다
 
 ---
+# C. 토큰 발급 → 스크립트 (5분)
 
-# C. 토큰 발급 → 스크립트 (3분)
+> **2026-08-15 경로 전환**: 원래 Facebook Login(`graph.facebook.com`) 경로로 가려 했으나,
+> 신규 앱의 **Facebook Login for Business → Create configuration → Permissions** 에서
+> `instagram` 을 검색하면 **"No matching results"** 가 뜬다. 신규 앱에는 인스타 권한이
+> 그쪽으로 열리지 않는다(Meta가 Instagram Login으로 몰고 있다).
+> → **Instagram Login(`graph.instagram.com`) 경로로 확정.** 발행 엔드포인트가 동일해서
+> 코드는 `lib/cardpress/publish.ts` 의 호스트 한 줄만 바뀌었다.
+>
+> **막다른 길 2개(다시 들어가지 말 것)**
+> - Facebook Login for Business 구성 만들기 → 인스타 권한이 없어 쓸모없다
+> - App roles → Roles → "Add people" 다이얼로그의 **Instagram Tester** → 저장이 안 된다
+>   (설명문에 "required by the Instagram **Basic Display** API" 라고 적혀 있다 = 2024년 종료된 레거시)
 
-### C1. 그래프 API 탐색기에서 토큰 뽑기
+### C1. 권한 추가 — `instagram_business_content_publish`
 
-1. [developers.facebook.com/tools/explorer](https://developers.facebook.com/tools/explorer)
-2. 우측 **Meta 앱**: `caselab-cardpress`
-3. **사용자 또는 페이지**: **사용자 토큰**
-4. **권한 추가** 검색창에 4개를 하나씩 넣어 체크
-   ```
-   instagram_basic
-   instagram_content_publish
-   pages_show_list
-   pages_read_engagement
-   ```
-   > ⚠️ `instagram_content_publish` 가 빠지면 **계정 조회·목록 조회는 전부 성공하고 발행만** 실패한다.
-   > 제일 흔한 사고. C2 스크립트가 실호출로 잡아준다
-5. **액세스 토큰 생성**
-6. 페이스북 로그인 팝업 →
-   - **"어느 페이지에 접근할까요?"** 에서 **A2의 페이지를 반드시 체크**
-     (안 고르면 나중에 "IG 계정을 못 찾음"으로 실패)
-   - 권한 4개 모두 **허용**
-7. 상단 **액세스 토큰** 칸의 `EAAB...` 전체 복사
-   > 이건 **1~2시간짜리**. 다음 단계에서 만료 없는 토큰으로 바꾼다
+1. 앱 대시보드 → 좌측 **Use cases** → **Manage messaging & content on Instagram** → **Customize**
+2. **"1. Add permissions"** 섹션 → **Add all required permissions**
+   (`instagram_business_basic` · `..._manage_comments` · `..._manage_messages` 가 들어온다)
+3. 같은 화면의 **Permissions and features** 페이지에서 **`instagram_business_content_publish` 추가**
+   > ⚠️ 이게 핵심이다. 기본 3종에는 **발행 권한이 없다.**
+   > 없으면 프로필 조회·댓글 조회는 다 되는데 **발행만** 실패한다.
+   > C3 스크립트가 실호출로 이걸 잡아준다.
 
-8. **(권장) 탐색기 안에서 즉시 연동 검증** — 스크립트를 돌리기 전에 여기서 확인된다.
-   좌측 경로 입력칸에 아래를 넣고 **Submit**:
-   ```
-   me/accounts?fields=name,instagram_business_account{username}
-   ```
-   기대 응답:
-   ```json
-   { "data": [ { "name": "Caselab",
-                 "instagram_business_account": { "username": "caselab_ai_" } } ] }
-   ```
-   > `instagram_business_account` 키가 없으면 **페이지↔인스타 연결(A2)이 안 걸린 것**,
-   > `data: []` 면 **페이지 권한을 안 준 것**(5번 팝업에서 페이지 미체크) — 각각 원인이 다르다.
-   > 이 응답이 나오면 "앱에 인스타를 붙이는 화면이 없었는데 연동된 게 맞나?"는 여기서 종결된다.
+### C2. 토큰 발급 — 대시보드에서 직접
 
-### C2. 스크립트 한 줄
+그래프 탐색기를 쓰지 않는다. Instagram Login 경로는 대시보드가 토큰을 직접 준다.
+
+1. 같은 Customize 화면의 **"2. Generate access tokens"** → **Add account**
+2. 인스타 로그인 창 → `@caselab_ai_` 로 로그인 → 권한 허용
+3. 계정이 붙으면 옆의 **Generate token** → 토큰 복사 (`IGAA...`)
+
+**"개발자 역할 권한이 부족합니다" 가 뜨면** — 인스타 계정이 이 앱의 테스터가 아니다.
+같은 화면 설명문의 **`Roles`** 링크(← App roles의 "Add people" 다이얼로그가 **아니다**)로 가서
+`caselab_ai_` 를 추가하고, **인스타에서 초대를 수락**해야 한다:
+[instagram.com/accounts/manage_access](https://www.instagram.com/accounts/manage_access/)
+→ **테스터 초대** 탭 → 수락 (`@caselab_ai_` 로 로그인된 상태에서).
+초대만 보내고 수락을 안 하면 Pending이라 계속 같은 에러가 난다.
+
+### C3. 스크립트 한 줄
+
+**⚠️ 시크릿을 헷갈리지 말 것 — 앱이 두 개다.**
+
+| | 어디에 있나 | 어디에 쓰나 |
+|---|---|---|
+| **Facebook 앱** ID/시크릿 | App settings → Basic (주소창 `/apps/{ID}/`) | 여기선 **안 쓴다** |
+| **Instagram 앱** ID/시크릿 | Use cases → Customize → **API setup with Instagram login** 상단 | **이걸 쓴다** (`--app-secret`) |
+
+Instagram Login 경로의 토큰 교환(`ig_exchange_token`)은 **Instagram app secret** 을 요구한다.
+페이스북 앱 시크릿을 넣으면 교환이 조용히 실패하고 단기 토큰인 채로 진행돼, 몇 시간 뒤에야
+"왜 어제는 됐는데"가 된다. 같은 화면의 `Instagram app secret` 옆 **[Show]** 로 확인할 것.
 
 ```bash
 cd "apps/caselab_admin"
 
 node scripts/instagram-connect.mjs \
-  --token "EAAB...C1에서_복사한_토큰" \
-  --app-id "B3의_앱_ID" \
-  --app-secret "B3의_시크릿_코드" \
+  --token "IGAA...C2에서_복사한_토큰" \
+  --app-secret "앱_시크릿" \
   --write
 ```
 
-스크립트가 대신 하는 일:
-
 | 단계 | 하는 일 | 막아주는 사고 |
 |---|---|---|
-| 1/4 | 토큰 유효성 + 권한 4종 점검 | 권한 빠진 채 진행 → 발행 순간에만 터짐 |
-| 2/4 | 단기 → 60일 사용자 토큰 → **만료 없는 페이지 토큰** | 오늘 되고 내일 안 되는 토큰 |
-| 3/4 | `me/accounts` 로 IG 계정 id 자동 탐색 | IG 계정 id ≠ 페이지 id ≠ IG 로그인 id 혼동 |
-| 4/4 | `content_publishing_limit` 실호출 | 권한 목록엔 있는데 실제로는 안 되는 경우 |
-| — | `.env.local` 기록 | 오타 |
+| 1/3 | 단기 → **60일 장기 토큰** 교환 | 오늘 되고 내일 안 되는 토큰 |
+| 2/3 | `me` 로 IG id·사용자명 조회 + `content_publishing_limit` **실호출** | 엉뚱한 id / 권한 목록엔 있는데 실제론 없는 경우 |
+| 3/3 | `.env.local` 기록 (만료일 포함) | 오타 |
 
 정상 출력:
 
 ```
-[1/4] 토큰 점검
-  ✅ 앱 1234567890 · 토큰 EAABsbCS…9xQZ
-  ✅ 권한 4종 모두 있음
-  ⚠️  현재 토큰 만료: 2026. 8. 15. 오후 1:20 — 장기 토큰으로 교환합니다
+[1/3] 장기 토큰 교환
+  ✅ 장기 토큰 확보 — 60일 유효 (IGAAbCdE…9xQZ)
 
-[2/4] 장기 토큰 교환
-  ✅ 60일짜리 사용자 토큰으로 교환 (EAABsbCS…7kMw)
-
-[3/4] Instagram 비즈니스 계정 탐색
-  1) 페이지 "Caselab" → @caselab_ai_ (id 17841400000000000)
-  ✅ 선택: @caselab_ai_ (id 178414...) · 페이지 토큰(만료 없음)
-
-[4/4] 발행 가능 여부 확인
-  ✅ 계정 조회 성공 — @caselab_ai_ (팔로워 ...)
+[2/3] 계정 조회 + 발행 권한 확인
+  ✅ 계정 조회 성공 — @caselab_ai_ (id 17841... · BUSINESS)
   ✅ 발행 쿼터 0/100 (24시간 기준) — 발행 권한 확인됨
+
+[3/3] 기록
   ✅ .env.local 기록 완료 — dev 서버가 자동 리로드합니다("Reload env" 로그 확인)
 ```
 
-- 계정이 여러 개면 목록을 찍고 1번을 고른다 → 다른 계정이면 `--ig-username @핸들` 로 재실행
-- `--write` 를 빼면 값만 찍고 파일은 안 건드린다
-- 토큰은 콘솔에 **마스킹**돼 나온다 (전체 값은 `.env.local` 에만 · git 추적 안 됨)
-
-### C3. 검증
-
-Next dev는 `.env.local` 변경을 **자동 감지해 리로드**한다 — 터미널에 `Reload env: .env.local` 이 뜨면 반영된 것.
-(그 로그가 안 보이면 그때만 재시작. dev 서버 포트는 3000 고정 — 본가가 3001)
+### C4. 검증 · 갱신
 
 ```bash
-node scripts/instagram-connect.mjs --verify
+node scripts/instagram-connect.mjs --verify    # 지금 발행 가능한 상태인가 (만료 임박 경고 포함)
+node scripts/instagram-connect.mjs --refresh   # 60일 더 연장 (.env.local 자동 갱신)
 ```
 
-```
-  ✅ id 178414... · 토큰 EAABsbCS…7kMw
-  ✅ 토큰 만료 없음(페이지 토큰)
-  ✅ 계정 조회 성공 — @caselab_ai_
-  ✅ 발행 쿼터 0/100 (24시간 기준) — 발행 권한 확인됨
-
-발행 준비 완료.
-```
-
-> ⚠️ dev 서버가 도는 중에 `.next` 를 지우면 CSS가 404로 깨져 화면이 스타일 없는 HTML로 보인다. 지우려면 서버부터 끌 것
-
----
+> **60일 갱신이 이 경로의 유일한 대가다.** Facebook Login의 페이지 토큰은 만료가 없었지만
+> 그 경로는 신규 앱에 안 열린다. 발행 전 `--verify` 습관이면 만료 전에 경고를 본다.
+> 만료 후에는 `--refresh` 도 안 되고 C2부터 다시 해야 한다.
 
 # D. 첫 발행 (5분)
 
