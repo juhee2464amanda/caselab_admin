@@ -33,6 +33,8 @@ const ACCENT_HEX: Record<CardAccent, string> = {
   'cat-case': '#2F6BFF',
   'cat-trend': '#7C3AED',
   'cat-tool': '#0E9F6E',
+  'cat-prompt': '#C2410C',
+  'cat-guide': '#0F766E',
 };
 
 // 카드프레스 검수 스튜디오 (spec §3-③)

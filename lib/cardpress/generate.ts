@@ -112,6 +112,50 @@ function captionBlockGuide(src: CardSource): string {
   return GUIDES[kind];
 }
 
+/** 캡션 분량 상한(공백·해시태그 제외). 프롬프트의 "200~300자"와 같은 값이어야 한다. */
+const CAPTION_MAX_CHARS = 300;
+
+/** 캡션 길이 — 공백을 뺀 글자 수로 센다(한글은 공백 비중이 커서 포함하면 기준이 흔들린다). */
+function captionLength(text: string): number {
+  return text.replace(/\s/g, '').length;
+}
+
+/** 상한을 넘긴 캡션을 **한 번만** 다시 압축한다.
+ *
+ *  왜 사후 단계인가: 분량 지시는 세 회차 연속 지켜지지 않았다(247~313자). 슬라이드까지 함께 만드는
+ *  큰 호출에서 글자 수는 모델이 가장 먼저 놓치는 제약이라, 캡션만 떼어 다시 쓰게 하는 편이 확실하다.
+ *  실패하거나 여전히 길면 원문을 그대로 쓴다 — 분량 때문에 카드 생성 전체를 버리지는 않는다. */
+async function recompressCaption(caption: string, blockGuide: string): Promise<string> {
+  const system = `당신은 인스타그램 캡션을 압축하는 에디터입니다. 구조는 그대로 두고 분량만 줄입니다.
+
+[반드시 유지]
+- 첫 두 줄(접히기 전 후킹) · "▪ 소제목" 블록 개수와 순서 · 질문 한 문장(물음표로 끝남) · 마지막 CTA 문장
+- 소재 고유의 사실 — 숫자·고유명사·출처는 **하나도 지우지 말 것**. 이게 이 캡션의 값어치다.
+- 각 블록이 맡은 역할:
+${blockGuide}
+
+[버릴 것 — 이 순서로]
+1. 형용사·부사 2. "~하는 경우가 많아요" 류의 완충어 3. 앞 문장을 다시 말하는 부연 4. 블록 안의 두 번째 문장
+
+[금지]
+- 이모지 추가 · 마크다운 · URL · 해시태그 · 블록 개수 변경 · 없는 사실 추가
+
+출력은 압축된 캡션 본문만. 설명·따옴표·머리말 없이.`;
+
+  const raw = await callModel(
+    system,
+    `아래 캡션을 공백 제외 ${CAPTION_MAX_CHARS}자 이하로 압축하세요. 현재 ${captionLength(caption)}자입니다.\n\n${caption}`,
+    { allowedTools: [], model: 'sonnet', effort: 'low', timeoutMs: 300_000 }
+  );
+  const out = stripUrls(stripMarkdown(raw));
+  // 압축이 실패(빈 응답·오히려 길어짐·구조 붕괴)하면 원문 유지
+  if (!out || captionLength(out) >= captionLength(caption)) return caption;
+  const blocksBefore = (caption.match(/^\s*▪/gm) ?? []).length;
+  const blocksAfter = (out.match(/^\s*▪/gm) ?? []).length;
+  if (blocksBefore && blocksAfter !== blocksBefore) return caption;
+  return out;
+}
+
 /** 캡션·스레드에서 맨 URL을 걷어낸다.
  *  인스타 캡션의 URL은 클릭이 안 되고(유일한 출구는 프로필 링크), 로컬에서 만들면
  *  localhost 주소가 그대로 발행된다. 출구는 "댓글 키워드 → DM" 또는 프로필 링크뿐. */
@@ -158,6 +202,8 @@ const CATEGORY_TAGS: Record<CardAccent, string[]> = {
   'cat-case': ['#업무자동화'],
   'cat-trend': ['#AI트렌드'],
   'cat-tool': ['#AI도구'],
+  'cat-prompt': ['#프롬프트'],
+  'cat-guide': ['#AI가이드'],
 };
 const TOPIC_TAG_MAX = 3;
 
@@ -535,7 +581,7 @@ ${ctaEndingExamples('channel_intro')}
      ❌ "여러분은 어떠신가요" 같은 매번 같은 문형 금지 — 소재의 말로 물을 것.
      ⚠️ **반드시 물음표(?)로 끝낼 것.** 마침표로 닫으면 묻는 문장이어도 혼잣말로 읽혀 댓글이 안 달린다.
   ⑤ CTA 유형에 맞는 마무리.
-  분량: **전체 150~250자**(공백·해시태그 제외). 이 상한이 규칙 중 가장 자주 깨지는 것이니 먼저 세어볼 것.
+  분량: **전체 200~300자**(공백·해시태그 제외). 이 상한이 규칙 중 가장 자주 깨지는 것이니 먼저 세어볼 것.
   다 설명하려 하지 말 것 — 카드가 이미 보여줬고, 나머지는 DM과 프로필 링크의 몫이다.
   넘치면 형용사·부연·"~하는 경우가 많아요" 같은 완충어부터 버리고, 사실과 숫자를 남긴다.
   톤: 말하듯이. 문장을 짧게 끊고, 블록 사이를 비운다.
@@ -1146,6 +1192,16 @@ ${lastIssues.map((i) => `- ${i}`).join('\n')}`;
   const ctaKeyword = opts?.ctaKeyword?.trim() || lastRaw.ctaKeyword?.trim() || '프롬프트';
   const metaphorQueries = lastRaw.metaphorQueries ?? [];
 
+  // 캡션이 상한을 넘으면 캡션만 한 번 더 압축한다(구조는 유지, 실패하면 원문 그대로)
+  let captionBody = stripUrls(stripMarkdown(lastRaw.igCaption));
+  if (captionLength(captionBody) > CAPTION_MAX_CHARS) {
+    try {
+      captionBody = await recompressCaption(captionBody, captionBlockGuide(source));
+    } catch {
+      /* 압축 호출이 실패해도 카드는 살린다 — 검수 UI에서 손으로 줄일 수 있다 */
+    }
+  }
+
   const finalSlides = finalizeSlides(slides, plan, ctaType, ctaKeyword);
   // 추출 이미지가 안 붙은 사진형 장을 슬라이드별 검색어로 채운다(중복 없이)
   const photoCredits = await fillSlidePhotos(slides, finalSlides);
@@ -1155,7 +1211,7 @@ ${lastIssues.map((i) => `- ${i}`).join('\n')}`;
     slides: finalSlides,
     extractedImages: plan.images,
     photoCredits,
-    igCaption: `${stripUrls(stripMarkdown(lastRaw.igCaption))}\n\n${tags.join(' ')}`,
+    igCaption: `${captionBody}\n\n${tags.join(' ')}`,
     threadsText: threads,
     metaphorQueries,
     edge: opts?.edge?.trim() || lastRaw.edge.trim(),

@@ -615,6 +615,14 @@ export function toolKindLabel(category: string): string {
   return TOOL_KIND_LABEL[category] ?? '자료실';
 }
 
+/** 자료실 카테고리 → 카드 accent. 배지 라벨(templates DEFAULT_TAGS)과 해시태그(generate CATEGORY_TAGS)가
+ *  여기서 갈린다 — 전에는 전부 'cat-tool'이라 프롬프트 카드에도 "AI 도구" 배지가 붙었다. */
+export function toolAccent(category: string): CardAccent {
+  if (category === 'prompt') return 'cat-prompt';
+  if (category === 'guide' || category === 'context-card') return 'cat-guide';
+  return 'cat-tool';
+}
+
 /** 본가 자료실 URL — 카테고리별 라우트가 다르다(/prompts · /guides · /tools) */
 export function toolUrl(row: Pick<ToolRowLite, 'category' | 'slug'>): string {
   const base = (process.env.NEXT_PUBLIC_MAIN_SITE_URL ?? 'https://caselab.kr').replace(/\/$/, '');
@@ -765,7 +773,7 @@ export function buildToolSlidePlan(row: ToolRowLite): SlidePlan {
   distributeImages(slides, images);
   const optCount = slides.filter((s) => s.optional).length;
   const selectTarget = optCount > 0 ? Math.min(6, Math.max(3, Math.round(optCount / 2))) : undefined;
-  return { accent: 'cat-tool', slides, images, selectTarget };
+  return { accent: toolAccent(row.category), slides, images, selectTarget };
 }
 
 /** 발행 콘텐츠 → 슬라이드 계획. 섹션이 없으면 해당 슬라이드가 빠진다(장수 가변이 정상). */

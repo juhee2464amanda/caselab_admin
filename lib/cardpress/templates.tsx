@@ -14,6 +14,8 @@ const ACCENTS: Record<CardAccent, string> = {
   'cat-case': '#2F6BFF', // 실전 케이스 = 블루
   'cat-trend': '#7C3AED', // AI 트렌드 = 바이올렛
   'cat-tool': '#0E9F6E', // AI 도구 = 에메랄드
+  'cat-prompt': '#C2410C', // 바로쓰는 프롬프트 = 오렌지
+  'cat-guide': '#0F766E', // 가이드 = 딥틸
 };
 const GOOD = '#2F6BFF'; // 잘된 것 (카테고리 무관 고정 — 블루=성공/레드=실패 대비)
 const BAD = '#E11D48'; // 별로였던 것
@@ -25,6 +27,8 @@ const DEFAULT_TAGS: Record<CardAccent, string> = {
   'cat-case': '실전 케이스',
   'cat-trend': 'AI 트렌드',
   'cat-tool': 'AI 도구',
+  'cat-prompt': '프롬프트',
+  'cat-guide': '가이드',
 };
 
 // color-mix(in srgb, C p%, #fff) 대체 — 흰 배경 위 틴트 계산

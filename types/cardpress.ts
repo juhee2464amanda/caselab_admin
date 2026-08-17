@@ -3,7 +3,9 @@ import { z } from 'zod';
 // 카드프레스 슬라이드 스키마 — docs/09_card_press_spec.md §5
 // O1(마무리 CTA)은 2026-08-13 삭제 — 포인트색 배경+이모지 액션 필이 캐러셀 톤과 어긋남(운영자). CTA는 캡션 전담.
 
-export const CardAccentSchema = z.enum(['cat-case', 'cat-trend', 'cat-tool']);
+// 자료실 소스는 category(tool|prompt|guide|context-card)마다 배지·해시태그가 달라야 한다 —
+// 전에는 전부 'cat-tool'이라 프롬프트 카드에도 "AI 도구" 배지가 박혔다(2026-08-17 수정).
+export const CardAccentSchema = z.enum(['cat-case', 'cat-trend', 'cat-tool', 'cat-prompt', 'cat-guide']);
 export type CardAccent = z.infer<typeof CardAccentSchema>;
 
 // 텍스트 규칙: title 등은 '\n'으로 명시적 줄바꿈. hl은 title 안의 부분 문자열(형광펜, 슬라이드당 1개).
