@@ -1630,16 +1630,43 @@ function PublishPanel({ card, dirty }: { card: CardRow; dirty: boolean }) {
     instagram: true,
     threads: true,
   });
-  const [busy, setBusy] = useState<'prepare' | 'publish' | null>(null);
+  const [busy, setBusy] = useState<'check' | 'prepare' | 'publish' | null>(null);
   const [images, setImages] = useState<string[]>([]);
   const [errors, setErrors] = useState<string[]>([]);
+  const [priceWarn, setPriceWarn] = useState<string | null>(null);
+
+  // 발행 직전 가격 재검증 — 수집 후 소스 사이트에서 가격이 바뀐 걸 저장본만 믿고 내보내는 사고 방지.
+  // 경고만 하고 발행은 막지 않는다 (사이트 다운·JS 렌더면 '확인 불가'로 통과).
+  async function checkPrices(): Promise<string | null> {
+    setBusy('check');
+    try {
+      const res = await fetch('/api/cardpress/price-check', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ cardId: card.id }),
+      });
+      const pc = await res.json();
+      if (!res.ok || !pc.applicable) return null;
+      if (pc.error) return `가격 확인 불가 — ${pc.error}`;
+      if (pc.mismatches?.length)
+        return `가격 불일치 — 카드에는 ${pc.mismatches.join(', ')}, 소스 사이트 현재 표기는 ${(pc.livePrices ?? []).join(', ')}`;
+      return null;
+    } catch {
+      return '가격 확인 불가 — 요청 실패';
+    } finally {
+      setBusy(null);
+    }
+  }
 
   async function call(dryRun: boolean) {
     if (dirty) return alert('저장 안 된 수정이 있어요. 먼저 [저장]을 눌러주세요.');
     if (!dryRun) {
       const picked = Object.entries(channels).filter(([, v]) => v).map(([k]) => k);
       if (picked.length === 0) return alert('발행 채널을 선택하세요.');
-      if (!confirm(`선택한 채널(${picked.join(', ')})에 즉시 게시됩니다. 발행할까요?`)) return;
+      const warn = await checkPrices();
+      setPriceWarn(warn);
+      const head = warn ? `⚠️ ${warn}\n이대로 발행하면 틀린 가격이 게시될 수 있어요.\n\n` : '';
+      if (!confirm(`${head}선택한 채널(${picked.join(', ')})에 즉시 게시됩니다. 발행할까요?`)) return;
     }
     setBusy(dryRun ? 'prepare' : 'publish');
     setErrors([]);
@@ -1685,7 +1712,7 @@ function PublishPanel({ card, dirty }: { card: CardRow; dirty: boolean }) {
           {busy === 'prepare' ? '렌더·업로드 중…' : '1) PNG 업로드 검수'}
         </Button>
         <Button size="sm" variant="accent" onClick={() => call(false)} disabled={busy !== null}>
-          {busy === 'publish' ? '발행 중…' : '2) 발행'}
+          {busy === 'check' ? '가격 확인 중…' : busy === 'publish' ? '발행 중…' : '2) 발행'}
         </Button>
         <a
           href={`/api/cardpress/zip?cardId=${card.id}`}
@@ -1704,6 +1731,11 @@ function PublishPanel({ card, dirty }: { card: CardRow; dirty: boolean }) {
             </a>
           ))}
           (클릭해서 실물 확인)
+        </p>
+      )}
+      {priceWarn && (
+        <p className="text-xs text-amber-600">
+          ⚠️ {priceWarn} — 소스 사이트를 열어 확인하고 카드 가격을 맞춰주세요.
         </p>
       )}
       {errors.map((e, i) => (
