@@ -3,11 +3,12 @@ import { z } from 'zod';
 import { BlockSchema, ContentBodySchema, type ContentBody, JOB_TAGS, JOB_LABELS, type JobTag } from '@/types/content';
 import { runClaudeSubscription, extractJson } from '@/lib/claude-cli';
 import { BUCKETS, bucketProfile, isSeedBucket, type SeedBucket } from '@/lib/seed-curation';
-import { lintToolBody } from '@/lib/tool-body';
+import { lintToolBody, ToolBodySchema } from '@/lib/tool-body';
 import {
   PROMPT_CATEGORIES,
   PROMPT_CATEGORY_LABELS,
   PROMPT_CATEGORY_CRITERIA,
+  PromptBodySchema,
   isPromptCategory,
   type PromptBody,
 } from '@/lib/prompt-body';
@@ -1156,11 +1157,17 @@ export async function refineSection(
 
 // ─────────────── 문서 전체 수정 제안(모든 섹션 한 번에) ───────────────
 
+/** 전체 수정 대상 문서 종류 — 검증 스키마와 프롬프트 문구가 갈린다. */
+export type RefineDocKind = 'content' | 'tool' | 'prompt' | 'guide';
+
 export interface RefineDocumentInput {
-  track: 'case' | 'trend';
-  /** 현재 전체 body(모든 섹션). 후보도 같은 형태로 돌려받는다. */
+  /** 기본 'content'(케이스/트렌드). 자료실은 tool·prompt·guide. */
+  docKind?: RefineDocKind;
+  /** content 전용 — 케이스/트렌드 구분. */
+  track?: 'case' | 'trend';
+  /** 현재 전체 body(모든 섹션·항목). 후보도 같은 형태로 돌려받는다. */
   body: Record<string, unknown>;
-  /** 제목·요약 — 문맥으로 주고, 수정 각도가 요구할 때만 후보가 함께 바꾼다. */
+  /** 제목·요약(자료실은 이름·설명) — 문맥으로 주고, 수정 각도가 요구할 때만 후보가 함께 바꾼다. */
   title?: string;
   summary?: string;
   instruction: string;
@@ -1186,7 +1193,20 @@ export async function refineDocument(
 ): Promise<{ candidates: RefineCandidate<DocumentCandidate>[]; note?: string }> {
   const instruction = input.instruction?.trim();
   if (!instruction || !input.body) return { candidates: [] };
-  const trackLabel = input.track === 'case' ? '실전 케이스' : 'AI 트렌드';
+  const docKind = input.docKind ?? 'content';
+  // 문서 종류별 라벨 + 검증 스키마. 가이드는 고정 계약이 없어 형태 가드만 건다(섹션 수정과 같은 기준).
+  const docLabel =
+    docKind === 'content'
+      ? input.track === 'trend'
+        ? 'AI 트렌드'
+        : '실전 케이스'
+      : docKind === 'tool'
+        ? '자료실 도구 상세'
+        : docKind === 'prompt'
+          ? '자료실 프롬프트'
+          : '자료실 가이드';
+  const schema =
+    docKind === 'content' ? ContentBodySchema : docKind === 'tool' ? ToolBodySchema : docKind === 'prompt' ? PromptBodySchema : null;
   const bodyJson = JSON.stringify(input.body, null, 2);
   // 후보 수 = 시간. 실측: body 12k자 문서 × 후보 2개 = 224초(라우트 상한 300초에 근접).
   // 더 긴 문서는 후보를 1개로 줄여 상한 안에 들어오게 한다(2개 받으려면 count로 명시).
@@ -1195,14 +1215,14 @@ export async function refineDocument(
   const system = `당신은 케이스랩(Caselab)의 콘텐츠 에디터입니다. 문서 "전체"를 운영자의 "수정 각도"에 맞게 다시 쓴 후보를 제안합니다.
 
 [규칙]
-- 아래 "현재 문서 JSON"과 같은 형태를 유지하세요: 최상위 키를 지우거나 새로 만들지 말고, 각 섹션의 배열/객체 형태·키 이름·타입도 그대로 두세요.
-- "kind" 값은 절대 바꾸지 마세요.
-- 섹션 안의 항목은 추가·병합·분할·순서변경해도 됩니다. 다만 수정 각도가 명시적으로 요구하지 않는 한, 내용이 있던 섹션을 통째로 비우지 마세요.
-- 모든 섹션을 빠짐없이 포함하세요(안 고칠 섹션도 현재 값 그대로 다시 적어야 합니다).
+- 아래 "현재 문서 JSON"과 같은 형태를 유지하세요: 최상위 키를 지우거나 새로 만들지 말고, 각 항목의 배열/객체 형태·키 이름·타입도 그대로 두세요.
+- 아래 키의 값은 절대 바꾸지 마세요(형식 판별자·분류라 바뀌면 화면이 깨집니다): "kind", "type", "level", "promptCategory", "href", "url", "sourceUrl".
+- 배열 안 항목은 추가·병합·분할·순서변경해도 됩니다. 다만 수정 각도가 명시적으로 요구하지 않는 한, 내용이 있던 항목을 통째로 비우지 마세요.
+- 모든 키를 빠짐없이 포함하세요(안 고칠 부분도 현재 값 그대로 다시 적어야 합니다).
 - 사실·수치·이름·URL을 새로 지어내지 마세요(현재 내용/참고자료에 있는 것만).
-- [전체 수정의 목적] 문서 전체에서 톤·용어·호칭·문장 길이·표기를 일관되게 맞추세요. 섹션마다 따로 노는 문장을 남기지 마세요.
+- [전체 수정의 목적] 문서 전체에서 톤·용어·호칭·문장 길이·표기를 일관되게 맞추세요. 부분마다 따로 노는 문장을 남기지 마세요.
 - 한국어, 담백한 1인칭 운영자 톤. 이모지 금지.
-- 수정 각도가 제목·요약도 손대라고 하면 title·summary를 함께 반환하고, 그렇지 않으면 두 필드를 생략하세요.
+- 수정 각도가 제목(이름)·요약(설명)도 손대라고 하면 title·summary를 함께 반환하고, 그렇지 않으면 두 필드를 생략하세요.
 - 서로 뚜렷이 다른 방향의 후보 ${count}개(같은 구성 재탕 금지).
 - 각 후보에 그 방향을 요약한 짧은 label을 붙이세요(8자 내외, 예: "톤 통일형", "핵심 압축형"). 후보끼리 서로 다르게.
 
@@ -1212,10 +1232,10 @@ export async function refineDocument(
   const ref = input.reference?.trim()
     ? `\n\n[추가 참고자료 — 이 정보를 반영하세요]\n${input.reference.trim().slice(0, 8000)}`
     : '';
-  const meta = `[문서] ${trackLabel}${input.title?.trim() ? ` · ${input.title.trim()}` : ''}${
+  const meta = `[문서] ${docLabel}${input.title?.trim() ? ` · ${input.title.trim()}` : ''}${
     input.summary?.trim() ? `\n[요약] ${input.summary.trim()}` : ''
   }`;
-  const userPrompt = `${meta}\n[수정 각도] ${instruction}${ref}\n\n[현재 문서 JSON]\n${bodyJson.slice(0, 40000)}\n\n위 문서 전체를 수정 각도대로 다시 쓴 후보 ${count}개를 JSON으로 반환하세요(각 후보에 label 포함, 모든 섹션 포함).`;
+  const userPrompt = `${meta}\n[수정 각도] ${instruction}${ref}\n\n[현재 문서 JSON]\n${bodyJson.slice(0, 40000)}\n\n위 문서 전체를 수정 각도대로 다시 쓴 후보 ${count}개를 JSON으로 반환하세요(각 후보에 label 포함, 모든 키 포함).`;
 
   // 문서 하나가 통째로 출력되므로 섹션 수정(105초)보다 넉넉히 — 라우트 maxDuration(300초) 안에서 상한.
   const raw = await callModel(system, userPrompt, { allowedTools: [], model: 'sonnet', timeoutMs: 280_000 });
@@ -1223,7 +1243,7 @@ export async function refineDocument(
   const list = Array.isArray(parsed.candidates) ? parsed.candidates : [];
 
   // 섹션 수정과 같은 기준 — 원본이 이미 스키마를 통과할 때만 스키마 검증을 후보 판별자로 쓴다.
-  const strict = ContentBodySchema.safeParse(input.body).success;
+  const strict = !!schema && schema.safeParse(input.body).success;
 
   const out: RefineCandidate<DocumentCandidate>[] = [];
   for (const c of list) {
@@ -1234,12 +1254,15 @@ export async function refineDocument(
     // body를 감싸지 않고 body 자체를 value로 준 경우도 받아준다(모델이 래핑을 자주 생략).
     const rawBody = (v.body && typeof v.body === 'object' && !Array.isArray(v.body) ? v.body : v) as Record<string, unknown>;
     if (!rawBody || typeof rawBody !== 'object' || Array.isArray(rawBody)) continue;
-    // 빠뜨린 섹션은 원본으로 되메우고, kind는 원본 값을 강제(트랙이 바뀌면 렌더가 깨진다).
-    const merged = { ...input.body, ...rawBody, kind: input.body.kind };
+    // 빠뜨린 부분은 원본으로 되메운다. 콘텐츠 body의 kind는 원본 값을 강제(트랙이 바뀌면 렌더가 깨진다).
+    // 자료실 body에는 kind가 없다 — 없는데 넣으면 .strict() 스키마가 '모르는 키'로 튕긴다.
+    const merged = { ...input.body, ...rawBody };
+    if ('kind' in input.body) merged.kind = input.body.kind;
+    else delete merged.kind;
     if (JSON.stringify(merged) === JSON.stringify(input.body)) continue; // 아무것도 안 바뀐 후보는 버린다
     let body: Record<string, unknown> = merged;
-    if (strict) {
-      const res = ContentBodySchema.safeParse(merged);
+    if (strict && schema) {
+      const res = schema.safeParse(merged);
       if (!res.success) continue;
       body = res.data as Record<string, unknown>;
     }

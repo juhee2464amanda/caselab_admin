@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
-import { refineDocument } from '@/lib/ai-draft';
+import { refineDocument, type RefineDocKind } from '@/lib/ai-draft';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -21,6 +21,8 @@ export async function POST(req: NextRequest) {
   if (profile?.role !== 'admin') return NextResponse.json({ error: 'forbidden' }, { status: 403 });
 
   const b = (await req.json()) as {
+    /** 'content'(케이스/트렌드) 기본. 자료실은 tool·prompt·guide. */
+    docKind?: RefineDocKind;
     track?: 'case' | 'trend';
     body?: Record<string, unknown>;
     title?: string;
@@ -30,12 +32,17 @@ export async function POST(req: NextRequest) {
     count?: number;
   };
   const instruction = b.instruction?.trim();
-  if (!b.body || !b.track || !instruction) {
-    return NextResponse.json({ error: 'track·body·instruction 필수' }, { status: 400 });
+  const docKind = b.docKind ?? 'content';
+  if (!b.body || !instruction) {
+    return NextResponse.json({ error: 'body·instruction 필수' }, { status: 400 });
+  }
+  if (docKind === 'content' && !b.track) {
+    return NextResponse.json({ error: '케이스/트렌드는 track 필수' }, { status: 400 });
   }
 
   try {
     const result = await refineDocument({
+      docKind,
       track: b.track,
       body: b.body,
       title: b.title,

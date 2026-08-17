@@ -1,10 +1,11 @@
 'use client';
 
 import { useRef, useState } from 'react';
-import { ArrowUpRight, Copy, Check, ExternalLink, Upload, Loader2, Trash2, Plus } from 'lucide-react';
+import { ArrowUpRight, Copy, Check, ExternalLink, Upload, Loader2, Trash2, Plus, Sparkles, Undo2 } from 'lucide-react';
 import { ToolBodySchema, type ToolBody } from '@/lib/tool-body';
 import { isPromptCategory, PROMPT_CATEGORY_LABELS } from '@/lib/prompt-body';
 import { Editable } from '@/components/admin/Editable';
+import { useRefine } from '@/components/admin/RefinePanel';
 import { renderBlocks } from '@/lib/content-render';
 import type { RichSection } from '@/types/content';
 import { ImageZoom } from '@/components/admin/ImageZoom';
@@ -784,8 +785,51 @@ function GuideCardPreview({
 }
 
 export function ToolPreview(props: ToolPreviewProps) {
-  const { category, body, onBody } = props;
+  const { category, body, onBody, onPatch, name, description } = props;
   const parsedTool = category === 'tool' ? ToolBodySchema.safeParse(body) : null;
+  const refine = useRefine();
+
+  // ── 문서 전체 수정 — 본문 모든 항목을 한 번에. 콘텐츠 편집(ContentPreview)과 같은 진입점·되돌리기.
+  const [docUndo, setDocUndo] = useState<{ body: Record<string, unknown>; name: string; description: string } | null>(null);
+  // 요청을 열어둔 채 다른 칸을 편집해도 그 편집이 살아남게, 적용 시점의 최신 값을 읽는다.
+  const latest = useRef({ body, name, description });
+  latest.current = { body, name, description };
+
+  const openDocument = () => {
+    if (!onBody || !refine) return;
+    refine.open({
+      target: '',
+      scope: 'document',
+      kind: 'document',
+      rich: false,
+      context: `자료실 ${category === 'tool' ? '도구' : category === 'prompt' ? '프롬프트' : '가이드'} · 본문 전체`,
+      document: {
+        docKind: category === 'tool' ? 'tool' : category === 'prompt' ? 'prompt' : 'guide',
+        body: latest.current.body,
+        title: latest.current.name,
+        summary: latest.current.description ?? undefined,
+      },
+      apply: (chosen) => {
+        const v = chosen as { title?: string; summary?: string; body: Record<string, unknown> };
+        if (!v?.body) return;
+        setDocUndo({ body: latest.current.body, name: latest.current.name, description: latest.current.description ?? '' });
+        onBody(v.body);
+        // 이름·설명은 각도가 요구했을 때만 후보에 들어온다 → 있을 때만 덮어쓴다.
+        if (onPatch && (v.title !== undefined || v.summary !== undefined)) {
+          onPatch({ ...(v.title !== undefined ? { name: v.title } : {}), ...(v.summary !== undefined ? { description: v.summary } : {}) });
+        }
+      },
+      onClose: () => {},
+    });
+  };
+
+  const undoDocument = () => {
+    if (!docUndo || !onBody) return;
+    onBody(docUndo.body);
+    onPatch?.({ name: docUndo.name, description: docUndo.description });
+    setDocUndo(null);
+  };
+
   return (
     <div className="rounded-xl border border-border bg-bg">
       <div className="border-b border-border px-4 py-2 text-xs text-ink/50">
@@ -793,6 +837,29 @@ export function ToolPreview(props: ToolPreviewProps) {
         {onBody && <span className="ml-2 font-semibold text-accent">텍스트를 클릭하면 바로 수정됩니다</span>}
       </div>
       <div className="mx-auto max-w-[760px] px-6 py-10">
+        {/* 제목 위 문서 전체 수정 — 부분 수정(칸별 ✨)과 짝을 이루는 진입점. */}
+        {onBody && refine && (
+          <div className="mb-4 flex items-center justify-end gap-1.5">
+            {docUndo && (
+              <button
+                type="button"
+                onClick={undoDocument}
+                title="직전 전체수정 적용을 취소하고 이전 내용으로"
+                className="inline-flex items-center gap-1 rounded-full border border-border px-2 py-0.5 text-[11px] text-ink/60 hover:bg-muted"
+              >
+                <Undo2 className="h-3 w-3" /> 전체수정 되돌리기
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={openDocument}
+              title="본문 전체를 AI로 수정(모든 항목 한 번에)"
+              className="inline-flex items-center gap-1 rounded-full border border-accent/40 bg-accent-50 px-2.5 py-1 text-[11px] font-semibold text-accent hover:bg-accent hover:text-white"
+            >
+              <Sparkles className="h-3 w-3" /> AI 전체수정
+            </button>
+          </div>
+        )}
         {category === 'tool' ? (
           parsedTool?.success ? (
             <ToolDetailPreview

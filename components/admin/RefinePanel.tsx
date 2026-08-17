@@ -43,7 +43,10 @@ export interface RefineRequest {
   };
   /** document kind 전용 — 문서 전체 페이로드. 후보는 { title?, summary?, body } 꼴로 돌아온다. */
   document?: {
-    track: 'case' | 'trend';
+    /** 'content'(케이스/트렌드) 기본. 자료실은 tool·prompt·guide. */
+    docKind?: 'content' | 'tool' | 'prompt' | 'guide';
+    /** content 전용 */
+    track?: 'case' | 'trend';
     body: Record<string, unknown>;
     title?: string;
     summary?: string;
@@ -108,12 +111,32 @@ export interface DocumentCandidateValue {
 
 const sameJson = (a: unknown, b: unknown) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
 
+// 자료실(도구·프롬프트) body 키 → 사람이 읽는 이름. 콘텐츠는 content-sections의 섹션 라벨을 쓴다.
+const DOC_KEY_LABELS: Record<string, string> = {
+  audience: '대상',
+  tags: '태그',
+  about: '소개',
+  whenToUse: '언제 쓰면 좋은가',
+  features: '주요 기능',
+  pricing: '가격',
+  pricingNote: '가격 메모',
+  useCases: '실전 사용기',
+  prompt: '프롬프트 전문',
+  promptCategory: '프롬프트 분류',
+  source: '출처',
+  sourceUrl: '출처 링크',
+  images: '참고 이미지',
+  sections: '추가 섹션',
+  headings: '섹션 소제목',
+};
+
 /**
  * 문서 전체 후보를 "무엇이 바뀌었는지"로 요약 — 본문을 통째로 다시 읽지 않고 후보를 고를 수 있게.
- * 안 바뀐 섹션은 개수만 세고, 바뀐 섹션만 펼쳐볼 수 있게 내용을 함께 담는다.
+ * 안 바뀐 부분은 개수만 세고, 바뀐 부분만 펼쳐볼 수 있게 내용을 함께 담는다.
  */
 function documentChanges(
-  track: 'case' | 'trend',
+  docKind: 'content' | 'tool' | 'prompt' | 'guide',
+  track: 'case' | 'trend' | undefined,
   prev: Record<string, unknown>,
   next: Record<string, unknown>,
 ): { rows: { label: string; state: 'changed' | 'emptied' | 'filled'; lines: string }[]; unchanged: number } {
@@ -130,13 +153,13 @@ function documentChanges(
       lines: sectionToLines(after),
     });
   };
-  const specs = sectionSpecs(track);
+  // 콘텐츠는 고정 섹션 스펙 순서대로 먼저 보여주고(운영자가 화면에서 보는 순서), 자료실은 키 순서.
+  const specs = docKind === 'content' && track ? sectionSpecs(track) : [];
   for (const s of specs) push(s.label, prev[s.key], next[s.key]);
-  // 고정 스펙 밖 키(자유 섹션·소제목 오버라이드 등) — 키 이름 그대로 보여준다.
   const known = new Set([...specs.map((s) => s.key), 'kind']);
   for (const k of new Set([...Object.keys(prev), ...Object.keys(next)])) {
     if (known.has(k)) continue;
-    push(k === 'sections' ? '추가 섹션' : k === 'headings' ? '섹션 소제목' : k, prev[k], next[k]);
+    push(DOC_KEY_LABELS[k] ?? k, prev[k], next[k]);
   }
   return { rows, unchanged };
 }
@@ -180,7 +203,7 @@ function DocumentCandidatePreview({
   prev: NonNullable<RefineRequest['document']>;
   value: DocumentCandidateValue;
 }) {
-  const { rows, unchanged } = documentChanges(prev.track, prev.body, value.body ?? {});
+  const { rows, unchanged } = documentChanges(prev.docKind ?? 'content', prev.track, prev.body, value.body ?? {});
   const titleChanged = value.title !== undefined && value.title !== (prev.title ?? '');
   const summaryChanged = value.summary !== undefined && value.summary !== (prev.summary ?? '');
   const emptied = rows.filter((r) => r.state === 'emptied');
@@ -340,7 +363,7 @@ function RefineForm({ request, onApply }: { request: RefineRequest; onApply: (ch
       {/* 문서 전체는 대상이 본문 전부라 원문을 되뿌리지 않는다 — 무엇이 바뀔지만 미리 알린다. */}
       {doc ? (
         <div className="rounded-md bg-muted px-2.5 py-2 text-[12px] leading-relaxed text-ink/60 break-keep">
-          본문의 <b className="font-semibold text-ink/75">모든 섹션</b>을 한 번에 다시 씁니다. 각도에 제목·요약을 적으면 그 둘도 같이 바뀌어요.
+          이 문서의 <b className="font-semibold text-ink/75">모든 내용</b>을 한 번에 다시 씁니다. 각도에 제목·요약(자료실은 이름·설명)을 적으면 그 둘도 같이 바뀌어요.
           적용 후에는 제목 위 <b className="font-semibold text-ink/75">되돌리기</b>로 직전 상태로 돌아갈 수 있어요.
         </div>
       ) : (
