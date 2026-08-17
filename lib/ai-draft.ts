@@ -1153,3 +1153,106 @@ export async function refineSection(
   }
   return { candidates: out };
 }
+
+// ─────────────── 문서 전체 수정 제안(모든 섹션 한 번에) ───────────────
+
+export interface RefineDocumentInput {
+  track: 'case' | 'trend';
+  /** 현재 전체 body(모든 섹션). 후보도 같은 형태로 돌려받는다. */
+  body: Record<string, unknown>;
+  /** 제목·요약 — 문맥으로 주고, 수정 각도가 요구할 때만 후보가 함께 바꾼다. */
+  title?: string;
+  summary?: string;
+  instruction: string;
+  reference?: string;
+  /** 기본 2(문서 하나가 통째로 나오므로 섹션 수정보다 적게). 1~3. */
+  count?: number;
+}
+
+/** 문서 전체 후보 — body는 항상, title·summary는 각도가 요구할 때만 채워진다. */
+export interface DocumentCandidate {
+  title?: string;
+  summary?: string;
+  body: Record<string, unknown>;
+}
+
+/**
+ * 문서(케이스/트렌드 body 전체)를 '수정 각도'대로 다시 쓴 후보를 반환 — 섹션별로 돌지 않고 한 번에.
+ * 톤·용어·호칭을 문서 전체에서 통일하는 게 목적이라 섹션 단위 수정으로는 대체되지 않는다.
+ * 모델이 통째로 빠뜨린 섹션은 원본 값으로 되메워(merge) '조용한 삭제'를 막는다.
+ */
+export async function refineDocument(
+  input: RefineDocumentInput,
+): Promise<{ candidates: RefineCandidate<DocumentCandidate>[]; note?: string }> {
+  const instruction = input.instruction?.trim();
+  if (!instruction || !input.body) return { candidates: [] };
+  const count = Math.min(3, Math.max(1, input.count ?? 2));
+  const trackLabel = input.track === 'case' ? '실전 케이스' : 'AI 트렌드';
+  const bodyJson = JSON.stringify(input.body, null, 2);
+
+  const system = `당신은 케이스랩(Caselab)의 콘텐츠 에디터입니다. 문서 "전체"를 운영자의 "수정 각도"에 맞게 다시 쓴 후보를 제안합니다.
+
+[규칙]
+- 아래 "현재 문서 JSON"과 같은 형태를 유지하세요: 최상위 키를 지우거나 새로 만들지 말고, 각 섹션의 배열/객체 형태·키 이름·타입도 그대로 두세요.
+- "kind" 값은 절대 바꾸지 마세요.
+- 섹션 안의 항목은 추가·병합·분할·순서변경해도 됩니다. 다만 수정 각도가 명시적으로 요구하지 않는 한, 내용이 있던 섹션을 통째로 비우지 마세요.
+- 모든 섹션을 빠짐없이 포함하세요(안 고칠 섹션도 현재 값 그대로 다시 적어야 합니다).
+- 사실·수치·이름·URL을 새로 지어내지 마세요(현재 내용/참고자료에 있는 것만).
+- [전체 수정의 목적] 문서 전체에서 톤·용어·호칭·문장 길이·표기를 일관되게 맞추세요. 섹션마다 따로 노는 문장을 남기지 마세요.
+- 한국어, 담백한 1인칭 운영자 톤. 이모지 금지.
+- 수정 각도가 제목·요약도 손대라고 하면 title·summary를 함께 반환하고, 그렇지 않으면 두 필드를 생략하세요.
+- 서로 뚜렷이 다른 방향의 후보 ${count}개(같은 구성 재탕 금지).
+- 각 후보에 그 방향을 요약한 짧은 label을 붙이세요(8자 내외, 예: "톤 통일형", "핵심 압축형"). 후보끼리 서로 다르게.
+
+응답은 아래 JSON만 반환(설명·코드펜스 없이). value.body는 문서 body 전체입니다:
+{ "candidates": [ { "label": "톤 통일형", "value": { "body": <문서 body 전체> } }, ... ] }`;
+
+  const ref = input.reference?.trim()
+    ? `\n\n[추가 참고자료 — 이 정보를 반영하세요]\n${input.reference.trim().slice(0, 8000)}`
+    : '';
+  const meta = `[문서] ${trackLabel}${input.title?.trim() ? ` · ${input.title.trim()}` : ''}${
+    input.summary?.trim() ? `\n[요약] ${input.summary.trim()}` : ''
+  }`;
+  const userPrompt = `${meta}\n[수정 각도] ${instruction}${ref}\n\n[현재 문서 JSON]\n${bodyJson.slice(0, 40000)}\n\n위 문서 전체를 수정 각도대로 다시 쓴 후보 ${count}개를 JSON으로 반환하세요(각 후보에 label 포함, 모든 섹션 포함).`;
+
+  // 문서 하나가 통째로 출력되므로 섹션 수정(105초)보다 넉넉히 — 라우트 maxDuration(300초) 안에서 상한.
+  const raw = await callModel(system, userPrompt, { allowedTools: [], model: 'sonnet', timeoutMs: 280_000 });
+  const parsed = (parseModelJson(raw) ?? {}) as Record<string, unknown>;
+  const list = Array.isArray(parsed.candidates) ? parsed.candidates : [];
+
+  // 섹션 수정과 같은 기준 — 원본이 이미 스키마를 통과할 때만 스키마 검증을 후보 판별자로 쓴다.
+  const strict = ContentBodySchema.safeParse(input.body).success;
+
+  const out: RefineCandidate<DocumentCandidate>[] = [];
+  for (const c of list) {
+    if (!c || typeof c !== 'object' || Array.isArray(c)) continue;
+    const o = c as Record<string, unknown>;
+    const label = typeof o.label === 'string' ? o.label.trim() : '';
+    const v = (o.value ?? o) as Record<string, unknown>;
+    // body를 감싸지 않고 body 자체를 value로 준 경우도 받아준다(모델이 래핑을 자주 생략).
+    const rawBody = (v.body && typeof v.body === 'object' && !Array.isArray(v.body) ? v.body : v) as Record<string, unknown>;
+    if (!rawBody || typeof rawBody !== 'object' || Array.isArray(rawBody)) continue;
+    // 빠뜨린 섹션은 원본으로 되메우고, kind는 원본 값을 강제(트랙이 바뀌면 렌더가 깨진다).
+    const merged = { ...input.body, ...rawBody, kind: input.body.kind };
+    if (JSON.stringify(merged) === JSON.stringify(input.body)) continue; // 아무것도 안 바뀐 후보는 버린다
+    let body: Record<string, unknown> = merged;
+    if (strict) {
+      const res = ContentBodySchema.safeParse(merged);
+      if (!res.success) continue;
+      body = res.data as Record<string, unknown>;
+    }
+    const title = typeof v.title === 'string' && v.title.trim() ? v.title.trim() : undefined;
+    const summary = typeof v.summary === 'string' && v.summary.trim() ? v.summary.trim() : undefined;
+    out.push({ label, value: { title, summary, body } });
+    if (out.length >= count) break;
+  }
+
+  // 후보 0개인데 모델이 산문으로 답했으면(되물음 등) 그 문장을 그대로 올려보낸다 — 섹션 수정과 동일.
+  if (out.length === 0) {
+    const prose = raw.trim();
+    if (prose && !prose.startsWith('{') && !prose.startsWith('[')) {
+      return { candidates: [], note: prose.slice(0, 600) };
+    }
+  }
+  return { candidates: out };
+}

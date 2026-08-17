@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useRef, type ReactNode } from 'react';
-import { ArrowUpRight, Copy, Check, User, Bot, Plus, Trash2, Sparkles, ChevronUp, ChevronDown, AlignLeft, AlignCenter, AlignRight, PenLine, Paperclip, Terminal } from 'lucide-react';
+import { ArrowUpRight, Copy, Check, User, Bot, Plus, Trash2, Sparkles, ChevronUp, ChevronDown, AlignLeft, AlignCenter, AlignRight, PenLine, Paperclip, Terminal, Undo2 } from 'lucide-react';
 import type { Block, ContentBody, JobTag, PainPoint, RichSection, StepCard, TakingPoint } from '@/types/content';
 import { JOB_LABELS, HEADING_TAG, HEADING_CLASS, HEADING_LEVELS } from '@/types/content';
 import { Editable } from '@/components/admin/Editable';
@@ -761,15 +761,55 @@ function FreeSections({
   );
 }
 
-function PreviewHeader({ track, title, summary, jobTags, readMin, applyMin, onPatch }: ContentPreviewProps) {
+function PreviewHeader({
+  track,
+  title,
+  summary,
+  jobTags,
+  readMin,
+  applyMin,
+  onPatch,
+  onDocRefine,
+  onUndoDoc,
+}: ContentPreviewProps & {
+  /** 제목 위 'AI 전체수정' — 우측 패널에 문서 전체 수정 요청을 올린다. 편집 모드에서만 전달된다. */
+  onDocRefine?: () => void;
+  /** 직전 전체수정 되돌리기 — 적용 후에만 전달된다. */
+  onUndoDoc?: () => void;
+}) {
   const primaryJob = jobTags?.[0];
   const trackLabel = track === 'case' ? '실전 케이스' : 'AI 트렌드';
   return (
     <header className="py-10 md:py-14">
-      <span className="inline-block text-xs font-bold text-accent bg-accent-50 px-2.5 py-1 rounded mb-4">
-        {trackLabel}
-        {primaryJob ? ` · ${JOB_LABELS[primaryJob] ?? primaryJob}` : ''}
-      </span>
+      {/* 트랙 뱃지 + 문서 전체 수정 — 제목 바로 위 한 줄. 부분 수정(문단·섹션 ✨)과 짝을 이루는 진입점. */}
+      <div className="mb-4 flex flex-wrap items-center gap-2">
+        <span className="inline-block text-xs font-bold text-accent bg-accent-50 px-2.5 py-1 rounded">
+          {trackLabel}
+          {primaryJob ? ` · ${JOB_LABELS[primaryJob] ?? primaryJob}` : ''}
+        </span>
+        {onDocRefine && (
+          <div className="ml-auto flex items-center gap-1.5">
+            {onUndoDoc && (
+              <button
+                type="button"
+                onClick={onUndoDoc}
+                title="직전 전체수정 적용을 취소하고 이전 본문으로"
+                className="inline-flex items-center gap-1 rounded-full border border-border px-2 py-0.5 text-[11px] text-ink/60 hover:bg-muted"
+              >
+                <Undo2 className="h-3 w-3" /> 전체수정 되돌리기
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={onDocRefine}
+              title="본문 전체를 AI로 수정(모든 섹션 한 번에)"
+              className="inline-flex items-center gap-1 rounded-full border border-accent/40 bg-accent-50 px-2.5 py-1 text-[11px] font-semibold text-accent hover:bg-accent hover:text-white"
+            >
+              <Sparkles className="h-3 w-3" /> AI 전체수정
+            </button>
+          </div>
+        )}
+      </div>
       <Editable
         as="h1"
         value={title}
@@ -1254,11 +1294,51 @@ function AddSectionBar({
 }
 
 export function ContentPreview(props: ContentPreviewProps) {
-  const { authorQuote, body, onPatch, onBody, track } = props;
+  const { authorQuote, body, onPatch, onBody, track, title, summary } = props;
   const refine = useRefine();
   // 최신 body를 apply 시점에 읽어(요청 열고 다른 필드 편집해도 그 편집 보존) 섹션만 교체.
   const bodyRef = useRef(body);
   bodyRef.current = body;
+
+  // ── 문서 전체 수정 — 모든 섹션을 한 번에. 되돌릴 수 있게 적용 직전 상태를 들고 있는다.
+  // (부분 수정과 달리 한 번에 본문 전체가 갈아엎히므로 실수하면 복구 수단이 없다)
+  const [docUndo, setDocUndo] = useState<{ body: ContentBody; title: string; summary: string } | null>(null);
+
+  const openDocument = () => {
+    if (!onBody || !refine) return;
+    const trackLabel = track === 'case' ? '실전 케이스' : 'AI 트렌드';
+    refine.open({
+      target: '',
+      scope: 'document',
+      kind: 'document',
+      rich: false,
+      context: `${trackLabel} · 본문 전체`,
+      document: {
+        track,
+        body: bodyRef.current as unknown as Record<string, unknown>,
+        title,
+        summary: summary ?? undefined,
+      },
+      apply: (chosen) => {
+        const v = chosen as { title?: string; summary?: string; body: Record<string, unknown> };
+        if (!v?.body) return;
+        setDocUndo({ body: bodyRef.current, title, summary: summary ?? '' });
+        onBody(v.body as unknown as ContentBody);
+        // 제목·요약은 각도가 요구했을 때만 후보에 들어온다 → 있을 때만 덮어쓴다.
+        if (onPatch && (v.title !== undefined || v.summary !== undefined)) {
+          onPatch({ ...(v.title !== undefined ? { title: v.title } : {}), ...(v.summary !== undefined ? { summary: v.summary } : {}) });
+        }
+      },
+      onClose: () => {},
+    });
+  };
+
+  const undoDocument = () => {
+    if (!docUndo || !onBody) return;
+    onBody(docUndo.body);
+    onPatch?.({ title: docUndo.title, summary: docUndo.summary });
+    setDocUndo(null);
+  };
 
   // 섹션 수정(refine) / 빈 섹션 새로 생성(generate) 공용 — 우측 패널에 요청 등록.
   // keys를 주면 복합 섹션(화면상 한 섹션인데 body 키가 여럿, 예: pros+cons)으로 다룬다.
@@ -1375,7 +1455,11 @@ export function ContentPreview(props: ContentPreviewProps) {
         {onBody && <span className="ml-2 font-semibold text-accent">텍스트를 클릭하면 바로 수정됩니다</span>}
       </div>
       <article className="mx-auto max-w-[760px] px-6 pb-14">
-        <PreviewHeader {...props} />
+        <PreviewHeader
+          {...props}
+          onDocRefine={onBody && refine ? openDocument : undefined}
+          onUndoDoc={docUndo && onBody ? undoDocument : undefined}
+        />
         {(authorQuote || onPatch) && (
           <blockquote className="mt-6 rounded-xl bg-muted p-5 text-[15px] italic leading-relaxed text-ink/70 break-keep">
             “

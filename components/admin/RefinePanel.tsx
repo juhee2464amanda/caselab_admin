@@ -4,20 +4,22 @@ import { createContext, useCallback, useContext, useEffect, useRef, useState, ty
 import { Sparkles, Loader2, X, Paperclip } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { inlineMdToHtml } from '@/lib/inline-md';
+import { sectionSpecs, isEmptySection } from '@/lib/content-sections';
 
 // AI 부분 수정 제안 — 우측에 도킹되는 고정 패널.
 // Editable(필드/선택) 또는 섹션 헤더(✨)가 "대상 + 적용 클로저"를 컨텍스트에 올리고(open),
 // 이 패널이 '수정 각도'(+선택적 .md 참고자료)를 받아 후보 2~4개를 요청·표시한 뒤 request.apply로 되돌려준다.
-//  - kind 'text'   : 필드/선택 구간 → 문자열 후보 (/api/studio/refine)
-//  - kind 'section': 섹션 통째(카드 배열) → 구조 JSON 후보, 자유 재구성 (/api/studio/refine-section)
+//  - kind 'text'    : 필드/선택 구간 → 문자열 후보 (/api/studio/refine)
+//  - kind 'section' : 섹션 통째(카드 배열) → 구조 JSON 후보, 자유 재구성 (/api/studio/refine-section)
+//  - kind 'document': 문서 전체(모든 섹션) → body 전체 후보, 톤·용어 통일 (/api/studio/refine-document)
 
 export interface RefineRequest {
-  /** 표시용 대상 텍스트(섹션은 요약 텍스트) */
+  /** 표시용 대상 텍스트(섹션·문서는 요약 텍스트) */
   target: string;
-  /** 선택 구간 / 필드 / 섹션 */
-  scope: 'selection' | 'field' | 'section';
+  /** 선택 구간 / 필드 / 섹션 / 문서 전체 */
+  scope: 'selection' | 'field' | 'section' | 'document';
   /** 후보 종류 */
-  kind: 'text' | 'section';
+  kind: 'text' | 'section' | 'document';
   /** 기존 수정(refine)인지 빈 대상 새로 생성(generate)인지. 기본 refine.
    *  generate + kind 'section' = 빈 섹션 생성, generate + kind 'text' = 빈 문단 초안. */
   mode?: 'refine' | 'generate';
@@ -39,7 +41,14 @@ export interface RefineRequest {
     freeBlocks?: boolean;
     currentValue?: unknown;
   };
-  /** 고른 후보 적용(text=string, section=구조값) */
+  /** document kind 전용 — 문서 전체 페이로드. 후보는 { title?, summary?, body } 꼴로 돌아온다. */
+  document?: {
+    track: 'case' | 'trend';
+    body: Record<string, unknown>;
+    title?: string;
+    summary?: string;
+  };
+  /** 고른 후보 적용(text=string, section=구조값, document={title?,summary?,body}) */
   apply: (chosen: unknown) => void;
   /** 적용 없이 닫을 때(편집 상태 복원·정리) */
   onClose?: () => void;
@@ -87,6 +96,51 @@ export function RefineProvider({ children }: { children: ReactNode }) {
 
 const REFINE_PRESETS = ['더 간결하게', '더 쉽게 풀어서', '구체 사례·근거 추가', '문장 매끄럽게', '톤 다듬기'];
 
+// 문서 전체 수정은 "섹션 하나"가 아니라 "문서 전체에서 일관되게"가 목적이라 각도 예시가 다르다.
+const DOC_PRESETS = ['톤·용어 통일', '전체적으로 더 간결하게', '초보자도 읽히게 쉽게', '실무 적용 관점 강화', '중복 내용 정리'];
+
+/** document 후보 값 — 서버 lib/ai-draft.DocumentCandidate와 같은 모양. */
+export interface DocumentCandidateValue {
+  title?: string;
+  summary?: string;
+  body: Record<string, unknown>;
+}
+
+const sameJson = (a: unknown, b: unknown) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
+
+/**
+ * 문서 전체 후보를 "무엇이 바뀌었는지"로 요약 — 본문을 통째로 다시 읽지 않고 후보를 고를 수 있게.
+ * 안 바뀐 섹션은 개수만 세고, 바뀐 섹션만 펼쳐볼 수 있게 내용을 함께 담는다.
+ */
+function documentChanges(
+  track: 'case' | 'trend',
+  prev: Record<string, unknown>,
+  next: Record<string, unknown>,
+): { rows: { label: string; state: 'changed' | 'emptied' | 'filled'; lines: string }[]; unchanged: number } {
+  const rows: { label: string; state: 'changed' | 'emptied' | 'filled'; lines: string }[] = [];
+  let unchanged = 0;
+  const push = (label: string, before: unknown, after: unknown) => {
+    if (sameJson(before, after)) {
+      if (!isEmptySection(after)) unchanged += 1;
+      return;
+    }
+    rows.push({
+      label,
+      state: isEmptySection(after) ? 'emptied' : isEmptySection(before) ? 'filled' : 'changed',
+      lines: sectionToLines(after),
+    });
+  };
+  const specs = sectionSpecs(track);
+  for (const s of specs) push(s.label, prev[s.key], next[s.key]);
+  // 고정 스펙 밖 키(자유 섹션·소제목 오버라이드 등) — 키 이름 그대로 보여준다.
+  const known = new Set([...specs.map((s) => s.key), 'kind']);
+  for (const k of new Set([...Object.keys(prev), ...Object.keys(next)])) {
+    if (known.has(k)) continue;
+    push(k === 'sections' ? '추가 섹션' : k === 'headings' ? '섹션 소제목' : k, prev[k], next[k]);
+  }
+  return { rows, unchanged };
+}
+
 // 섹션/블록 값(배열·객체)을 사람이 읽는 여러 줄 요약으로. 대상 미리보기·구조 후보 렌더에 공용.
 export function sectionToLines(v: unknown): string {
   const pickStr = (o: Record<string, unknown>) =>
@@ -115,10 +169,75 @@ export function sectionToLines(v: unknown): string {
   return typeof v === 'string' ? v : JSON.stringify(v);
 }
 
+/**
+ * 문서 전체 후보 미리보기 — 바뀐 섹션만 목록으로, 각 줄을 펼치면 새 내용을 볼 수 있다.
+ * 문서 전체 텍스트를 그대로 뿌리면 후보 2개만으로도 패널이 수천 줄이 되어 고를 수가 없다.
+ */
+function DocumentCandidatePreview({
+  prev,
+  value,
+}: {
+  prev: NonNullable<RefineRequest['document']>;
+  value: DocumentCandidateValue;
+}) {
+  const { rows, unchanged } = documentChanges(prev.track, prev.body, value.body ?? {});
+  const titleChanged = value.title !== undefined && value.title !== (prev.title ?? '');
+  const summaryChanged = value.summary !== undefined && value.summary !== (prev.summary ?? '');
+  const emptied = rows.filter((r) => r.state === 'emptied');
+
+  return (
+    <div className="space-y-1 text-[12.5px] leading-relaxed text-ink/85">
+      {(titleChanged || summaryChanged) && (
+        <div className="rounded-md bg-amber-50 px-2 py-1.5 text-[12px] text-amber-800">
+          {titleChanged && (
+            <div>
+              <b className="font-semibold">제목</b> → {value.title}
+            </div>
+          )}
+          {summaryChanged && (
+            <div className="mt-0.5">
+              <b className="font-semibold">요약</b> → {value.summary}
+            </div>
+          )}
+        </div>
+      )}
+      {emptied.length > 0 && (
+        <div className="rounded-md bg-red-50 px-2 py-1 text-[11.5px] text-red-600 break-keep">
+          비워지는 섹션 {emptied.length}개: {emptied.map((r) => r.label).join(', ')} — 적용하면 미리보기에서 사라져요.
+        </div>
+      )}
+      {rows.length === 0 ? (
+        <div className="text-ink/50">본문 변경 없음(제목·요약만 바뀜)</div>
+      ) : (
+        rows.map((r) => (
+          <details key={r.label} className="rounded border border-border/70 px-2 py-1">
+            <summary className="cursor-pointer list-none text-[12px] font-medium text-ink/70">
+              <span
+                className={cn(
+                  'mr-1.5 rounded px-1 py-0.5 text-[10px] font-semibold',
+                  r.state === 'emptied' ? 'bg-red-100 text-red-600' : r.state === 'filled' ? 'bg-green-100 text-green-700' : 'bg-accent-50 text-accent',
+                )}
+              >
+                {r.state === 'emptied' ? '비움' : r.state === 'filled' ? '새로 채움' : '고침'}
+              </span>
+              {r.label}
+            </summary>
+            <div className="mt-1 max-h-48 overflow-y-auto whitespace-pre-wrap break-keep text-[12.5px] text-ink/80">
+              {r.lines || '(빈 값)'}
+            </div>
+          </details>
+        ))
+      )}
+      {unchanged > 0 && <div className="text-[11px] text-ink/40">그대로 {unchanged}개 섹션</div>}
+    </div>
+  );
+}
+
 // request 단위로 상태를 새로 시작하려고 key로 마운트를 교체한다.
 function RefineForm({ request, onApply }: { request: RefineRequest; onApply: (chosen: unknown) => void }) {
-  const { target, scope, kind, rich, context, section, mode, draftSource } = request;
+  const { target, scope, kind, rich, context, section, document, mode, draftSource } = request;
   const generate = mode === 'generate';
+  const doc = kind === 'document';
   const draftText = generate && kind === 'text'; // 빈 문단 초안 — 방향 또는 파일만으로 생성 가능
   const [instruction, setInstruction] = useState('');
   const [reference, setReference] = useState('');
@@ -155,11 +274,18 @@ function RefineForm({ request, onApply }: { request: RefineRequest; onApply: (ch
     setBusy(true);
     setError(null);
     try {
-      const url = kind === 'section' ? '/api/studio/refine-section' : '/api/studio/refine';
+      const url =
+        kind === 'section'
+          ? '/api/studio/refine-section'
+          : doc
+            ? '/api/studio/refine-document'
+            : '/api/studio/refine';
       const payload =
         kind === 'section'
           ? { ...section, instruction: q, reference: reference || undefined }
-          : { text: target, instruction: q, rich, context, reference: reference || undefined, mode: draftText ? 'draft' : undefined };
+          : doc
+            ? { ...document, instruction: q, reference: reference || undefined }
+            : { text: target, instruction: q, rich, context, reference: reference || undefined, mode: draftText ? 'draft' : undefined };
       const res = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -191,20 +317,38 @@ function RefineForm({ request, onApply }: { request: RefineRequest; onApply: (ch
     }
   };
 
-  const scopeLabel = generate ? (draftText ? '새 문단 초안' : '새 섹션 생성') : scope === 'selection' ? '선택 구간' : scope === 'section' ? '이 섹션 전체' : '이 문단·필드';
+  const scopeLabel = generate
+    ? draftText
+      ? '새 문단 초안'
+      : '새 섹션 생성'
+    : doc
+      ? '문서 전체'
+      : scope === 'selection'
+        ? '선택 구간'
+        : scope === 'section'
+          ? '이 섹션 전체'
+          : '이 문단·필드';
 
   return (
     <div ref={rootRef} className="space-y-2.5 scroll-mt-4">
       <div className="flex items-center gap-1.5 text-[11px] font-medium text-ink/50">
-        <span className={cn('rounded px-1.5 py-0.5', generate ? 'bg-green-100 text-green-700' : scope === 'selection' ? 'bg-amber-100 text-amber-700' : scope === 'section' ? 'bg-violet-100 text-violet-700' : 'bg-accent-50 text-accent')}>
+        <span className={cn('rounded px-1.5 py-0.5', generate ? 'bg-green-100 text-green-700' : doc ? 'bg-indigo-100 text-indigo-700' : scope === 'selection' ? 'bg-amber-100 text-amber-700' : scope === 'section' ? 'bg-violet-100 text-violet-700' : 'bg-accent-50 text-accent')}>
           {scopeLabel}
         </span>
-        {generate ? (section?.sectionLabel ?? context) : '수정 대상'}
+        {generate ? (section?.sectionLabel ?? context) : doc ? (context ?? '문서 전체') : '수정 대상'}
       </div>
-      {!generate && (
-        <div className="max-h-32 overflow-y-auto rounded-md bg-muted px-2.5 py-2 text-[12.5px] leading-relaxed text-ink/70 whitespace-pre-wrap break-keep">
-          {target.length > 800 ? target.slice(0, 800) + '…' : target}
+      {/* 문서 전체는 대상이 본문 전부라 원문을 되뿌리지 않는다 — 무엇이 바뀔지만 미리 알린다. */}
+      {doc ? (
+        <div className="rounded-md bg-muted px-2.5 py-2 text-[12px] leading-relaxed text-ink/60 break-keep">
+          본문의 <b className="font-semibold text-ink/75">모든 섹션</b>을 한 번에 다시 씁니다. 각도에 제목·요약을 적으면 그 둘도 같이 바뀌어요.
+          적용 후에는 제목 위 <b className="font-semibold text-ink/75">되돌리기</b>로 직전 상태로 돌아갈 수 있어요.
         </div>
+      ) : (
+        !generate && (
+          <div className="max-h-32 overflow-y-auto rounded-md bg-muted px-2.5 py-2 text-[12.5px] leading-relaxed text-ink/70 whitespace-pre-wrap break-keep">
+            {target.length > 800 ? target.slice(0, 800) + '…' : target}
+          </div>
+        )
       )}
 
       <div>
@@ -213,7 +357,7 @@ function RefineForm({ request, onApply }: { request: RefineRequest; onApply: (ch
         </div>
         {!generate && (
           <div className="mb-1.5 flex flex-wrap gap-1">
-            {REFINE_PRESETS.map((p) => (
+            {(doc ? DOC_PRESETS : REFINE_PRESETS).map((p) => (
               <button
                 key={p}
                 type="button"
@@ -244,7 +388,9 @@ function RefineForm({ request, onApply }: { request: RefineRequest; onApply: (ch
               ? '이 문단에 쓰고 싶은 내용·방향을 적어주세요 (예: OO 경험 소개, 독자에게 XX 제안). 파일만 첨부하고 비워둬도 돼요'
               : generate
                 ? '이 섹션에 넣을 핵심 내용·방향·주의사항을 적어주세요 (예: OO을 강조, XX는 빼고, 카드 3개로)'
-                : '어떻게 고칠까요? (예: 더 구체적으로, 사례 하나 추가)'
+                : doc
+                  ? '문서 전체를 어떻게 고칠까요? (예: 톤·용어 통일하고 문장 짧게. 제목·요약도 같이 고쳐줘)'
+                  : '어떻게 고칠까요? (예: 더 구체적으로, 사례 하나 추가)'
           }
           rows={generate ? 4 : 3}
           className="w-full resize-none rounded-md border border-border px-2.5 py-1.5 text-[13px] outline-none focus:border-accent"
@@ -285,8 +431,9 @@ function RefineForm({ request, onApply }: { request: RefineRequest; onApply: (ch
           )}
         </div>
 
-        <div className="mt-1.5 flex items-center justify-between">
-          <span className="text-[11px] text-ink/35">⌘/Ctrl+Enter</span>
+        <div className="mt-1.5 flex items-center justify-between gap-2">
+          {/* 문서 전체는 본문을 통째로 다시 쓰므로 섹션 수정보다 훨씬 오래 걸린다 — 기다림을 미리 알린다. */}
+          <span className="text-[11px] text-ink/35 break-keep">{doc ? '⌘/Ctrl+Enter · 본문 전체라 1~3분 걸려요' : '⌘/Ctrl+Enter'}</span>
           <button
             type="button"
             disabled={busy || (!instruction.trim() && !(draftText && reference))}
@@ -314,7 +461,9 @@ function RefineForm({ request, onApply }: { request: RefineRequest; onApply: (ch
                 <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-accent/10 text-[10px] font-bold text-accent">{i + 1}</span>
                 {c.label && <span className="text-[11px] font-semibold text-accent">{c.label}</span>}
               </div>
-              {kind === 'section' ? (
+              {doc ? (
+                <DocumentCandidatePreview prev={document!} value={c.value as DocumentCandidateValue} />
+              ) : kind === 'section' ? (
                 <div className="text-[13px] leading-relaxed text-ink/85 whitespace-pre-wrap break-keep">{sectionToLines(c.value)}</div>
               ) : rich ? (
                 <div
@@ -330,7 +479,7 @@ function RefineForm({ request, onApply }: { request: RefineRequest; onApply: (ch
                   onClick={() => onApply(c.value)}
                   className="rounded-md bg-ink px-2.5 py-0.5 text-[11px] font-semibold text-white opacity-80 hover:opacity-100"
                 >
-                  이 안으로
+                  {doc ? '이 안으로 전체 교체' : '이 안으로'}
                 </button>
               </div>
             </div>
@@ -373,7 +522,8 @@ export function RefinePanel({ className }: { className?: string }) {
         <div className="rounded-lg border border-dashed border-border px-3 py-6 text-center text-[12.5px] leading-relaxed text-ink/45 break-keep">
           왼쪽 초안에서 고칠 곳을 고르고 <span className="inline-flex items-center gap-0.5 text-accent"><Sparkles className="h-3 w-3" /> AI 수정</span>을 누르세요.
           <br />
-          문단 위 ✨ = 문단 하나, 일부 <b className="font-semibold text-ink/60">드래그</b> = 그 구간, 섹션 제목 옆 ✨ = 섹션 통째.
+          문단 위 ✨ = 문단 하나, 일부 <b className="font-semibold text-ink/60">드래그</b> = 그 구간, 섹션 제목 옆 ✨ = 섹션 통째,
+          제목 위 <b className="font-semibold text-ink/60">AI 전체수정</b> = 본문 전체.
           <br />빈 문단은 <b className="font-semibold text-ink/60">방향 적고 / 파일 넣고 AI 초안</b>으로 새로 쓸 수 있어요.
         </div>
       )}
