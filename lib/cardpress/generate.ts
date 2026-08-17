@@ -300,6 +300,7 @@ function lintSlide(template: CardTemplateId, props: Record<string, unknown>): st
       push(lintLen('kicker', p.kicker, 15));
       push(lintLines('title', p.title ?? '', 13, 3));
       push(lintLen('sub', p.sub, 30));
+      push(lintLen('label', p.label, 18));
       push(lintLen('footer', p.footer, 22));
       if (p.hl && !(p.title ?? '').includes(p.hl)) push([`hl "${p.hl}"이 title 안에 없음`]);
       break;
@@ -396,6 +397,8 @@ function lintSlide(template: CardTemplateId, props: Record<string, unknown>): st
 
 const TEMPLATE_SPECS = `[템플릿별 props 규격 — 줄바꿈은 문자열 안 "\\n", **강조**는 포인트색 볼드 마커]
 - C1 사진몰입 커버 / C2 문장형 다크 커버 / C3 툴 커버: {"kicker":"≤14자 프레이밍 한 줄(C1, 선택 — '~의 경제학'·'~시대의 사건' 식)","title":"2~3줄, 줄당 ≤12자","hl":"title 속 핵심 단어 1개(부분 문자열 그대로, 짧게)","sub":"≤28자 — 궁금증을 증폭하는 한 줄 또는 구체 스펙(N개 중 M개는 ~, 대상 독자). '읽기 N분·적용 N분' 같은 시간 표기 금지(웹 개념 — 인스타에선 무의미)","footer":"@영문개념 ≤20자(C1, 선택 — 예: @BLINDSPOT PASS)"} (C2는 "eyebrow":"≤16자 도입" 추가 가능)
+  · C1 커버 유형(선택): "coverLayout":"bottom|center|band|giant" — bottom 좌하단(기본) / center 가운데 포스터(대칭적·선언형 소재) / band 상단 사진+하단 검은 밴드(인물·화면 스크린샷처럼 사진이 복잡할 때, "label":"≤16자 캡슐 라벨" 같이 낼 것) / giant 하단 초대형(제목이 2줄 이하 + 줄당 ≤10자인 짧고 센 헤드라인일 때만). 안 내면 시스템이 소재로 자동 배정한다
+  · 형광펜 표현(선택): "hlStyle":"box|text|underline" — 큰 타이포(center·giant)는 text(글자색만)가 낫고, box는 한 단어를 도장 찍듯 눌러야 할 때
 - C5 빅넘버 커버: {"kicker":"≤20자 맥락 1줄","big":"거대 숫자/단어 ≤6자 (예: 10배, 11, FOCUS)","resolve":"1~2줄, 줄당 ≤16자 해소 문장 (**강조** 1개)","footer":"@영문개념(선택)"} — 핵심이 숫자/단어 하나로 요약될 때. 사진 없어도 성립
 - B1 타임라인: {"lead":"≤36자 도입(선택, **강조** 1개)","heading":"≤13자 한 줄","hl":"heading 속 핵심 구","rows":[{"term":"≤8자","desc":"≤14자"}] 2~5개}
 - B2 불릿/개요: {"banner":"≤14자(✓ 접두 가능)","lead":"≤32자 — 이 장에서 가장 중요한 사실 한 줄 (개요 역할 슬라이드는 필수)","bullets":["≤30자, **강조** 각 1개"] 2~4개}
@@ -863,6 +866,33 @@ function validateSlides(
   return { issues, parsed };
 }
 
+/** 문자열 → 안정 해시. 같은 콘텐츠는 항상 같은 커버 유형이 나오게(재생성해도 안 튀게) */
+function seedOf(text: string): number {
+  let h = 7;
+  for (const ch of text) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  return h;
+}
+
+/** C1 커버 유형 자동 배정 — AI가 coverLayout을 안 냈을 때.
+ *  전부 좌하단으로 나가면 소재가 달라도 같은 카드로 보인다(운영자 지적 2026-08-17).
+ *  아무렇게나 섞지 않고 "이 소재에서 안전한 유형"만 후보로 두고 그 안에서 해시로 고른다. */
+function pickCoverLayout(props: Record<string, unknown>): 'bottom' | 'center' | 'band' | 'giant' {
+  const title = typeof props.title === 'string' ? props.title : '';
+  const lines = title.split('\n');
+  const longest = Math.max(...lines.map((l) => l.replace(/\s/g, '').length), 0);
+  // 사진이 없으면 그라데이션 배경 — 좌하단은 위쪽이 통째로 비어 허전하다. 센터가 유일하게 선다
+  if (!props.coverImage) return 'center';
+  const pool: Array<'bottom' | 'center' | 'band' | 'giant'> = ['bottom', 'center', 'band'];
+  if (lines.length <= 2 && longest <= 10) pool.push('giant'); // 초대형은 짧고 센 헤드라인에만
+  return pool[seedOf(title) % pool.length];
+}
+
+/** 형광펜 표현 자동 — 큰 타이포(센터·초대형)에 색 박스를 얹으면 무겁다. 나머지는 박스/밑줄을 번갈아 */
+function pickHlStyle(layout: string, seed: number): 'box' | 'text' | 'underline' {
+  if (layout === 'giant' || layout === 'center') return 'text';
+  return seed % 2 === 0 ? 'box' : 'underline';
+}
+
 /** page 자동 기입 + 계획 이미지 배치.
  *  CTA(댓글 키워드 안내 포함)는 캡션·스레드 전담 — O1 삭제(2026-08-13)로 슬라이드 내 CTA 예외도 사라짐. */
 function finalizeSlides(
@@ -893,6 +923,12 @@ function finalizeSlides(
       if (s.template === 'B5' && !props.image) props.image = planned.image;
       // P 계열은 사진이 정체성 — 계획에 이미지가 있으면 항상 image로 (AI는 image를 생성하지 않는다)
       if (s.template.startsWith('P') && !props.image) props.image = planned.image;
+    }
+    // 커버 유형·형광펜 표현 — 미지정이면 소재로 자동 배정(사진 배치 뒤에 판단해야 사진 유무가 반영된다)
+    if (s.template === 'C1') {
+      if (!props.coverLayout) props.coverLayout = pickCoverLayout(props);
+      if (props.hl && !props.hlStyle)
+        props.hlStyle = pickHlStyle(String(props.coverLayout), seedOf(String(props.title ?? '')));
     }
     return { ...s, order: i + 1, props };
   });

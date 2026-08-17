@@ -17,15 +17,29 @@ export const StyleOverrideFields = {
   coverPos: z.string().optional(),                                // 배경 위치 "50% 30%" (사진 팬)
   hlColor: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),      // 형광펜 배경색 (기본: 포인트색)
   titleAnchor: z.enum(['top', 'center', 'bottom']).optional(),    // 커버 텍스트 앵커 (C1)
+  // 형광펜 표현 — box(배경 박스·기본) / text(글자색만) / underline(밑줄).
+  // 커버가 매번 같은 "색 박스"로만 나가면 시리즈가 한 장처럼 보인다(벤치마크 6종 중 박스는 1종뿐).
+  hlStyle: z.enum(['box', 'text', 'underline']).optional(),
 };
+
+// C1 커버 유형 — 벤치마크(인스타 상위 계정 커버 6종) 분해 결과. 텍스트가 늘 좌하단에만 붙어 있으면
+// 어떤 소재를 넣어도 같은 카드로 보인다. 네 자리 중 하나를 고르는 방식으로 넓혔다.
+//   bottom : 좌하단 정렬 (기존 기본값 — 회귀 없이 그대로)
+//   center : 가운데 정렬 포스터형 (상단 태그 중앙 · 하단 워드마크) — 사진이 약하거나 대칭 소재
+//   band   : 상단 사진 + 하단 검은 밴드(레터박스) — 인물·스크린샷처럼 글자가 묻히는 사진에 안전
+//   giant  : 상단을 비우고 하단 절반에 초대형 2줄 — 짧고 센 헤드라인
+export const CoverLayoutSchema = z.enum(['bottom', 'center', 'band', 'giant']);
+export type CoverLayout = z.infer<typeof CoverLayoutSchema>;
 
 export const C1PropsSchema = z.object({
   ...StyleOverrideFields,
+  coverLayout: CoverLayoutSchema.optional(), // 커버 유형 (기본 bottom)
   kicker: z.string().optional(),     // 헤드라인 위 프레이밍 한 줄 ("~의 경제학") — 벤치마크 4층 구조
   title: z.string().min(1),          // 커버 제목 (≤17자 권장, '\n' 줄바꿈)
   hl: z.string().optional(),         // title 안의 형광펜 대상 부분 문자열
   sub: z.string().optional(),        // "읽는 데 5분 · 적용 30분"
   tag: z.string().optional(),        // 우상단 태그 (기본: accent별 카테고리명)
+  label: z.string().optional(),      // band형 캡슐 라벨 ("AI TOOL | GENERAL") — 없으면 tag/카테고리
   footer: z.string().optional(),     // 좌하단 초소형 @개념 영문 ("@BLINDSPOT PASS")
   coverImage: z.string().url().optional(), // 배경 사진 url (없으면 그라데이션 폴백)
 });

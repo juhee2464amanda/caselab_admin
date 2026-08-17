@@ -46,6 +46,10 @@ const PHOTO_DARK =
 /** 템플릿별 대표 샘플 — 실제 생성물과 같은 분량으로 (짧게 넣으면 오버플로를 못 잡는다) */
 const SAMPLES = [
   ['C1', { kicker: '검수의 경제학', title: '검수 시간이\n70% 줄었다', hl: '70%', sub: '초안 40분이 6분이 된 이유', footer: '@REVIEW LOOP', coverImage: PHOTO_BRIGHT }],
+  // C1 커버 유형 4종 — 텍스트가 서는 자리가 유형마다 달라서 오버플로·대비를 각각 재야 한다
+  ['C1', { coverLayout: 'center', kicker: '검수의 경제학', title: '검수 시간이\n70% 줄었다', hl: '70%', hlStyle: 'text', sub: '초안 40분이 6분이 된 이유', footer: '@REVIEW LOOP', coverImage: PHOTO_BRIGHT }, { suffix: '-center' }],
+  ['C1', { coverLayout: 'band', label: 'AI 도구 | 자동화', title: '검수 시간이\n70% 줄었다', hl: '70%', sub: '초안 40분이 6분이 된 이유', coverImage: PHOTO_BRIGHT }, { suffix: '-band' }],
+  ['C1', { coverLayout: 'giant', tag: '실전 케이스', title: '검수를\n안 하기로 했다', hl: '검수', hlStyle: 'underline', coverImage: PHOTO_BRIGHT }, { suffix: '-giant' }],
   ['C2', { eyebrow: '워크플로', title: '구현해줘가\n틀린 이유', hl: '틀린 이유', sub: '지시가 아니라 제약을 준다' }],
   ['C3', { title: 'Claude Code', hl: 'Code', sub: '터미널에 상주하는 코딩 에이전트', tag: '도구' }],
   ['C4', { eyebrow: '초안 생성, 뭐가 더 낫나', vsA: { name: '지시형', by: '시켜만 두기' }, vsB: { name: '제약형', by: '조건을 박기' }, sub: '3개월 비교 기록' }],
@@ -290,7 +294,7 @@ async function main() {
     if (a.edgeHits > 400) problems.push(`가장자리 침범 ${a.edgeHits}px — 오버플로`);
 
     rows.push({
-      template,
+      template: `${template}${opts.suffix ?? ''}`,
       ok: problems.length === 0,
       why: [...problems, ...warns.map((w) => `⚠ ${w}`)].join(' / '),
       cells: a.glyphCells,

@@ -957,7 +957,10 @@ function CardEditor({ card, sourceTitle }: { card: CardRow; sourceTitle?: string
       })
     );
   }
-  function patchStyle(key: 'accentColor' | 'overlay' | 'coverPos' | 'titleAnchor', value: unknown) {
+  function patchStyle(
+    key: 'accentColor' | 'overlay' | 'coverPos' | 'titleAnchor' | 'coverLayout' | 'hlStyle',
+    value: unknown
+  ) {
     patchPropsAt(selIdx, { [key]: value });
   }
   /**
@@ -1284,6 +1287,22 @@ function CardEditor({ card, sourceTitle }: { card: CardRow; sourceTitle?: string
         )}
         {s.template === 'C1' && (
           <label className="flex items-center gap-1">
+            커버 유형
+            <select
+              value={(s.props.coverLayout as string) ?? 'bottom'}
+              onChange={(e) => patchStyle('coverLayout', e.target.value)}
+              className="border border-border rounded px-1 py-0.5 bg-transparent"
+            >
+              <option value="bottom">기본(좌하단)</option>
+              <option value="center">센터 포스터</option>
+              <option value="band">하단 밴드</option>
+              <option value="giant">하단 초대형</option>
+            </select>
+          </label>
+        )}
+        {/* 세로 앵커는 좌하단형에서만 의미 — 나머지 유형은 자리가 구조로 정해진다 */}
+        {s.template === 'C1' && ((s.props.coverLayout as string) ?? 'bottom') === 'bottom' && (
+          <label className="flex items-center gap-1">
             텍스트 위치
             <select
               value={(s.props.titleAnchor as string) ?? 'bottom'}
@@ -1293,6 +1312,20 @@ function CardEditor({ card, sourceTitle }: { card: CardRow; sourceTitle?: string
               <option value="bottom">하단</option>
               <option value="center">중앙</option>
               <option value="top">상단</option>
+            </select>
+          </label>
+        )}
+        {typeof s.props.hl === 'string' && s.props.hl && (
+          <label className="flex items-center gap-1">
+            형광펜
+            <select
+              value={(s.props.hlStyle as string) ?? 'box'}
+              onChange={(e) => patchStyle('hlStyle', e.target.value)}
+              className="border border-border rounded px-1 py-0.5 bg-transparent"
+            >
+              <option value="box">색 박스</option>
+              <option value="text">글자색</option>
+              <option value="underline">밑줄</option>
             </select>
           </label>
         )}

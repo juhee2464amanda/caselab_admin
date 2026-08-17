@@ -87,7 +87,7 @@ export type Bag = {
   style: Record<string, unknown>;
 };
 
-const STYLE_KEYS = ['accentColor', 'overlay', 'coverPos', 'hlColor', 'titleAnchor'] as const;
+const STYLE_KEYS = ['accentColor', 'overlay', 'coverPos', 'hlColor', 'titleAnchor', 'hlStyle'] as const;
 
 const str = (v: unknown): string | undefined => {
   const s = typeof v === 'string' ? v.trim() : '';

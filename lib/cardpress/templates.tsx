@@ -112,6 +112,40 @@ function hlBg(props: { hlColor?: string }, fallback: string): string {
   return props.hlColor && /^#[0-9a-fA-F]{6}$/.test(props.hlColor) ? props.hlColor : fallback;
 }
 
+/** 형광펜 표현 3종 — box(배경 박스) / text(글자색만) / underline(밑줄).
+ *  Satori는 box-decoration-break·text-decoration 두께를 못 다루므로 밑줄은 borderBottom으로 그린다.
+ *  text·underline은 색이 글자 자체에 실리므로 어두운 배경에서 흰색보다 어두워지지 않게 밝기를 올린다
+ *  (블루 #2F6BFF 원색은 검은 사진 위 3.0:1 — 흰 글자 옆에서 혼자 안 읽힌다). */
+function hlSpan(
+  props: { hlColor?: string; hlStyle?: 'box' | 'text' | 'underline' },
+  color: string,
+  onDark: boolean
+): CSSProperties {
+  const base = hlBg(props, color);
+  const lit = onDark ? mixWithWhite(base, 0.58) : base;
+  switch (props.hlStyle) {
+    case 'text':
+      return { whiteSpace: 'pre', color: lit, textShadow: 'none' };
+    case 'underline':
+      return {
+        whiteSpace: 'pre',
+        color: onDark ? '#fff' : INK,
+        borderBottom: `7px solid ${lit}`,
+        paddingBottom: 2,
+        textShadow: 'none',
+      };
+    default:
+      return {
+        whiteSpace: 'pre',
+        background: base,
+        color: '#fff',
+        padding: '2px 16px',
+        borderRadius: 8,
+        textShadow: 'none',
+      };
+  }
+}
+
 // 슬라이드별 포인트색 오버라이드 (캔버스 편집) — 유효한 hex일 때만
 function accentOf(accent: CardAccent, props: { accentColor?: string }): string {
   return props.accentColor && /^#[0-9a-fA-F]{6}$/.test(props.accentColor)
@@ -282,8 +316,26 @@ function PhotoBg({ image, overlay, pos }: { image?: string; overlay: number; pos
   );
 }
 
-// ---------- C1 · 사진몰입형 커버 ----------
-function C1({ accent, props }: Extract<RenderSlideInput, { template: 'C1' }>) {
+// ---------- C1 · 사진 커버 (유형 4종) ----------
+// 텍스트가 늘 좌하단에만 붙으면 소재가 달라도 같은 카드로 읽힌다. 벤치마크 커버를 분해해
+// 네 자리로 나눴다: 좌하단(bottom) / 가운데 포스터(center) / 하단 밴드(band) / 하단 초대형(giant).
+type C1Input = Extract<RenderSlideInput, { template: 'C1' }>;
+
+function C1(input: C1Input) {
+  switch (input.props.coverLayout) {
+    case 'center':
+      return C1Center(input);
+    case 'band':
+      return C1Band(input);
+    case 'giant':
+      return C1Giant(input);
+    default:
+      return C1Bottom(input);
+  }
+}
+
+// bottom — 기존 기본형(좌하단). titleAnchor로 세로 위치만 옮긴다.
+function C1Bottom({ accent, props }: C1Input) {
   const color = accentOf(accent, props);
   return (
     <div style={{ ...cardBase, background: '#1a1e2a', color: '#fff' }}>
@@ -342,18 +394,7 @@ function C1({ accent, props }: Extract<RenderSlideInput, { template: 'C1' }>) {
               textShadow: '0 2px 24px rgba(0,0,0,0.4)',
             }}
           >
-            {highlightLines(
-              props.title,
-              props.hl,
-              { minHeight: 100 },
-              {
-                background: hlBg(props, color),
-                color: '#fff',
-                padding: '2px 16px',
-                borderRadius: 8,
-                textShadow: 'none',
-              }
-            )}
+            {highlightLines(props.title, props.hl, { minHeight: 100 }, hlSpan(props, color, true))}
           </div>
           {props.sub ? (
             <div style={{ fontSize: 34, fontWeight: 600, opacity: 0.92, marginTop: 24 }}>
@@ -372,6 +413,321 @@ function C1({ accent, props }: Extract<RenderSlideInput, { template: 'C1' }>) {
               }}
             >
               {props.footer}
+            </div>
+          ) : null}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** 워드마크 — 포스터형·밴드형의 브랜드 마감. 상단 로고 줄을 안 쓰는 자리에 대신 선다 */
+function Wordmark({ size = 30, alpha = 0.9 }: { size?: number; alpha?: number }) {
+  return (
+    <div
+      style={{
+        display: 'flex',
+        fontSize: size,
+        fontWeight: 700,
+        letterSpacing: '-0.01em',
+        color: `rgba(255,255,255,${alpha})`,
+      }}
+    >
+      caselab
+    </div>
+  );
+}
+
+// center — 가운데 정렬 포스터형. 상단은 태그 한 줄, 하단은 워드마크로 닫아 좌우·상하 대칭을 만든다.
+// 사진이 밋밋하거나(그라데이션 폴백 포함) 제목이 짧은 소재에서 가장 안정적으로 서는 유형.
+function C1Center({ accent, props }: C1Input) {
+  const color = accentOf(accent, props);
+  return (
+    <div style={{ ...cardBase, background: '#1a1e2a', color: '#fff' }}>
+      <PhotoBg image={props.coverImage} overlay={props.overlay ?? 0.4} pos={props.coverPos} />
+      <div
+        style={{
+          position: 'relative',
+          flexGrow: 1,
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          padding: '72px 84px 76px',
+        }}
+      >
+        <div
+          style={{
+            display: 'flex',
+            fontSize: 26,
+            fontWeight: 700,
+            letterSpacing: '0.1em', // 한글은 0.2em을 주면 낱글자로 흩어져 읽힌다
+            color: 'rgba(255,255,255,0.82)',
+          }}
+        >
+          {props.tag ?? DEFAULT_TAGS[accent]}
+        </div>
+        <div
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            marginTop: 'auto',
+            marginBottom: 'auto',
+          }}
+        >
+          {props.kicker ? (
+            <div
+              style={{
+                display: 'flex',
+                fontSize: 32,
+                fontWeight: 700,
+                color: 'rgba(255,255,255,0.88)',
+                marginBottom: 24,
+              }}
+            >
+              {props.kicker}
+            </div>
+          ) : null}
+          <div
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              fontSize: 78,
+              fontWeight: 800,
+              letterSpacing: '-0.04em',
+              textAlign: 'center',
+              textShadow: '0 2px 24px rgba(0,0,0,0.45)',
+            }}
+          >
+            {highlightLines(
+              props.title,
+              props.hl,
+              { minHeight: 98, justifyContent: 'center' },
+              hlSpan(props, color, true)
+            )}
+          </div>
+          {props.sub ? (
+            <div
+              style={{
+                display: 'flex',
+                fontSize: 33,
+                fontWeight: 600,
+                opacity: 0.9,
+                marginTop: 26,
+                textAlign: 'center',
+              }}
+            >
+              {props.sub}
+            </div>
+          ) : null}
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+          {props.footer ? (
+            <div
+              style={{
+                display: 'flex',
+                fontSize: 24,
+                fontWeight: 700,
+                letterSpacing: '0.12em',
+                color: 'rgba(255,255,255,0.62)',
+                marginBottom: 16,
+              }}
+            >
+              {props.footer}
+            </div>
+          ) : null}
+          <Wordmark />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// band — 상단 사진 + 하단 검은 밴드(레터박스). 인물·스크린샷처럼 사진이 복잡해서 글자가 묻히는
+// 커버에서 유일하게 안전한 구조다(스크림을 아무리 깔아도 얼굴 위 흰 글씨는 안 읽힌다).
+const C1_BAND_PHOTO = 800;
+
+function C1Band({ accent, props }: C1Input) {
+  const color = accentOf(accent, props);
+  const label = props.label ?? props.kicker ?? props.tag ?? DEFAULT_TAGS[accent];
+  const bodyH = CARD_H - C1_BAND_PHOTO;
+  // 밴드 안 세로 예산: 상하 안전여백 72×2 + 라벨 52 + 간격 26 + (sub 62) 을 뺀 나머지가 제목 몫.
+  // 블록은 밴드 안에서 세로 중앙 정렬한다 — 바닥에 붙이면 제목과 sub 사이가 텅 비어 두 덩어리로 읽힌다.
+  const avail = bodyH - 144 - 52 - 26 - (props.sub ? 62 : 0);
+  const fit = fitBlock([props.title], {
+    width: BODY_W,
+    height: avail,
+    max: 68,
+    min: 40,
+    lineHeight: 1.26,
+    gapRatio: 0,
+  });
+  return (
+    <div style={{ ...cardBase, background: DARK_BG, color: '#fff' }}>
+      <PhotoBand image={props.coverImage} height={C1_BAND_PHOTO} pos={props.coverPos} />
+      <div
+        style={{
+          position: 'absolute',
+          top: 54,
+          left: 0,
+          width: CARD_W,
+          display: 'flex',
+          justifyContent: 'center',
+        }}
+      >
+        <Wordmark size={28} alpha={0.92} />
+      </div>
+      <div
+        style={{
+          position: 'relative',
+          flexGrow: 1,
+          display: 'flex',
+          flexDirection: 'column',
+          justifyContent: 'center',
+          padding: '0 72px',
+        }}
+      >
+        <div
+          style={{
+            display: 'flex',
+            alignSelf: 'flex-start',
+            alignItems: 'center',
+            border: '2px solid rgba(255,255,255,0.5)',
+            borderRadius: 999,
+            padding: '8px 22px',
+            fontSize: 25,
+            fontWeight: 700,
+            letterSpacing: '0.04em',
+            color: 'rgba(255,255,255,0.94)',
+          }}
+        >
+          {label}
+        </div>
+        <div
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            marginTop: 26,
+            fontSize: fit.size,
+            fontWeight: 800,
+            letterSpacing: '-0.035em',
+          }}
+        >
+          {highlightLines(
+            props.title,
+            props.hl,
+            { minHeight: Math.round(fit.size * 1.26) },
+            hlSpan(props, color, true)
+          )}
+        </div>
+        {props.sub ? (
+          <div
+            style={{
+              display: 'flex',
+              marginTop: 22,
+              fontSize: 31,
+              fontWeight: 600,
+              color: 'rgba(255,255,255,0.72)',
+            }}
+          >
+            {props.sub}
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+// giant — 상단을 비우고 하단 절반에 초대형 2줄. 짧고 센 헤드라인 전용(길면 자동으로 줄어든다).
+const C1_GIANT_BLOCK = 470; // 헤드라인 블록 세로 예산
+
+function C1Giant({ accent, props }: C1Input) {
+  const color = accentOf(accent, props);
+  const fit = fitBlock([props.title], {
+    width: BODY_W,
+    height: C1_GIANT_BLOCK,
+    max: 126,
+    min: 68,
+    lineHeight: 1.14,
+    gapRatio: 0,
+  });
+  return (
+    <div style={{ ...cardBase, background: '#1a1e2a', color: '#fff' }}>
+      <PhotoFull
+        image={props.coverImage}
+        pos={props.coverPos}
+        overlay={props.overlay ?? 0.22}
+        textTop={CARD_H - C1_GIANT_BLOCK - 120}
+      />
+      {/* 상단 비네트 — PhotoFull은 아래쪽만 눌러서 밝은 사진에선 topbar가 2.19:1로 안 읽힌다(검수 검출) */}
+      <div
+        style={{
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          width: CARD_W,
+          height: Math.round(CARD_H * 0.18),
+          display: 'flex',
+          background: 'linear-gradient(180deg,rgba(0,0,0,0.5) 0%,rgba(0,0,0,0) 100%)',
+        }}
+      />
+      <div
+        style={{
+          position: 'relative',
+          flexGrow: 1,
+          display: 'flex',
+          flexDirection: 'column',
+          padding: '72px 72px 84px',
+        }}
+      >
+        <Topbar
+          color="#fff"
+          right={props.tag ?? DEFAULT_TAGS[accent]}
+          rightStyle={{ fontSize: 26, color: 'rgba(255,255,255,0.78)', letterSpacing: '0.06em' }}
+        />
+        <div style={{ display: 'flex', flexDirection: 'column', marginTop: 'auto' }}>
+          {props.kicker ? (
+            <div
+              style={{
+                display: 'flex',
+                fontSize: 30,
+                fontWeight: 700,
+                letterSpacing: '0.04em',
+                color: 'rgba(255,255,255,0.86)',
+                marginBottom: 20,
+              }}
+            >
+              {props.kicker}
+            </div>
+          ) : null}
+          <div
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              fontSize: fit.size,
+              fontWeight: 800,
+              letterSpacing: '-0.05em',
+            }}
+          >
+            {highlightLines(
+              props.title,
+              props.hl,
+              { minHeight: Math.round(fit.size * 1.14) },
+              hlSpan(props, color, true)
+            )}
+          </div>
+          {props.sub ? (
+            <div
+              style={{
+                display: 'flex',
+                fontSize: 32,
+                fontWeight: 600,
+                color: 'rgba(255,255,255,0.8)',
+                marginTop: 22,
+              }}
+            >
+              {props.sub}
             </div>
           ) : null}
         </div>
@@ -918,7 +1274,7 @@ function C2({ accent, props }: Extract<RenderSlideInput, { template: 'C2' }>) {
             props.title,
             props.hl,
             { minHeight: 82 },
-            { background: hlBg(props, color), color: '#fff', padding: '2px 16px', borderRadius: 8 }
+            hlSpan(props, color, true)
           )}
         </div>
       </div>
@@ -980,7 +1336,7 @@ function C3({ accent, props }: Extract<RenderSlideInput, { template: 'C3' }>) {
             props.title,
             props.hl,
             { minHeight: 82, justifyContent: 'center' },
-            { background: hlBg(props, color), color: '#fff', padding: '2px 16px', borderRadius: 8 }
+            hlSpan(props, color, true)
           )}
         </div>
       </div>
@@ -1139,7 +1495,7 @@ function B1({ accent, props }: Extract<RenderSlideInput, { template: 'B1' }>) {
           props.heading,
           props.hl,
           { minHeight: 75 },
-          { background: hlBg(props, color), color: '#fff', padding: '2px 16px', borderRadius: 8 }
+          hlSpan(props, color, false)
         )}
       </div>
       <div
@@ -1312,7 +1668,7 @@ function B4({ accent, props }: Extract<RenderSlideInput, { template: 'B4' }>) {
             props.title,
             props.hl,
             { minHeight: 75, justifyContent: 'center' },
-            { background: hlBg(props, color), color: '#fff', padding: '2px 16px', borderRadius: 8, textShadow: 'none' }
+            hlSpan(props, color, true)
           )}
         </div>
         {props.attribution ? (
@@ -1348,7 +1704,7 @@ function B6({ accent, props }: Extract<RenderSlideInput, { template: 'B6' }>) {
           props.heading,
           props.hl,
           { minHeight: 68 },
-          { background: hlBg(props, color), color: '#fff', padding: '2px 16px', borderRadius: 8 }
+          hlSpan(props, color, false)
         )}
       </div>
       <div
@@ -1635,7 +1991,7 @@ function B8({ accent, props }: Extract<RenderSlideInput, { template: 'B8' }>) {
           props.heading ?? '오늘의 프롬프트',
           props.hl ?? '프롬프트',
           { minHeight: 65 },
-          { background: hlBg(props, color), color: '#fff', padding: '2px 16px', borderRadius: 8 }
+          hlSpan(props, color, false)
         )}
       </div>
       {promptBox(31)}
