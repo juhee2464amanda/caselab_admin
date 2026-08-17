@@ -11,10 +11,8 @@ import {
   buildSeedSlidePlan,
   buildSlidePlan,
   buildToolSlidePlan,
-  contentUrl,
   seedTitle,
   toolKindLabel,
-  toolUrl,
   type ContentRowLite,
   type SeedRowLite,
   type SlidePlan,
@@ -61,11 +59,67 @@ function sourceLabel(src: CardSource): string {
   return `씨앗 원석 · ${seedTitle(src.seed)}`;
 }
 
-/** 스레드 글에 붙일 본가 URL — 씨앗은 아직 본가에 없으므로 null */
-function sourceUrl(src: CardSource): string | null {
-  if (src.kind === 'content') return contentUrl(src.row);
-  if (src.kind === 'tool') return toolUrl(src.tool);
-  return null;
+/** 캡션 본문 블록 3개가 각각 무엇을 맡는지 — **소재 종류가 정한다**.
+ *
+ *  왜 소재별로 다른가: 슬라이드 계획이 소재마다 다르다(케이스=문제→스텝→후기, 트렌드=무슨 소식→왜→시사점,
+ *  도구=무엇/언제/얼마). 캡션에 하나의 골격을 쓰면 재료가 없는 자리를 AI가 지어내거나,
+ *  블록 3개가 같은 말을 세 번 하게 된다. 실제로 자료실 도구 카드에서 가격·대상이 통째로 빠졌던 것과 같은 원인이다.
+ *
+ *  블록의 재료는 카드에 실은 슬라이드가 아니라 skip한 재료가 1순위 — 그 지시는 SYSTEM에 있다. */
+function captionBlockGuide(src: CardSource): string {
+  const kind =
+    src.kind === 'content'
+      ? src.row.track === 'case'
+        ? 'case'
+        : 'trend'
+      : src.kind === 'tool'
+        ? // 맥락 카드는 도구가 아니라 "복사해서 쓰는 실물"이라 프롬프트와 같은 골격을 쓴다
+          // (도구 골격을 씌우면 있지도 않은 가격 블록을 지어낸다)
+          src.tool.category === 'prompt' || src.tool.category === 'context-card'
+          ? 'prompt'
+          : src.tool.category === 'guide'
+            ? 'guide'
+            : 'tool'
+        : 'seed';
+
+  const GUIDES: Record<string, string> = {
+    case: `블록1 — 어디서 막혔나: painPoints의 근본 원인 하나. 증상이 아니라 원인까지.
+블록2 — 어떻게 넘겼나: stepCards 중 대표 하나. 사람이 한 일과 AI가 한 일을 갈라서.
+블록3 — 아쉬웠던 것: cons를 솔직하게. **생략 금지** — 장점만 있는 후기는 신뢰를 잃는다.`,
+    trend: `블록1 — 무엇이 달라졌나: what의 요점. 스펙 나열이 아니라 "전과 후"가 보이게.
+블록2 — 왜 지금인가: why. 업계 사정이 아니라 독자의 일과 연결해서.
+블록3 — 내 일에선: soWhat. **직무 하나를 특정할 것** (기획자면 기획자). 일반론이면 이 블록은 죽는다.`,
+    tool: `블록1 — 무엇을 해주나: 대표 기능 하나. 기능명이 아니라 그 기능이 없애주는 일로.
+블록2 — 언제 꺼내 쓰나: whenToUse. 상황을 장면으로 그릴 것.
+블록3 — 얼마인가 · 안 되는 것: 가격은 재료의 숫자 그대로. 한계를 한 줄 붙일 것 — 광고문이 되는 걸 막는다.`,
+    prompt: `블록1 — 이 프롬프트가 푸는 문제: 언제 손이 멈추는지.
+블록2 — 넣는 법: 채워야 하는 자리({{변수}})가 무엇인지. **프롬프트 전문은 캡션에 쓰지 말 것** — 카드와 DM의 몫이다.
+블록3 — 나오는 결과의 특성: 응답 원문이 아니라 "어떤 형태로 나오는지".`,
+    guide: `⚠️ 이 소재는 재료가 얇다(링크 카드) — 블록을 **2개만** 쓸 것. 3개를 채우면 같은 말을 세 번 하게 된다.
+블록1 — 원문이 무엇인지: 누가 만든 무슨 문서인지.
+블록2 — 왜 볼 만한지 · 어디부터: 클릭할 이유 하나와 먼저 볼 대목.`,
+    seed: `⚠️ 이 소재는 본가에 페이지가 없다(미발행 원석) — "전체 정리는 링크에" 류로 없는 곳을 가리키지 말 것.
+블록1 — 무엇을 발견했나: 재료에 실제로 있는 사실만.
+블록2 — 왜 눈에 띄었나: 기존 방식과 무엇이 다른지.
+블록3 — 아직 안 해본 부분: 검증 못 한 지점을 정직하게. 확인한 것처럼 쓰지 말 것.`,
+  };
+
+  return GUIDES[kind];
+}
+
+/** 캡션·스레드에서 맨 URL을 걷어낸다.
+ *  인스타 캡션의 URL은 클릭이 안 되고(유일한 출구는 프로필 링크), 로컬에서 만들면
+ *  localhost 주소가 그대로 발행된다. 출구는 "댓글 키워드 → DM" 또는 프로필 링크뿐. */
+function stripUrls(text: string): string {
+  return text
+    .split('\n')
+    // "👉 전체 과정: https://…" 처럼 URL이 본체인 줄은 통째로 버린다
+    .filter((line) => !/^\s*[^\s]{0,3}\s*[^:\n]{0,20}:?\s*https?:\/\/\S+\s*$/i.test(line))
+    // 문장 중간에 섞인 URL만 지운다
+    .map((line) => line.replace(/https?:\/\/\S+/gi, '').replace(/[ \t]{2,}/g, ' ').trimEnd())
+    .join('\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
 }
 
 export type CoverCandidate = { thumb: string; full: string; credit: string; creditLink: string };
@@ -451,26 +505,36 @@ ${ctaEndingExamples('channel_intro')}
 
 [함께 생성]
 - igCaption: 인스타 캡션 — **카드뉴스를 다 넘겨본 사람에게 이어서 말을 거는 글**. 요약 리포트가 아니다.
-  구조(4단):
-  ① 독자의 경험을 먼저 깨운다 — 이 이야기가 건드리는 "당신도 겪은 그 상황"을 질문이나 단정으로 연다.
-     (예: 기술이 부족해서 접어둔 아이디어, 폴더에만 남은 기획안 — 읽는 사람이 자기 얘기로 느끼게)
-     ❌ "개발자 A가 ~했습니다"로 시작하지 말 것. 사실 보고가 아니라 공감 유발이 먼저다.
-  ② 그런데 실제로 해본 사람이 있다 — 누가·무엇으로·어떤 결과였는지 구체적으로(실명·숫자).
-  ③ 진짜 포인트 하나 — 카드에서 못 다 한 통찰. "핵심은 X가 아니라 Y였다" 식으로 뒤집어 준다.
-  ④ CTA 유형에 맞는 마무리.
-  톤: 말하듯이. 문장을 짧게 끊고, 문단 사이를 비운다. 앞 문장이 다음 문장을 부르게 이어 쓸 것
-  (한 문장씩 독립된 정보를 나열하지 말 것 — 그게 '요약체'가 되는 원인).
-  **한 문단은 3문장 이하.** 4문장을 넘기면 폰에서 글자 벽으로 보여 그냥 넘긴다.
-  ③은 ②에서 이미 말한 내용을 다시 정리하는 자리가 아니다. ②에 결론을 미리 쓰지 말 것 —
+  ⚠️ **카드에 실은 내용을 다시 요약하지 말 것.** 캡션의 1순위 재료는 **skip한 (선정) 슬라이드의 재료**다 —
+  카드를 넘긴 사람에게 새 정보가 남아야 캡션을 읽을 이유가 생긴다.
+  skip한 재료가 없으면 카드가 다루지 못한 각도(한계·전제·다음 수)로 쓴다.
+
+  구조(5단):
+  ① 첫 두 줄 — 인스타는 두 줄 뒤에 캡션을 접는다. **접히기 전에 무엇에 대한 글인지 다 밝힐 것.**
+     도구 이름·숫자·단정 중 하나를 첫 줄에 넣는다. ❌ 배경부터 까는 도입, 뜸 들이기, "~한 적 있으신가요" 류의 빈 공감 금지.
+  ② 본문 — "이모지 1개 + 소제목 한 줄" 블록을 **정확히 3개**(가이드 소재만 2개). 블록당 2~3문장.
+     블록 사이는 빈 줄로 띄운다. 각 블록이 무엇을 맡는지는 아래 [캡션 블록 역할]을 그대로 따를 것.
+     이모지는 **소제목 앞에만 하나씩** — 문장 속에는 넣지 않는다.
+  ③ 묶는 한 줄 — 블록 3개를 하나로 잇는 문장 하나(정리 또는 대조).
+  ④ 질문 — 독자에게 직접 묻는 한 문장. **매번 필수.** 답할 거리를 주지 않으면 댓글에 이모지만 달린다.
+     질문의 답이 **어디에 있어야 하는지**는 CTA 유형이 정한다:
+       comment_dm    → 답이 DM 안에 있게 (지금 그게 필요한 상황인지 묻는다)
+       info_save     → 답이 본가에 있게 (지금 무엇을 찾고 있는지 묻는다)
+       channel_intro → 답이 독자 자신에게 있게 (자기 상황을 확인하게 묻는다)
+     ❌ "여러분은 어떠신가요" 같은 매번 같은 문형 금지 — 소재의 말로 물을 것.
+  ⑤ CTA 유형에 맞는 마무리.
+  톤: 말하듯이. 문장을 짧게 끊고, 블록 사이를 비운다.
+  **한 블록은 3문장 이하.** 4문장을 넘기면 폰에서 글자 벽으로 보여 그냥 넘긴다.
   "핵심은/진짜 포인트는" 류의 뒤집기 표현은 **캡션 전체에서 한 번만** 쓴다.
   ⚠️ **마크다운을 쓰지 말 것** — 인스타는 렌더하지 않아 기호가 그대로 노출된다.
   백틱(\`code\`)·**굵게**·_기울임_·[링크](url)·머리말 # 전부 금지.
   명령어나 코드를 언급해야 하면 기호 없이 평문으로 쓸 것 (예: caffeinate 명령어로는, pmset 설정은).
-  해시태그는 캡션 본문에 쓰지 말 것(시스템이 붙임). 이모지는 절제.
+  ⚠️ **URL을 쓰지 말 것** — 인스타 캡션의 링크는 눌리지 않는다(시스템이 걷어낸다). 출구는 프로필 링크와 댓글뿐.
+  해시태그는 캡션 본문에 쓰지 말 것(시스템이 붙임).
 - topicTags: 이 소재를 가리키는 **구체** 해시태그 2~3개 (#포함, 공백 없이). 브랜드·분류 태그는 시스템이 붙이므로 내지 말 것.
   소재의 고유명사·도구·상황을 담을 것 (예: #AI에이전트 #맥북활용 #클로드코드).
   ❌ #AI활용 #일잘러 #업무효율 #생산성 같은 초대형 범용어 금지 — 노출 기여가 없고 매 게시물 같은 태그는 스팸 신호가 된다.
-- threadsText: 스레드 네이티브 톤으로 재작성한 글 300~450자 — 대화하듯, 핵심 발견 1~2개 + 솔직 후기 한 줄. 링크는 쓰지 말 것(시스템이 붙임).
+- threadsText: 스레드 네이티브 톤으로 재작성한 글 300~450자 — 대화하듯, 핵심 발견 1~2개 + 솔직 후기 한 줄. URL은 쓰지 말 것(시스템이 걷어냄).
 - metaphorQueries: 커버 배경 이미지 검색어 3개 — 제목·후킹 문장 속 "구체적 사물/장면"을 영어로 (주제어 말고 명사. 예: "airplane cabin aisle interior", "colored pencils macro"). 구체 명사가 없으면 개념을 사물로 치환(집중→과녁, 선택→갈림길). 어둡고 대비 강한 톤 선호("dark", "moody", "silhouette" 등 톤 단어 1개 포함), 알아볼 수 있는 얼굴은 피할 것(뒷모습·손·오브젝트 위주).
 
 [슬라이드 사진 검색어(imageQueries) — 사진형 템플릿(P1·P2·P3·P4·C1·B4)에만]
@@ -497,7 +561,7 @@ function planPrompt(
   source: CardSource,
   plan: SlidePlan,
   operatorEdge?: string,
-  ctaType: CardCtaType = 'comment_dm'
+  ctaType: CardCtaType = 'channel_intro'
 ): string {
   // 재료는 항목당 500자로 절단 — 프롬프트가 커질수록 구독 CLI 타임아웃 위험이 커진다
   const clip = (t: string) => (t.length > 500 ? `${t.slice(0, 500)}…` : t);
@@ -534,6 +598,9 @@ function planPrompt(
   return `[콘텐츠]
 ${header}
 CTA 유형: ${ctaType}${operatorEdge ? `\n\n[운영자 지정 엣지 — 최우선] ${operatorEdge}` : ''}
+
+[캡션 블록 역할 — 이 소재 전용]
+${captionBlockGuide(source)}
 
 [슬라이드 계획 — ${plan.slides.length}장]${selectLine}
 ${slideLines}`;
@@ -959,7 +1026,7 @@ export async function generateCardSet(
   source: CardSource,
   opts?: { edge?: string; ctaType?: CardCtaType; ctaKeyword?: string }
 ): Promise<CardSetDraft> {
-  const ctaType: CardCtaType = opts?.ctaType ?? 'comment_dm';
+  const ctaType: CardCtaType = opts?.ctaType ?? 'channel_intro';
   const plan = sourcePlan(source);
   const userPrompt = planPrompt(source, plan, opts?.edge, ctaType);
 
@@ -1025,11 +1092,8 @@ ${lastIssues.map((i) => `- ${i}`).join('\n')}`;
 
   const baseTags = [...FIXED_TAGS, ...CATEGORY_TAGS[plan.accent]];
   const tags = [...baseTags, ...normalizeTopicTags(lastRaw.topicTags, baseTags)];
-  // 씨앗 소스는 본가 페이지가 없음 — 스레드에 URL을 붙이지 않는다
-  const url = sourceUrl(source);
-  const threadsBody = stripMarkdown(lastRaw.threadsText); // 스레드도 마크다운 미렌더
-  const threads =
-    !url || threadsBody.includes(url) ? threadsBody : `${threadsBody}\n\n👉 전체 과정: ${url}`;
+  // 캡션·스레드 모두 URL 없이 나간다 — 출구는 "댓글 키워드 → DM"과 프로필 링크뿐
+  const threads = stripUrls(stripMarkdown(lastRaw.threadsText)); // 스레드도 마크다운 미렌더
   const ctaKeyword = opts?.ctaKeyword?.trim() || lastRaw.ctaKeyword?.trim() || '프롬프트';
   const metaphorQueries = lastRaw.metaphorQueries ?? [];
 
@@ -1042,7 +1106,7 @@ ${lastIssues.map((i) => `- ${i}`).join('\n')}`;
     slides: finalSlides,
     extractedImages: plan.images,
     photoCredits,
-    igCaption: `${stripMarkdown(lastRaw.igCaption)}\n\n${tags.join(' ')}`,
+    igCaption: `${stripUrls(stripMarkdown(lastRaw.igCaption))}\n\n${tags.join(' ')}`,
     threadsText: threads,
     metaphorQueries,
     edge: opts?.edge?.trim() || lastRaw.edge.trim(),

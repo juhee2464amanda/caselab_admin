@@ -19,6 +19,7 @@ import {
   CTA_TYPE_LABELS,
   type CardCtaType,
 } from '@/lib/cardpress/cta-endings';
+import { endingFor } from '@/lib/cardpress/endings';
 import {
   creditBlock,
   hasCreditBlock,
@@ -381,6 +382,22 @@ export function CardPressManager({
 
   const [selectedId, setSelectedId] = useState<string | null>(initial[0]?.id ?? null);
   const [statusFilter, setStatusFilter] = useState<'all' | CardRow['status']>('all');
+
+  // ?card=<id> 딥링크 — 목록에서 찾아 누르지 않고 특정 카드로 바로 들어온다(테스트·공유용).
+  // 초기 state에서 읽지 않고 마운트 후 반영하는 이유: 서버 렌더는 첫 카드를 고르므로 하이드레이션이 어긋난다.
+  useEffect(() => {
+    const q = new URLSearchParams(window.location.search).get('card');
+    if (q && initial.some((c) => c.id === q)) setSelectedId(q);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // 주소만 갈아끼운다(router.push는 force-dynamic 페이지를 통째로 다시 받아 편집 중 상태가 날아간다)
+  const selectCard = useCallback((id: string) => {
+    setSelectedId(id);
+    const url = new URL(window.location.href);
+    url.searchParams.set('card', id);
+    window.history.replaceState(null, '', url);
+  }, []);
   const card = initial.find((c) => c.id === selectedId) ?? null;
   const filtered = statusFilter === 'all' ? initial : initial.filter((c) => c.status === statusFilter);
 
@@ -437,14 +454,14 @@ export function CardPressManager({
   const [composeId, setComposeId] = useState<string | null>(null);
   const [composeKind, setComposeKind] = useState<'content' | 'tool' | 'seed'>('content');
   const [composeEdge, setComposeEdge] = useState('');
-  const [composeCta, setComposeCta] = useState<CardCtaType>('comment_dm');
+  const [composeCta, setComposeCta] = useState<CardCtaType>('channel_intro');
   const [composeKeyword, setComposeKeyword] = useState('프롬프트');
 
   function startCompose(kind: 'content' | 'tool' | 'seed', sourceId: string) {
     setComposeKind(kind);
     setComposeId(sourceId);
     setComposeEdge('');
-    setComposeCta('comment_dm');
+    setComposeCta('channel_intro');
     setComposeKeyword('프롬프트');
   }
 
@@ -671,7 +688,7 @@ export function CardPressManager({
                           {s.title}
                         </span>
                         <button
-                          onClick={() => setSelectedId(cardBySource.get(s.id)!.id)}
+                          onClick={() => selectCard(cardBySource.get(s.id)!.id)}
                           className="shrink-0 text-accent hover:underline"
                         >
                           카드 열기 →
@@ -783,7 +800,7 @@ export function CardPressManager({
             return (
               <button
                 key={c.id}
-                onClick={() => setSelectedId(c.id)}
+                onClick={() => selectCard(c.id)}
                 className={`w-full text-left px-4 py-3 flex items-center justify-between gap-3 transition-colors ${selectedId === c.id ? 'bg-accent/5' : 'hover:bg-ink/[0.02]'}`}
               >
                 <div className="min-w-0 flex items-center gap-3">
@@ -862,7 +879,7 @@ function CardEditor({ card, sourceTitle }: { card: CardRow; sourceTitle?: string
   const [threadsText, setThreadsText] = useState(card.threads_text ?? '');
   const [threadsCover, setThreadsCover] = useState(card.threads_cover ?? '');
   const [edge, setEdge] = useState(card.edge ?? '');
-  const [ctaType, setCtaType] = useState<CardCtaType>(card.cta_type ?? 'comment_dm');
+  const [ctaType, setCtaType] = useState<CardCtaType>(card.cta_type ?? 'channel_intro');
   const [ctaKeyword, setCtaKeyword] = useState(card.cta_keyword ?? '프롬프트');
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -1458,6 +1475,17 @@ function CardEditor({ card, sourceTitle }: { card: CardRow; sourceTitle?: string
             />
           </div>
 
+          {/* 엔딩 트레이 — 슬라이드 목록 맨 끝(이미지 트레이 위)에 항상 붙는 자리.
+              저장은 slides가 아니라 cta_type이라 여기서 유형만 바꾸면 카드가 갈린다. */}
+          <EndingCardPreview
+            ctaType={ctaType}
+            ctaKeyword={ctaKeyword}
+            accent={card.accent}
+            slideCount={slides.filter((s) => s.enabled).length}
+            onChangeCtaType={(v) => { setCtaType(v); setDirty(true); }}
+            onChangeCtaKeyword={(v) => { setCtaKeyword(v); setDirty(true); }}
+          />
+
           <ImageTray
             card={card}
             onPick={(url) => assignImageAt(selIdx, url)}
@@ -1623,6 +1651,155 @@ function CardEditor({ card, sourceTitle }: { card: CardRow; sourceTitle?: string
   );
 }
 
+// ── 엔딩 카드(마지막 장) 미리보기 ─────────────────────────────
+// 엔딩은 slides에 저장하지 않고 cta_type에서 파생한다(lib/cardpress/endings.ts).
+// 채널의 것이라 매번 같은데 slides에 복사해두면 문구 한 줄 고칠 때 과거 카드와 갈라지기 때문.
+// → 유형 칩을 바꾸면 이 미리보기가 즉시 바뀌고, 발행·zip이 같은 규칙으로 마지막 칸에 붙인다.
+function EndingCardPreview({
+  ctaType,
+  ctaKeyword,
+  accent,
+  slideCount,
+  onChangeCtaType,
+  onChangeCtaKeyword,
+}: {
+  ctaType: CardCtaType;
+  ctaKeyword: string;
+  accent: CardAccent;
+  /** 활성 슬라이드 수 — 엔딩까지 더해 캐러셀 10칸을 넘는지 여기서 알려준다 */
+  slideCount?: number;
+  onChangeCtaType?: (v: CardCtaType) => void;
+  onChangeCtaKeyword?: (v: string) => void;
+}) {
+  const ending = useMemo(() => endingFor(ctaType, { ctaKeyword }), [ctaType, ctaKeyword]);
+  const [png, setPng] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const urlRef = useRef<string | null>(null);
+  const key = ending.kind === 'slide' ? JSON.stringify({ t: ending.template, p: ending.props }) : '';
+
+  useEffect(() => {
+    if (!key) {
+      setPng(null);
+      return;
+    }
+    let cancelled = false;
+    setErr(null);
+    // 키워드를 타이핑하면 글자마다 렌더가 날아간다 → 디바운스
+    const timer = setTimeout(async () => {
+      try {
+        const { t, p } = JSON.parse(key) as { t: CardTemplateId; p: Record<string, unknown> };
+        const res = await fetch('/api/cardpress/render', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ template: t, accent, props: p }),
+        });
+        if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? `렌더 ${res.status}`);
+        const blob = await res.blob();
+        if (cancelled) return;
+        if (urlRef.current) URL.revokeObjectURL(urlRef.current);
+        urlRef.current = URL.createObjectURL(blob);
+        setPng(urlRef.current);
+      } catch (e) {
+        if (!cancelled) setErr((e as Error).message);
+      }
+    }, 400);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [key, accent]);
+
+  const total = slideCount != null ? slideCount + 1 : null;
+  const over = total != null && total > 10;
+
+  return (
+    <div className="card border-dashed p-3">
+      <div className="flex items-center gap-2 flex-wrap">
+        <span className="badge bg-accent/10 text-accent">엔딩 · 자동</span>
+        <span className="text-sm font-medium">마지막 장 — {ending.label}</span>
+        {ending.kind === 'video' && <span className="badge bg-ink/5 text-ink/60">영상</span>}
+        {total != null && (
+          <span className={`text-[11px] ml-auto ${over ? 'text-amber-600' : 'text-ink/40'}`}>
+            엔딩 포함 {total}칸{over && ' — 인스타 캐러셀 10칸 초과'}
+          </span>
+        )}
+      </div>
+
+      <div className="mt-2.5 flex gap-3">
+        <div
+          className="w-[104px] shrink-0 overflow-hidden rounded border border-ink/10 bg-ink/5"
+          style={{ aspectRatio: '1080 / 1350' }}
+        >
+          {ending.kind === 'video' ? (
+            <video
+              src={ending.videoUrl}
+              poster={ending.posterUrl}
+              autoPlay
+              loop
+              muted
+              playsInline
+              className="h-full w-full object-cover"
+            />
+          ) : ending.kind === 'image' ? (
+            <img src={ending.imageUrl} alt="엔딩 카드" className="h-full w-full object-cover" />
+          ) : png ? (
+            <img src={png} alt="엔딩 카드 미리보기" className="h-full w-full object-cover" />
+          ) : (
+            <div className="grid h-full place-items-center text-[10px] text-ink/30">
+              {err ? '렌더 실패' : '렌더 중…'}
+            </div>
+          )}
+        </div>
+
+        <div className="min-w-0 text-[11px] leading-relaxed text-ink/50">
+          {onChangeCtaType && (
+            <div className="flex items-center gap-1.5 flex-wrap">
+              {(Object.keys(CTA_TYPE_LABELS) as CardCtaType[]).map((v) => (
+                <button
+                  key={v}
+                  onClick={() => onChangeCtaType(v)}
+                  className={`text-xs rounded-full px-2.5 py-1 ${
+                    ctaType === v ? 'bg-accent text-white' : 'bg-ink/5 text-ink/60 hover:bg-ink/10'
+                  }`}
+                  title="엔딩 카드와 캡션 마무리 문법을 함께 결정합니다"
+                >
+                  {CTA_TYPE_LABELS[v]}
+                </button>
+              ))}
+            </div>
+          )}
+          {ctaType === 'comment_dm' && onChangeCtaKeyword && (
+            <div className="mt-2 flex items-center gap-2 flex-wrap">
+              <span className="text-[11px] font-medium text-ink/60">댓글 키워드</span>
+              <Input
+                value={ctaKeyword}
+                onChange={(e) => onChangeCtaKeyword(e.target.value)}
+                placeholder="프롬프트"
+                className="text-sm w-32"
+              />
+              <span className="text-[11px] text-ink/40">
+                이 단어가 카드에 제일 크게 들어갑니다 (4자 이내 권장)
+              </span>
+            </div>
+          )}
+          <p className="mt-1.5">{ending.note}</p>
+          <p className="mt-1 text-ink/40">
+            이 자리는 <b className="text-ink/60">항상 맨 마지막</b>입니다. 슬라이드로 저장되지 않고 발행·zip 때
+            {ending.kind === 'video' ? ' 캐러셀 영상 칸으로 ' : ' 이미지로 '}
+            붙어요 — 유형을 바꾸면 이 카드도 바뀌고, <b className="text-ink/60">[저장]</b>을 눌러야 발행에 반영됩니다.
+          </p>
+          {over && (
+            <p className="mt-1 text-amber-600">
+              슬라이드를 {total - 10}장 꺼야 인스타 발행이 됩니다 (엔딩은 항상 붙습니다).
+            </p>
+          )}
+          {err && <p className="mt-1 text-red-600">{err}</p>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── 발행 패널 — 렌더→버킷 업로드 검수 → 채널 선택 → 원클릭 발행 / zip 백업 ──
 function PublishPanel({ card, dirty }: { card: CardRow; dirty: boolean }) {
   const router = useRouter();
@@ -1632,6 +1809,7 @@ function PublishPanel({ card, dirty }: { card: CardRow; dirty: boolean }) {
   });
   const [busy, setBusy] = useState<'check' | 'prepare' | 'publish' | null>(null);
   const [images, setImages] = useState<string[]>([]);
+  const [ending, setEnding] = useState<{ kind: string; label: string; url: string | null } | null>(null);
   const [errors, setErrors] = useState<string[]>([]);
   const [priceWarn, setPriceWarn] = useState<string | null>(null);
 
@@ -1683,6 +1861,7 @@ function PublishPanel({ card, dirty }: { card: CardRow; dirty: boolean }) {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? `HTTP ${res.status}`);
       setImages(data.images ?? []);
+      setEnding(data.ending ?? null);
       if (data.errors) setErrors(data.errors);
       if (!dryRun && !data.errors) router.refresh();
     } catch (e) {
@@ -1731,6 +1910,15 @@ function PublishPanel({ card, dirty }: { card: CardRow; dirty: boolean }) {
             </a>
           ))}
           (클릭해서 실물 확인)
+          {ending?.url && (
+            <>
+              {' · 엔딩 '}
+              <a href={ending.url} target="_blank" rel="noreferrer" className="text-accent hover:underline">
+                {ending.kind === 'video' ? '영상' : '이미지'}
+              </a>
+              {` (${ending.label})`}
+            </>
+          )}
         </p>
       )}
       {priceWarn && (

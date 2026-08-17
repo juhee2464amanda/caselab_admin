@@ -1,0 +1,193 @@
+{
+  "_about": "카드뉴스 마지막 장(엔딩 카드) 프리셋 모음. 문구만 고쳐 쓰는 것을 전제로 만든 값이다.",
+  "_status": "2026-08-17 확정·적용 — 실제로 발행에 쓰이는 3종은 channel_intro=**영상**(다크 목록+폰, 메뉴 4줄 순차 등장) / info_save=**합성 이미지 한 장**(문구 위 + 프로필 화면 크게, kind:image) / comment_dm=**P6 키워드 한 방**(Satori 렌더). lib/cardpress/endings.ts 가 단일 정의이고, 검수 화면의 CTA 유형 칩이 그대로 엔딩을 결정한다. 엔딩은 slides에 저장하지 않고 발행·zip 시점에 붙는다. 영상·합성 이미지 자산은 scripts/cardpress-endings.mjs 가 만들고 cardpress/endings/ 버킷에 upsert한다(문구가 자산에 구워져 있어 문구 수정=스크립트 재실행). 이 파일의 나머지 프리셋(P1·B1·P4·P3·B2 등)은 '다른 걸 써보고 싶을 때' 골라 쓰는 후보이며, 채택하면 endings.ts로 옮긴다.",
+  "_created": "2026-08-17",
+  "_render": "POST /api/cardpress/render (1080x1350). 로컬 검증은 헤더 x-cardpress-dev: 1 로 admin 인증 우회.",
+  "_images": "채널 안내형이 쓰는 본가 캡처는 Supabase storage 버킷 cardpress/endings/ 에 올려둠(공개 URL). 본가 화면이 바뀌면 scripts로 다시 찍어 같은 경로에 upsert 하면 카드 쪽은 손대지 않아도 된다.",
+  "_caution": [
+    "이모지·둥근 버튼·포인트색 배경은 쓰지 말 것 — O1 템플릿이 그 이유로 2026-08-13 삭제됐다.",
+    "props 문자열의 \\n 은 템플릿마다 다르게 동작한다. P4.quote·C2.title 은 줄바꿈으로 먹지만, P2.heading·P2.body·P3.title·P6.resolve 는 넓은 공백으로 렌더된다 → 이 필드들은 \\n 없이 쓰고 자동 줄바꿈에 맡길 것.",
+    "인스타 캐러셀은 10장 제한. 엔딩을 추가하면 본문 한 장을 줄여야 한다.",
+    "마지막 장 사진은 직전 장과 다른 것으로 (같은 사진이 연달아 나오면 카드가 끝난 느낌이 안 산다).",
+    "'직접 써본 것만', '직접 검증한' 류의 표현은 쓰지 말 것 — 실제로 전부 써보지는 않는다(2026-08-17 운영자). '주제별로 정리', '골라서', '일 종류별로 분류'처럼 큐레이션 행위만 말할 것."
+  ],
+  "_video": {
+    "note": "채널 안내형 마지막 장을 '실제로 스크롤되는 화면'으로 내보내는 경로. 인스타 캐러셀은 이미지와 영상을 섞을 수 있다.",
+    "pipeline": "본가 fullPage 캡처 → 카드 레이아웃을 CSS로 재현(Satori는 애니메이션 불가) → Playwright로 프레임 연속 캡처 → ffmpeg h264 1080x1350 → 버킷 업로드 → 캐러셀 자식 컨테이너를 media_type=VIDEO + video_url 로 생성",
+    "sample": "https://jsresrgzrsxotopfzpos.supabase.co/storage/v1/object/public/cardpress/endings/ending-live.mp4",
+    "todo": "lib/cardpress/publish.ts:109 의 자식 컨테이너 생성이 image_url 고정 — VIDEO 분기와 처리 대기(status_code) 추가 필요. zip 다운로드도 PNG 전제라 같이 손봐야 한다.",
+    "still_fallback": "영상까지 안 가더라도 comp-phone-live.png(기울기+유리반사+상태바)만으로 '실물 화면' 인상은 상당 부분 난다 — 이건 오늘 바로 가능."
+  },
+
+  "channel_intro": {
+    "_when": "소재가 그 자체로 완결이라 보낼 곳이 없을 때. 유입이 아니라 '이 계정이 뭐 하는 곳인지' 각인 → 팔로우.",
+    "_rule": "링크·댓글·저장 유도를 섞지 말 것. 그건 action 쪽 몫이다.",
+    "presets": [
+      {
+        "id": "ch1-profile-preview",
+        "name": "프로필 링크 미리보기",
+        "template": "B9",
+        "when": "가장 강함. 링크를 누르면 뭐가 나오는지 화면으로 보여준다 — '가봤자 뭐 있겠어'를 없앤다.",
+        "props": {
+          "lead": "프로필 링크를 누르면 이 화면이에요. **전부 무료**입니다.",
+          "shot": "https://jsresrgzrsxotopfzpos.supabase.co/storage/v1/object/public/cardpress/endings/comp-phone-live.png",
+          "callouts": [
+            { "text": "주제별로 정리", "pos": "tl" },
+            { "text": "매주 업데이트", "pos": "br" }
+          ]
+        }
+      },
+      {
+        "id": "ch2-menu-four",
+        "name": "코너 네 개",
+        "template": "B2",
+        "when": "무엇이 있는지 목록으로. 본가 메뉴가 바뀌면 bullets와 media 이미지를 같이 고칠 것.",
+        "props": {
+          "banner": "프로필 링크 안에는",
+          "lead": "필요할 때 **골라 쓰는** 코너 네 개",
+          "bullets": [
+            "AI 자료실 — 일 종류별로 모은 도구",
+            "AI 실전케이스 — 남이 실제로 한 기록",
+            "바로 쓰는 프롬프트 — 복사해 쓰는 문장",
+            "ebook — 한 주제를 깊게"
+          ],
+          "media": "https://jsresrgzrsxotopfzpos.supabase.co/storage/v1/object/public/cardpress/endings/comp-menus-wide.png"
+        }
+      },
+      {
+        "id": "ch3-archive-standard",
+        "name": "자료실 기준 공개",
+        "template": "P1",
+        "when": "도구·자료실 소재 뒤에. '어떤 기준으로 골랐는지'를 말해 신뢰를 만든다.",
+        "props": {
+          "eyebrow": "AI 자료실",
+          "lead": "**무슨 일에 쓰는지**부터 정리해 둔 곳",
+          "items": [
+            "무료인지 유료인지 먼저 표기",
+            "어떤 일에 쓰는 도구인지로 분류",
+            "한 줄 요약으로 빠르게 훑기"
+          ],
+          "image": "https://jsresrgzrsxotopfzpos.supabase.co/storage/v1/object/public/cardpress/endings/comp-win-tools.png",
+          "photoH": 620
+        }
+      },
+      {
+        "id": "ch4-menu-map",
+        "name": "메뉴 지도 (사진 없음)",
+        "template": "B1",
+        "when": "앞 장들이 전부 사진이라 마지막은 담백하게 닫고 싶을 때. 이미지 수급이 필요 없다.",
+        "props": {
+          "lead": "강의 결제 전에 여기부터 훑어보셔도 됩니다.",
+          "heading": "프로필 링크에 있는 것",
+          "hl": "프로필 링크",
+          "rows": [
+            { "term": "AI 자료실", "desc": "일 종류별로 모아 둔 AI 도구" },
+            { "term": "AI 실전케이스", "desc": "남이 실제로 해본 과정 전체" },
+            { "term": "바로 쓰는 프롬프트", "desc": "복사해서 그대로 쓰는 문장" },
+            { "term": "ebook", "desc": "한 주제를 처음부터 끝까지" }
+          ]
+        }
+      },
+      {
+        "id": "ch5-bio-card",
+        "name": "채널 명함(바이오)",
+        "template": "P2",
+        "when": "명함형. 계정 이름·핸들·한 줄 소개가 한 장에 다 들어간다. 문구가 고정이라 매번 손댈 필요가 없다.",
+        "props": {
+          "eyebrow": "CASELAB",
+          "heading": "AI, 뭐부터 볼지 정리해 둔 곳",
+          "sub": "@caselab_ai_ · 프로필 링크",
+          "body": "매일 쏟아지는 AI 소식에서 케이스·도구·프롬프트를 주제별로 모아 정리해요. 강의 결제 전에 먼저 훑어보셔도 됩니다.",
+          "image": "https://jsresrgzrsxotopfzpos.supabase.co/storage/v1/object/public/cardpress/endings/comp-win-prompts.png",
+          "photoH": 620
+        }
+      }
+    ]
+  },
+
+  "action": {
+    "_when": "행동을 하나 시킬 때. 소재마다 시킬 행동이 달라지므로 아래에서 골라 쓴다.",
+    "_swap": "지금은 리틀리 DM 자동화가 붙기 전이라 default=now_save(저장 유도). DM이 열리면 같은 카드에서 items의 마지막 줄(또는 P6의 big/resolve)만 바꾸면 된다 — 레이아웃·사진은 그대로.",
+    "default": "now_save",
+    "presets": [
+      {
+        "id": "now_save",
+        "name": "지금 버전 · 저장 유도",
+        "template": "P5",
+        "when": "기본값. DM 자동화가 없는 지금 쓸 것.",
+        "swap_hint": "DM이 열리면 items[2] 만 '댓글 \"프롬프트\" — 전문 DM으로' 로 교체(= later_dm).",
+        "props": {
+          "index": "END",
+          "eyebrow": "지금 하면 좋은 것",
+          "lead": "이 카드가 쓸모 있었다면",
+          "items": [
+            "저장 — 필요할 때 다시 꺼내 보기",
+            "오늘 하나만 골라 5분 써보기",
+            "같은 고민 하는 사람에게 공유"
+          ],
+          "image": "<직전 장과 다른 어두운 사진>"
+        }
+      },
+      {
+        "id": "later_dm",
+        "name": "DM 연결 후 버전",
+        "template": "P5",
+        "when": "리틀리 댓글→DM 자동화가 켜진 뒤. now_save에서 텍스트 한 줄만 다르다.",
+        "props": {
+          "index": "END",
+          "eyebrow": "지금 하면 좋은 것",
+          "lead": "이 카드가 쓸모 있었다면",
+          "items": [
+            "저장 — 필요할 때 다시 꺼내 보기",
+            "오늘 하나만 골라 5분 써보기",
+            "댓글 \"프롬프트\" — 전문 DM으로"
+          ],
+          "image": "<직전 장과 다른 어두운 사진>"
+        }
+      },
+      {
+        "id": "try_now",
+        "name": "지금 바로 써보기",
+        "template": "P6",
+        "when": "읽고 끝내기 쉬운 소재(도구 소개·설정법). 행동 문턱을 시간으로 낮춘다.",
+        "props": {
+          "kicker": "읽고 끝내지 않으려면",
+          "big": "오늘 5분",
+          "resolve": "지금 하나만 골라 켜보세요. 안 되면 **댓글**로 물어보셔도 돼요.",
+          "footer": "@CASELAB",
+          "image": "<직전 장과 다른 어두운 사진>"
+        }
+      },
+      {
+        "id": "make_mine",
+        "name": "내 걸로 만들기",
+        "template": "P5",
+        "when": "프롬프트·템플릿 소재. 그대로 복사해 쓰다 실패하는 걸 막고, 변형을 시킨다.",
+        "props": {
+          "index": "END",
+          "eyebrow": "내 걸로 만들기",
+          "lead": "그대로 쓰지 말고 **한 줄만** 바꿔보세요",
+          "items": [
+            "내 일에 맞게 대상·목표를 바꾸기",
+            "한 번 돌려보고 어긋난 곳만 손보기",
+            "쓸만해지면 저장해서 반복 사용"
+          ],
+          "image": "<직전 장과 다른 어두운 사진>"
+        }
+      },
+      {
+        "id": "keyword_big",
+        "name": "댓글 키워드 한 방",
+        "template": "P6",
+        "when": "DM 자동화가 켜진 뒤, 키워드 하나만 남기게 할 때. big에 cta_keyword를 그대로.",
+        "props": {
+          "kicker": "전문이 필요하면",
+          "big": "프롬프트",
+          "resolve": "댓글에 이 단어만 남기면 **DM**으로 보내드려요",
+          "footer": "@CASELAB",
+          "image": "<직전 장과 다른 어두운 사진>"
+        }
+      }
+    ]
+  }
+}

@@ -1668,19 +1668,26 @@ function B9({ accent, props }: Extract<RenderSlideInput, { template: 'B9' }>) {
   const color = accentOf(accent, props);
   return (
     <div style={{ ...cardBase, background: '#fff', color: INK, padding: '80px 72px' }}>
-      <Topbar color={INK} right={props.page} />
+      {props.bare ? null : <Topbar color={INK} right={props.page} />}
+      {/* 짧은 리드는 설명문이 아니라 헤드라인이다 → 크고 굵게.
+          폰에서 캐러셀은 엄지로 넘기며 스치듯 보는데, 34px 설명체로 길게 적으면 아무도 안 읽는다.
+          긴 리드(기존 스크린샷 슬라이드)는 그대로 34px 본문으로 남는다. */}
       {props.lead ? (
         <div
           style={{
             display: 'flex',
             flexWrap: 'wrap',
-            marginTop: 44,
-            fontSize: 34,
-            lineHeight: 1.55,
-            color: BODY_TEXT,
+            marginTop: 40,
+            fontSize: stripMarks(props.lead).length <= 16 ? 72 : 34,
+            fontWeight: stripMarks(props.lead).length <= 16 ? 800 : 400,
+            lineHeight: stripMarks(props.lead).length <= 16 ? 1.26 : 1.55,
+            letterSpacing: stripMarks(props.lead).length <= 16 ? '-0.03em' : '0',
+            color: stripMarks(props.lead).length <= 16 ? INK : BODY_TEXT,
           }}
         >
-          {em(props.lead, INK)}
+          {em(props.lead, color, {
+            fontWeight: stripMarks(props.lead).length <= 16 ? 800 : 400,
+          })}
         </div>
       ) : null}
       {/* 스크린샷은 남는 세로를 다 쓴다 — 작게 박아두면 폰에서 아무것도 안 보인다 */}

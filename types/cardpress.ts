@@ -156,6 +156,8 @@ export const B8PropsSchema = z.object({
 export const B9PropsSchema = z.object({
   ...StyleOverrideFields,
   page: z.string().optional(),
+  // 상단 브랜드 줄 숨김 — 엔딩 카드처럼 헤드라인 하나로만 여는 장에 쓴다
+  bare: z.boolean().optional(),
   lead: z.string().optional(),       // "화면에서 **여기**만 보면 됩니다."
   shot: z.string().url(),            // 스크린샷 url (필수 — 없으면 이 슬라이드를 안 씀)
   callouts: z

@@ -3,10 +3,14 @@ import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { createSupabaseAdminClient } from '@/lib/supabase/admin';
 import {
   renderEnabledSlides,
+  renderEndingSlide,
   uploadSlides,
   publishInstagramCarousel,
   publishThreads,
+  type CarouselItem,
 } from '@/lib/cardpress/publish';
+import { endingFor } from '@/lib/cardpress/endings';
+import type { CardCtaType } from '@/lib/cardpress/cta-endings';
 import type { CardAccent, CardSlide } from '@/types/cardpress';
 
 export const runtime = 'nodejs';
@@ -60,9 +64,39 @@ export async function POST(req: NextRequest) {
       card.slides as CardSlide[]
     );
     const urls = await uploadSlides(admin, rendered);
+    const items: CarouselItem[] = urls.map((url) => ({ kind: 'image' as const, url }));
+
+    // 1-b. 엔딩 카드 — slides에 저장돼 있지 않고 cta_type에서 파생된다(lib/cardpress/endings.ts).
+    //      채널 안내형은 영상, 나머지는 Satori 렌더 PNG. 영상은 이미 버킷에 있는 고정 자산.
+    const ending = endingFor((card.cta_type as CardCtaType) ?? 'channel_intro', {
+      ctaKeyword: card.cta_keyword,
+    });
+    let endingUrl: string;
+    if (ending.kind === 'video') {
+      endingUrl = ending.videoUrl;
+      items.push({ kind: 'video', url: ending.videoUrl });
+    } else if (ending.kind === 'image') {
+      // 미리 합성해 둔 카드 한 장 — 렌더 없이 그 URL을 그대로 캐러셀에 올린다
+      endingUrl = ending.imageUrl;
+      items.push({ kind: 'image', url: ending.imageUrl });
+    } else {
+      const endSlide = await renderEndingSlide(
+        card.id,
+        card.accent as CardAccent,
+        ending.template,
+        ending.props,
+        rendered.length + 1
+      );
+      [endingUrl] = await uploadSlides(admin, [endSlide]);
+      items.push({ kind: 'image', url: endingUrl });
+    }
 
     if (body.dryRun) {
-      return NextResponse.json({ dryRun: true, images: urls });
+      return NextResponse.json({
+        dryRun: true,
+        images: urls,
+        ending: { kind: ending.kind, label: ending.label, url: endingUrl },
+      });
     }
 
     // 2. 채널 발행 (부분 실패 허용 — 성공한 채널만 이력 기록)
@@ -73,7 +107,7 @@ export async function POST(req: NextRequest) {
 
     if (channels.includes('instagram')) {
       try {
-        const postId = await publishInstagramCarousel(urls, card.ig_caption ?? '');
+        const postId = await publishInstagramCarousel(items, card.ig_caption ?? '');
         publishedTo.push({ channel: 'instagram', post_id: postId, at: new Date().toISOString() });
       } catch (e) {
         errors.push(`instagram: ${(e as Error).message}`);
@@ -99,6 +133,7 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({
       images: urls,
+      ending: { kind: ending.kind, label: ending.label, url: endingUrl },
       published_to: publishedTo,
       errors: errors.length ? errors : undefined,
     });

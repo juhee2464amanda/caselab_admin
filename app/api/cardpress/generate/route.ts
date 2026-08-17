@@ -42,7 +42,7 @@ export async function POST(req: NextRequest) {
     /** 운영자 지정 엣지 — 재생성 시 이 방향을 최우선 축으로 */
     edge?: string;
     /** CTA 유형 (기본 comment_dm) + 댓글 키워드 */
-    ctaType?: 'info_save' | 'comment_dm';
+    ctaType?: 'info_save' | 'comment_dm' | 'channel_intro';
     ctaKeyword?: string;
   };
   if (!body.sourceType || !['content', 'tool', 'seed'].includes(body.sourceType) || !body.sourceId)

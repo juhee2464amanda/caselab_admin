@@ -10,6 +10,25 @@ import { RenderSlideSchema, type CardAccent, type CardSlide } from '@/types/card
 
 export type RenderedSlide = { order: number; template: string; buffer: Buffer; path: string };
 
+async function renderOne(
+  template: string,
+  accent: CardAccent,
+  props: unknown,
+  fonts: Awaited<ReturnType<typeof loadCardFonts>>,
+  where: string
+): Promise<Buffer> {
+  const parsed = RenderSlideSchema.safeParse({ template, accent, props });
+  if (!parsed.success)
+    throw new Error(`${where}(${template}) 스키마 오류 — 검수 UI에서 수정 후 다시: ${parsed.error.issues[0]?.message}`);
+  const res = new ImageResponse(renderSlide(parsed.data) as ReactElement, {
+    width: CARD_W,
+    height: CARD_H,
+    fonts,
+    emoji: 'twemoji',
+  });
+  return Buffer.from(await res.arrayBuffer());
+}
+
 export async function renderEnabledSlides(
   cardId: string,
   accent: CardAccent,
@@ -19,23 +38,31 @@ export async function renderEnabledSlides(
   const enabled = slides.filter((s) => s.enabled);
   const out: RenderedSlide[] = [];
   for (const s of enabled) {
-    const parsed = RenderSlideSchema.safeParse({ template: s.template, accent, props: s.props });
-    if (!parsed.success)
-      throw new Error(`슬라이드 ${s.order}(${s.template}) 스키마 오류 — 검수 UI에서 수정 후 다시: ${parsed.error.issues[0]?.message}`);
-    const res = new ImageResponse(renderSlide(parsed.data) as ReactElement, {
-      width: CARD_W,
-      height: CARD_H,
-      fonts,
-      emoji: 'twemoji',
-    });
     out.push({
       order: s.order,
       template: s.template,
-      buffer: Buffer.from(await res.arrayBuffer()),
+      buffer: await renderOne(s.template, accent, s.props, fonts, `슬라이드 ${s.order}`),
       path: `${cardId}/${String(out.length + 1).padStart(2, '0')}_${s.template}.png`,
     });
   }
   return out;
+}
+
+/** 엔딩 카드(슬라이드형) 1장 렌더 — 저장된 slides에는 없고 cta_type에서 파생된다 */
+export async function renderEndingSlide(
+  cardId: string,
+  accent: CardAccent,
+  template: string,
+  props: Record<string, unknown>,
+  index: number
+): Promise<RenderedSlide> {
+  const fonts = await loadCardFonts();
+  return {
+    order: index,
+    template,
+    buffer: await renderOne(template, accent, props, fonts, '엔딩 카드'),
+    path: `${cardId}/${String(index).padStart(2, '0')}_ending_${template}.png`,
+  };
 }
 
 /** cardpress 공개 버킷 업로드 → 공개 URL 배열 (순서 보존) */
@@ -83,43 +110,54 @@ async function igPost(path: string, params: Record<string, string>): Promise<Rec
   return data;
 }
 
-async function waitContainer(containerId: string, token: string): Promise<void> {
-  for (let i = 0; i < 20; i++) {
-    const res = await fetch(`${IG_BASE}/${containerId}?fields=status_code&access_token=${token}`);
+// 영상 자식은 트랜스코딩이 있어 이미지보다 오래 걸린다(수 초~수십 초) → 대기 상한을 나눠 잡는다.
+async function waitContainer(containerId: string, token: string, attempts = 20): Promise<void> {
+  for (let i = 0; i < attempts; i++) {
+    const res = await fetch(`${IG_BASE}/${containerId}?fields=status_code,status&access_token=${token}`);
     const data = await res.json();
     if (data.status_code === 'FINISHED') return;
-    if (data.status_code === 'ERROR') throw new Error('Instagram 미디어 처리 실패');
+    if (data.status_code === 'ERROR')
+      throw new Error(`Instagram 미디어 처리 실패${data.status ? ` — ${data.status}` : ''}`);
     await new Promise((r) => setTimeout(r, 3000));
   }
-  throw new Error('Instagram 미디어 처리 대기 초과(60s)');
+  throw new Error(`Instagram 미디어 처리 대기 초과(${attempts * 3}s)`);
 }
 
-export async function publishInstagramCarousel(imageUrls: string[], caption: string): Promise<string> {
+/** 캐러셀 한 칸. 영상 칸은 media_type=VIDEO + video_url 로 만들어야 하고(이미지는 image_url),
+ *  둘 다 is_carousel_item=true 가 붙어야 캐러셀 자식이 된다. */
+export type CarouselItem = { kind: 'image' | 'video'; url: string };
+
+export async function publishInstagramCarousel(
+  items: CarouselItem[],
+  caption: string
+): Promise<string> {
   const userId = process.env.INSTAGRAM_USER_ID;
   const token = process.env.INSTAGRAM_ACCESS_TOKEN;
   if (!userId || !token)
     throw new Error('INSTAGRAM_USER_ID / INSTAGRAM_ACCESS_TOKEN 미설정 — Meta 비즈니스 연결 후 env에 추가하세요');
-  if (imageUrls.length < 2) throw new Error('캐러셀은 최소 2장 필요');
+  if (items.length < 2) throw new Error('캐러셀은 최소 2장 필요');
   // 넘치는 장을 조용히 버리면 공들여 쓴 슬라이드가 말없이 사라진다 → 끄는 선택은 사람에게 맡긴다.
-  if (imageUrls.length > IG_CAROUSEL_MAX)
+  if (items.length > IG_CAROUSEL_MAX)
     throw new Error(
-      `캐러셀은 최대 ${IG_CAROUSEL_MAX}장인데 활성 슬라이드가 ${imageUrls.length}장입니다 — 검수 UI에서 ${imageUrls.length - IG_CAROUSEL_MAX}장을 끄고 다시 발행하세요(zip 다운로드는 전체 장수 그대로 나갑니다)`
+      `캐러셀은 최대 ${IG_CAROUSEL_MAX}칸인데 ${items.length}칸입니다(엔딩 카드 포함) — 검수 UI에서 ${items.length - IG_CAROUSEL_MAX}장을 끄거나 엔딩을 빼고 다시 발행하세요(zip 다운로드는 전체 장수 그대로 나갑니다)`
     );
 
-  const children: string[] = [];
-  for (const url of imageUrls) {
+  const children: Array<{ id: string; kind: CarouselItem['kind'] }> = [];
+  for (const item of items) {
     const c = await igPost(`${userId}/media`, {
-      image_url: url,
+      ...(item.kind === 'video'
+        ? { media_type: 'VIDEO', video_url: item.url }
+        : { image_url: item.url }),
       is_carousel_item: 'true',
       access_token: token,
     });
-    children.push(c.id);
+    children.push({ id: c.id, kind: item.kind });
   }
-  for (const id of children) await waitContainer(id, token);
+  for (const c of children) await waitContainer(c.id, token, c.kind === 'video' ? 40 : 20);
 
   const carousel = await igPost(`${userId}/media`, {
     media_type: 'CAROUSEL',
-    children: children.join(','),
+    children: children.map((c) => c.id).join(','),
     caption,
     access_token: token,
   });

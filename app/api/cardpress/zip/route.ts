@@ -2,7 +2,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import JSZip from 'jszip';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { createSupabaseAdminClient } from '@/lib/supabase/admin';
-import { renderEnabledSlides } from '@/lib/cardpress/publish';
+import { renderEnabledSlides, renderEndingSlide } from '@/lib/cardpress/publish';
+import { endingFor } from '@/lib/cardpress/endings';
+import type { CardCtaType } from '@/lib/cardpress/cta-endings';
 import type { CardAccent, CardSlide } from '@/types/cardpress';
 
 export const runtime = 'nodejs';
@@ -34,7 +36,7 @@ export async function GET(req: NextRequest) {
   const admin = createSupabaseAdminClient();
   const { data: card, error } = await admin
     .from('content_cards')
-    .select('id, accent, slides, ig_caption, threads_text')
+    .select('id, accent, slides, ig_caption, threads_text, cta_type, cta_keyword')
     .eq('id', cardId)
     .maybeSingle();
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
@@ -49,6 +51,31 @@ export async function GET(req: NextRequest) {
     const zip = new JSZip();
     for (const [i, r] of rendered.entries())
       zip.file(`${String(i + 1).padStart(2, '0')}_${r.template}.png`, r.buffer);
+
+    // 엔딩 카드 — 발행 경로와 같은 규칙으로 마지막 칸에 넣는다(수동 업로드해도 순서가 같게).
+    // 영상 엔딩은 버킷의 고정 자산을 그대로 담는다.
+    const n = rendered.length + 1;
+    const ending = endingFor((card.cta_type as CardCtaType) ?? 'channel_intro', {
+      ctaKeyword: card.cta_keyword as string | null,
+    });
+    if (ending.kind === 'video' || ending.kind === 'image') {
+      const url = ending.kind === 'video' ? ending.videoUrl : ending.imageUrl;
+      const ext = ending.kind === 'video' ? 'mp4' : 'png';
+      const res = await fetch(url);
+      if (res.ok)
+        zip.file(`${String(n).padStart(2, '0')}_ending.${ext}`, Buffer.from(await res.arrayBuffer()));
+      else zip.file('ending_ERROR.txt', `엔딩 자산을 받지 못했습니다: ${url} (${res.status})`);
+    } else {
+      const endSlide = await renderEndingSlide(
+        card.id,
+        card.accent as CardAccent,
+        ending.template,
+        ending.props,
+        n
+      );
+      zip.file(`${String(n).padStart(2, '0')}_ending_${ending.template}.png`, endSlide.buffer);
+    }
+
     if (card.ig_caption) zip.file('caption.txt', card.ig_caption);
     if (card.threads_text) zip.file('threads.txt', card.threads_text);
     const buf = await zip.generateAsync({ type: 'nodebuffer' });

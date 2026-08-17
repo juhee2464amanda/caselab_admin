@@ -22,3 +22,6 @@ caselab_contents creator/
 # Python 캐시
 __pycache__/
 *.pyc
+
+# 엔딩 카드 재생성 산출물 (원본은 Supabase cardpress/endings)
+.cardpress-endings/
