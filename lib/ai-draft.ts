@@ -1165,7 +1165,7 @@ export interface RefineDocumentInput {
   summary?: string;
   instruction: string;
   reference?: string;
-  /** 기본 2(문서 하나가 통째로 나오므로 섹션 수정보다 적게). 1~3. */
+  /** 기본 2(문서 하나가 통째로 나오므로 섹션 수정보다 적게), 긴 문서는 1. 1~3. */
   count?: number;
 }
 
@@ -1186,9 +1186,11 @@ export async function refineDocument(
 ): Promise<{ candidates: RefineCandidate<DocumentCandidate>[]; note?: string }> {
   const instruction = input.instruction?.trim();
   if (!instruction || !input.body) return { candidates: [] };
-  const count = Math.min(3, Math.max(1, input.count ?? 2));
   const trackLabel = input.track === 'case' ? '실전 케이스' : 'AI 트렌드';
   const bodyJson = JSON.stringify(input.body, null, 2);
+  // 후보 수 = 시간. 실측: body 12k자 문서 × 후보 2개 = 224초(라우트 상한 300초에 근접).
+  // 더 긴 문서는 후보를 1개로 줄여 상한 안에 들어오게 한다(2개 받으려면 count로 명시).
+  const count = Math.min(3, Math.max(1, input.count ?? (bodyJson.length > 15000 ? 1 : 2)));
 
   const system = `당신은 케이스랩(Caselab)의 콘텐츠 에디터입니다. 문서 "전체"를 운영자의 "수정 각도"에 맞게 다시 쓴 후보를 제안합니다.
 

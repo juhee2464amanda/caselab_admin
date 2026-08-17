@@ -433,7 +433,7 @@ function RefineForm({ request, onApply }: { request: RefineRequest; onApply: (ch
 
         <div className="mt-1.5 flex items-center justify-between gap-2">
           {/* 문서 전체는 본문을 통째로 다시 쓰므로 섹션 수정보다 훨씬 오래 걸린다 — 기다림을 미리 알린다. */}
-          <span className="text-[11px] text-ink/35 break-keep">{doc ? '⌘/Ctrl+Enter · 본문 전체라 1~3분 걸려요' : '⌘/Ctrl+Enter'}</span>
+          <span className="text-[11px] text-ink/35 break-keep">{doc ? '⌘/Ctrl+Enter · 본문 전체라 3~5분 걸려요' : '⌘/Ctrl+Enter'}</span>
           <button
             type="button"
             disabled={busy || (!instruction.trim() && !(draftText && reference))}
