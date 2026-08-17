@@ -106,6 +106,13 @@ function seedDisplayTitle(s: Pick<SeedSourceRow, 'title' | 'essence'>): string {
   return s.essence?.headline?.trim() || s.title.replace(/^\s*\[[^\]]*\]\s*/, '');
 }
 
+/** 기본 노출(raw/adopted)이 아닌 씨앗을 검색으로 꺼냈을 때 붙는 꼬리표 — 왜 목록에 안 보였는지 드러낸다 */
+const SEED_STATUS_NOTE: Record<string, string> = {
+  generating: '생성중',
+  published: '콘텐츠 발행됨',
+  rejected: '숨김',
+};
+
 const STATUS_LABEL: Record<CardRow['status'], { text: string; cls: string }> = {
   auto_draft: { text: '검수 대기', cls: 'bg-yellow-100 text-yellow-700' },
   reviewed: { text: '검수 완료', cls: 'bg-blue-100 text-blue-700' },
@@ -445,10 +452,25 @@ export function CardPressManager({
   const visibleToolCandidates = toolQuery.trim() || toolExpanded ? toolCandidates : toolCandidates.slice(0, 3);
   const blockedTools = toolPool.filter((t) => !t.usable);
 
-  // 씨앗 아카이브 후보 — 서버에서 최신순으로 옴. 카드가 이미 있는 씨앗 제외, top3 (맨 위=main)
-  const seedCandidates = seeds
-    .filter((s) => !initial.some((c) => c.source_type === 'seed' && c.source_id === s.id))
-    .slice(0, 3);
+  // ① 씨앗 아카이브 후보 — 서버에서 아카이브 전체가 최신순으로 옴. 카드가 이미 있는 씨앗은 제외.
+  // 기본 노출은 미사용 원석(raw/adopted) top3, 검색·펼치기는 아카이브 전체(발행됨·숨김 포함)를 훑는다.
+  const [seedQuery, setSeedQuery] = useState('');
+  const [seedExpanded, setSeedExpanded] = useState(false);
+  const [seedFocus, setSeedFocus] = useState<string | null>(null); // ?seed= 딥링크로 지정된 씨앗(맨 위 고정)
+  const seedPool = useMemo(
+    () => seeds.filter((s) => !initial.some((c) => c.source_type === 'seed' && c.source_id === s.id)),
+    [seeds, initial]
+  );
+  const seedSearching = seedQuery.trim().length > 0;
+  const seedMatches = seedSearching
+    ? seedPool.filter((s) => seedDisplayTitle(s).toLowerCase().includes(seedQuery.trim().toLowerCase()))
+    : seedPool.filter((s) => s.status === 'raw' || s.status === 'adopted');
+  // 딥링크로 온 씨앗은 상태가 뭐든(발행됨·숨김) 맨 위에 고정 — 안 그러면 눌러서 왔는데 목록에 없다.
+  const seedFocusRow = seedFocus ? seedPool.find((s) => s.id === seedFocus) ?? null : null;
+  const seedCandidates = [
+    ...(seedFocusRow ? [seedFocusRow] : []),
+    ...(seedSearching || seedExpanded ? seedMatches : seedMatches.slice(0, 3)).filter((s) => s.id !== seedFocus),
+  ];
   const seedMap = useMemo(() => new Map(seeds.map((s) => [s.id, s])), [seeds]);
   const toolMap = useMemo(() => new Map(toolSources.map((t) => [t.id, t])), [toolSources]);
 
@@ -466,6 +488,23 @@ export function CardPressManager({
     setComposeCta('channel_intro');
     setComposeKeyword('프롬프트');
   }
+
+  // ?seed=<id> 딥링크 — 씨앗 아카이브의 '카드뉴스로' 버튼이 보내는 주소.
+  // 이미 카드가 있는 씨앗이면 새로 만들지 않고 그 카드 검수로 보낸다(중복 생성 방지).
+  useEffect(() => {
+    const q = new URLSearchParams(window.location.search).get('seed');
+    if (!q) return;
+    const carded = initial.find((c) => c.source_type === 'seed' && c.source_id === q);
+    if (carded) {
+      setSelectedId(carded.id);
+      return;
+    }
+    if (seeds.some((s) => s.id === q)) {
+      setSeedFocus(q);
+      startCompose('seed', q);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   async function createCard() {
     if (!composeId) return;
@@ -572,44 +611,69 @@ export function CardPressManager({
           <span className="text-xs text-ink/40 font-normal">씨앗 아카이브 원석 또는 본가 발행물에서 소재 선택</span>
         </div>
         <div className="grid gap-4 lg:grid-cols-3">
-          {/* ① 씨앗 아카이브 top3 — 맨 위(최신)가 메인 */}
+          {/* ① 씨앗 아카이브 — 기본은 미사용 원석 top3, 검색하면 아카이브 전체에서 고른다 */}
           <div className="space-y-1.5">
             <div className="flex items-center justify-between gap-2">
               <div className="text-xs font-semibold text-ink/70">
-                ① 씨앗 아카이브 <span className="text-ink/40 font-normal">최신 원석 top3</span>
+                ① 씨앗 아카이브{' '}
+                <span className="text-ink/40 font-normal">
+                  {seedSearching ? `검색 ${seedMatches.length}건` : '최신 원석 top3'}
+                </span>
               </div>
               <a href="/admin/studio/archive" className="text-[11px] text-accent hover:underline shrink-0">아카이브 전체 →</a>
             </div>
+            <Input
+              value={seedQuery}
+              onChange={(e) => setSeedQuery(e.target.value)}
+              placeholder="아카이브 전체에서 제목 검색"
+            />
             {seedCandidates.length === 0 ? (
-              <p className="text-xs text-ink/40">카드로 만들 씨앗이 없어요. 수집되면 최신순으로 여기 올라와요.</p>
+              <p className="text-xs text-ink/40">
+                {seedSearching ? '검색 결과가 없어요.' : '카드로 만들 씨앗이 없어요. 수집되면 최신순으로 여기 올라와요.'}
+              </p>
             ) : (
-              seedCandidates.map((s, i) => (
-                <div key={s.id} className={i === 0 ? 'rounded-lg border border-accent/40 bg-accent/5 p-2.5' : 'px-1'}>
-                  <div className="flex items-center justify-between gap-3 text-sm">
-                    <span className="min-w-0 truncate">
-                      {i === 0 && <span className="badge bg-accent text-white mr-1.5">MAIN · 최신</span>}
-                      <span className={i === 0 ? 'font-medium' : ''}>{seedDisplayTitle(s)}</span>
-                      <span className="text-[11px] text-ink/40 ml-1.5">
-                        {s.created_at.slice(5, 10).replace('-', '/')}{s.lane ? ` · ${s.lane}` : ''}
-                      </span>
-                    </span>
-                    <Button
-                      size="sm"
-                      variant={composeKind === 'seed' && composeId === s.id ? 'accent' : 'outline'}
-                      disabled={generating !== null}
-                      onClick={() =>
-                        composeKind === 'seed' && composeId === s.id ? setComposeId(null) : startCompose('seed', s.id)
-                      }
-                    >
-                      {composeKind === 'seed' && composeId === s.id ? '닫기' : '만들기'}
-                    </Button>
-                  </div>
-                  {i === 0 && s.suggested_angle && (
-                    <p className="text-[11px] text-ink/50 mt-1">추천 각도: {s.suggested_angle}</p>
-                  )}
-                  {composePanel('seed', s.id)}
-                </div>
-              ))
+              <div className="space-y-1.5 max-h-72 overflow-y-auto">
+                {seedCandidates.map((s, i) => {
+                  const hi = s.id === seedFocus || (i === 0 && !seedSearching && !seedFocusRow);
+                  return (
+                    <div key={s.id} className={hi ? 'rounded-lg border border-accent/40 bg-accent/5 p-2.5' : 'px-1'}>
+                      <div className="flex items-center justify-between gap-3 text-sm">
+                        <span className="min-w-0 truncate">
+                          {s.id === seedFocus ? (
+                            <span className="badge bg-accent text-white mr-1.5">아카이브에서 선택</span>
+                          ) : (
+                            hi && <span className="badge bg-accent text-white mr-1.5">MAIN · 최신</span>
+                          )}
+                          <span className={hi ? 'font-medium' : ''}>{seedDisplayTitle(s)}</span>
+                          <span className="text-[11px] text-ink/40 ml-1.5">
+                            {s.created_at.slice(5, 10).replace('-', '/')}{s.lane ? ` · ${s.lane}` : ''}
+                            {SEED_STATUS_NOTE[s.status] ? ` · ${SEED_STATUS_NOTE[s.status]}` : ''}
+                          </span>
+                        </span>
+                        <Button
+                          size="sm"
+                          variant={composeKind === 'seed' && composeId === s.id ? 'accent' : 'outline'}
+                          disabled={generating !== null}
+                          onClick={() =>
+                            composeKind === 'seed' && composeId === s.id ? setComposeId(null) : startCompose('seed', s.id)
+                          }
+                        >
+                          {composeKind === 'seed' && composeId === s.id ? '닫기' : '만들기'}
+                        </Button>
+                      </div>
+                      {hi && s.suggested_angle && (
+                        <p className="text-[11px] text-ink/50 mt-1">추천 각도: {s.suggested_angle}</p>
+                      )}
+                      {composePanel('seed', s.id)}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+            {!seedSearching && seedMatches.length > 3 && (
+              <button onClick={() => setSeedExpanded(!seedExpanded)} className="text-[11px] text-accent hover:underline">
+                {seedExpanded ? '접기 ▴' : `미사용 원석 ${seedMatches.length}개 보기 ▾`}
+              </button>
             )}
           </div>
 

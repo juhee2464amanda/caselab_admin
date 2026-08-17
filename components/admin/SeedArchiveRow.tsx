@@ -1,11 +1,13 @@
 'use client';
 
 import { useState } from 'react';
-import { ChevronDown, ChevronUp, ExternalLink } from 'lucide-react';
+import Link from 'next/link';
+import { ChevronDown, ChevronUp, ExternalLink, Images } from 'lucide-react';
 import { sourceProfile } from '@/lib/seed-sources';
 import { bucketProfile, isSeedBucket, bucketFromSource, stripSeedTitleTag } from '@/lib/seed-curation';
 import { ESSENCE_LABELS, essenceRows } from '@/lib/seed-essence';
 import { formatDate, cn } from '@/lib/utils';
+import { Button } from '@/components/ui/button';
 import { SeedAdoptButton } from '@/components/admin/SeedAdoptButton';
 
 export type ArchiveSeed = {
@@ -62,6 +64,14 @@ export function SeedArchiveRow({ seed, statusLabel, statusCls }: { seed: Archive
         )}
         {(seed.status === 'raw' || seed.status === 'rejected') && <SeedAdoptButton seedId={seed.id} />}
         {seed.status === 'adopted' && <span className="shrink-0 text-xs text-amber-600">작업실에 채택됨</span>}
+        {/* 카드뉴스로 채택 — 씨앗 상태는 그대로 두고 카드뉴스 소재로만 넘긴다(작업실 채택과 별개 트랙).
+            /admin/cardnews?seed=<id> 가 그 씨앗을 소재 목록 맨 위에 고정하고 기획 패널을 연다. */}
+        <Button asChild size="sm" variant="outline" className="shrink-0">
+          <Link href={`/admin/cardnews?seed=${seed.id}`}>
+            <Images className="h-3.5 w-3.5" />
+            카드뉴스로
+          </Link>
+        </Button>
         <button onClick={() => setOpen((v) => !v)} className="shrink-0 text-ink/40 hover:text-ink" aria-label="자세히 보기">
           {open ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
         </button>

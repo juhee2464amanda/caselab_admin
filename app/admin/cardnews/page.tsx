@@ -29,14 +29,13 @@ export default async function AdminCardnews() {
     .eq('status', 'published')
     .order('published_at', { ascending: false });
 
-  // 씨앗 아카이브 후보 — 아직 콘텐츠가 안 된 원석(raw/adopted), 최신순.
-  // 카드가 이미 있는 씨앗은 클라이언트에서 제외하므로 여유 있게 가져온다.
+  // 씨앗 아카이브 후보 — 상태로 거르지 않고 아카이브 전체를 최신순으로 가져온다(아카이브 페이지와 같은 300건 창).
+  // 발행됨·숨김 씨앗도 검색으로 도달해야 하기 때문. 기본 노출(top3)과 카드 중복 제외는 클라이언트에서 판정.
   const { data: seeds } = await supabase
     .from('content_seeds')
     .select('id, title, lane, status, suggested_angle, essence, created_at')
-    .in('status', ['raw', 'adopted'])
     .order('created_at', { ascending: false })
-    .limit(30);
+    .limit(300);
 
   // 본가 자료실(tools) 발행물 — /guides · /prompts · /tools 소재.
   // body(jsonb)까지 읽어야 "카드 재료가 있는지"를 여기서 판정할 수 있다(수십 건 규모라 부담 없음).
