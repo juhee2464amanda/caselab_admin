@@ -162,18 +162,30 @@ function accentOf(accent: CardAccent, props: { accentColor?: string }): string {
 // 강조 뒤 문장 전체가 다음 줄로 밀려 "effort / 를 올리면…" 같은 어색한 줄바꿈이 난다.
 function em(text: string, accent: string, base: CSSProperties = {}): ReactNode[] {
   const nodes: ReactNode[] = [];
-  text.split(/\*\*(.+?)\*\*/g).forEach((seg, i) => {
-    if (!seg) return;
-    const style: CSSProperties =
-      i % 2 === 1
-        ? { ...base, whiteSpace: 'pre-wrap', color: accent, fontWeight: 700 }
-        : { ...base, whiteSpace: 'pre-wrap' };
-    for (const word of seg.match(/\S+\s*|\s+/g) ?? [seg])
+  // '\n'은 스팬 안에 두면 안 먹는다 — pre-wrap은 스팬 내부만 끊고 부모 flex 줄은 못 끊어서
+  // Satori에서 "넓은 공백"으로 렌더된다(강조 앞뒤가 벌어지던 원인). 줄을 먼저 쪼개고
+  // 그 자리에 100% 폭·높이 0 스페이서를 넣어 flexWrap이 실제로 줄을 넘기게 한다.
+  text.split('\n').forEach((rawLine, li) => {
+    if (li > 0)
       nodes.push(
-        <span key={`${i}-${nodes.length}`} style={style}>
-          {word}
-        </span>
+        <div key={`br${li}`} style={{ display: 'flex', width: '100%', height: 0 }} />
       );
+    // 줄 끝·줄 앞 공백은 여기서 털어낸다 — 남기면 줄바꿈 자리에 빈칸으로 찍힌다.
+    const line = rawLine.trim();
+    if (!line) return;
+    line.split(/\*\*(.+?)\*\*/g).forEach((seg, i) => {
+      if (!seg) return;
+      const style: CSSProperties =
+        i % 2 === 1
+          ? { ...base, whiteSpace: 'pre-wrap', color: accent, fontWeight: 700 }
+          : { ...base, whiteSpace: 'pre-wrap' };
+      for (const word of seg.match(/\S+\s*|\s+/g) ?? [seg])
+        nodes.push(
+          <span key={`${li}-${i}-${nodes.length}`} style={style}>
+            {word}
+          </span>
+        );
+    });
   });
   return nodes;
 }
