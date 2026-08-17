@@ -1842,11 +1842,13 @@ function PublishPanel({ card, dirty }: { card: CardRow; dirty: boolean }) {
     instagram: true,
     threads: true,
   });
-  const [busy, setBusy] = useState<'check' | 'prepare' | 'publish' | null>(null);
+  const [busy, setBusy] = useState<'check' | 'prepare' | 'publish' | 'phone' | null>(null);
   const [images, setImages] = useState<string[]>([]);
   const [ending, setEnding] = useState<{ kind: string; label: string; url: string | null } | null>(null);
   const [errors, setErrors] = useState<string[]>([]);
   const [priceWarn, setPriceWarn] = useState<string | null>(null);
+  const [phoneLink, setPhoneLink] = useState<{ url: string; count: number } | null>(null);
+  const [copied, setCopied] = useState(false);
 
   // 발행 직전 가격 재검증 — 수집 후 소스 사이트에서 가격이 바뀐 걸 저장본만 믿고 내보내는 사고 방지.
   // 경고만 하고 발행은 막지 않는다 (사이트 다운·JS 렌더면 '확인 불가'로 통과).
@@ -1906,6 +1908,32 @@ function PublishPanel({ card, dirty }: { card: CardRow; dirty: boolean }) {
     }
   }
 
+  // 폰에서 직접 올려야 할 때 — 카드를 렌더·업로드하고, 폰에서 열 링크를 만든다.
+  // (인스타 DM API로 보내는 방식은 Meta가 웹훅을 막아 불가 — 런북 10장 E 참고)
+  async function makePhoneLink() {
+    if (dirty) return alert('저장 안 된 수정이 있어요. 먼저 [저장]을 눌러주세요.');
+    setBusy('phone');
+    setErrors([]);
+    setPhoneLink(null);
+    setCopied(false);
+    try {
+      const res = await fetch('/api/cardpress/handoff', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ cardId: card.id }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? `HTTP ${res.status}`);
+      // localhost 링크는 폰에서 자기 자신을 가리켜 안 열린다 → 서버가 준 LAN 주소를 우선 쓴다.
+      const origin = data.lanOrigin ?? window.location.origin;
+      setPhoneLink({ url: `${origin}${data.path}`, count: data.count });
+    } catch (e) {
+      setErrors([(e as Error).message]);
+    } finally {
+      setBusy(null);
+    }
+  }
+
   return (
     <div className="card p-4 space-y-3">
       <div className="text-sm font-semibold">발행</div>
@@ -1935,7 +1963,47 @@ function PublishPanel({ card, dirty }: { card: CardRow; dirty: boolean }) {
         >
           zip 다운로드 (수동 업로드 백업)
         </a>
+        <button
+          type="button"
+          onClick={makePhoneLink}
+          disabled={busy !== null}
+          className="text-xs text-accent hover:underline disabled:opacity-50 disabled:no-underline"
+        >
+          {busy === 'phone' ? '카드 준비 중…' : '폰으로 보내기 (직접 업로드용 링크)'}
+        </button>
       </div>
+      {phoneLink && (
+        <div className="rounded-lg bg-ink/5 p-3 space-y-2">
+          <p className="text-xs text-ink/60">
+            카드 {phoneLink.count}장 준비됨 — 이 링크를 폰으로 옮기세요(카톡 &lsquo;나에게 보내기&rsquo; 등).
+            폰에서 이미지를 꾹 눌러 저장하고 캡션은 버튼으로 복사합니다.
+          </p>
+          <div className="flex items-center gap-2">
+            <input
+              readOnly
+              value={phoneLink.url}
+              onFocus={(e) => e.currentTarget.select()}
+              className="flex-1 rounded border border-ink/15 bg-white px-2 py-1 text-xs"
+            />
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => {
+                navigator.clipboard.writeText(phoneLink.url);
+                setCopied(true);
+                setTimeout(() => setCopied(false), 1800);
+              }}
+            >
+              {copied ? '복사됨 ✓' : '복사'}
+            </Button>
+          </div>
+          {phoneLink.url.includes('://192.') || phoneLink.url.includes('://10.') ? (
+            <p className="text-[11px] text-ink/40">
+              같은 와이파이에 있는 폰에서만 열립니다 (로컬 dev 서버 주소).
+            </p>
+          ) : null}
+        </div>
+      )}
       {images.length > 0 && (
         <p className="text-xs text-ink/60">
           업로드된 슬라이드 {images.length}장 —{' '}

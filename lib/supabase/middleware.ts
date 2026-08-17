@@ -1,7 +1,9 @@
 import { createServerClient, type CookieOptions } from '@supabase/ssr';
 import { NextRequest, NextResponse } from 'next/server';
 
-const PUBLIC_PATHS = ['/login', '/auth', '/api', '/_next', '/favicon.ico'];
+// '/m' = 카드뉴스를 폰으로 넘기는 화면. 폰에는 관리자 로그인이 없어서 여기서 막으면 안 되고,
+// 대신 링크에 붙은 서명(app/m/[cardId]/page.tsx)으로만 열린다.
+const PUBLIC_PATHS = ['/login', '/auth', '/api', '/m/', '/_next', '/favicon.ico'];
 
 // admin 접근 허용 이메일 — 기본값은 운영자 단일 계정.
 // 여러 명 허용하려면 Vercel env ADMIN_EMAILS="a@x.com,b@y.com" 로 덮어씀.
