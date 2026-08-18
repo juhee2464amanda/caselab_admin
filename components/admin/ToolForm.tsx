@@ -25,6 +25,8 @@ import { RichSectionsEditor } from '@/components/admin/section-editors/RichSecti
 import type { RichSection } from '@/types/content';
 import { RefineProvider, RefinePanel } from '@/components/admin/RefinePanel';
 import { AiImageFill } from '@/components/admin/AiImageFill';
+import { ThumbnailField } from '@/components/admin/ThumbnailField';
+import { ThumbnailSuggest } from '@/components/admin/ThumbnailSuggest';
 
 const CATEGORIES = ['tool', 'prompt', 'guide', 'context-card'] as const;
 const CATEGORY_LABELS: Record<typeof CATEGORIES[number], string> = {
@@ -518,10 +520,9 @@ export function ToolForm({ initial, onSaved, startInPreview }: Props) {
                 <Label htmlFor="url" className="text-xs">외부 링크</Label>
                 <Input id="url" className="mt-1" value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://" />
               </div>
-              <div>
-                <Label htmlFor="thumb" className="text-xs">썸네일 URL</Label>
-                <Input id="thumb" className="mt-1" value={thumbnailUrl} onChange={(e) => setThumbnailUrl(e.target.value)} />
-              </div>
+              {/* URL 직접 입력만 두면 붙여넣을 주소가 없는 프롬프트·가이드는 썸네일을 아예 못 넣는다 —
+                  콘텐츠(TrackForm)와 같은 업로드·끌어놓기·붙여넣기 입력으로 통일. */}
+              <ThumbnailField value={thumbnailUrl} onChange={setThumbnailUrl} />
               <div>
                 <Label className="text-xs">직무 태그</Label>
                 <div className="mt-1.5 flex flex-wrap gap-1.5">
@@ -686,6 +687,18 @@ export function ToolForm({ initial, onSaved, startInPreview }: Props) {
 
         {/* 우측 레일: 발행 준비 신호등(필수 항목 인라인 수정) + AI 제안 패널 */}
         <aside className="space-y-6">
+          {/* 썸네일 후보 — 사이트 캡처(AiImageFill)가 통하지 않는 프롬프트·가이드까지 커버한다.
+              고른 후보는 여기서 바로 thumbnail_url로 들어가고, 미리보기의 썸네일 슬롯에도 즉시 반영된다. */}
+          <ThumbnailSuggest
+            name={name}
+            description={description}
+            category={category}
+            promptCategory={promptCategory || undefined}
+            promptText={typeof parsedBody?.prompt === 'string' ? parsedBody.prompt.slice(0, 800) : undefined}
+            value={thumbnailUrl}
+            onPick={setThumbnailUrl}
+          />
+
           {/* 이미지 채우기 — 초안 편집·상세 필드 어느 모드에서든 보이도록 레일에 둔다 */}
           <AiImageFill
             toolUrl={url}

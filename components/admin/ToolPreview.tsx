@@ -674,9 +674,14 @@ function PromptCardPreview({
   description,
   url,
   body,
+  thumbnailUrl,
+  thumbnailEmoji,
   onPatch,
   onBody,
-}: Pick<ToolPreviewProps, 'name' | 'description' | 'url' | 'body' | 'onPatch' | 'onBody'>) {
+}: Pick<
+  ToolPreviewProps,
+  'name' | 'description' | 'url' | 'body' | 'thumbnailUrl' | 'thumbnailEmoji' | 'onPatch' | 'onBody'
+>) {
   // 본가 PromptDetail 렌더 순서 그대로: 분류 배지·출처 칩 → 제목 → 설명 → 복사 박스 → 참고 섹션.
   // body에서 읽는 키도 본가와 동일(lib/prompt-body.ts 계약) — 출처는 tools.url이 아니라 body.sourceUrl이다.
   const prompt = typeof body.prompt === 'string' ? body.prompt : '';
@@ -686,6 +691,25 @@ function PromptCardPreview({
   const set = onBody && ((patch: Record<string, unknown>) => onBody({ ...body, ...patch }));
   return (
     <div className="mx-auto max-w-[640px] space-y-3">
+      {/* 썸네일 — 본가 /prompts 목록 카드·히어로에 나가는 이미지. 도구(ToolDetailPreview)에만 있던 슬롯을
+          프롬프트에도 둔다(없으면 브랜드 폴백으로 나가서 목록에서 구분이 안 된다). */}
+      {(onPatch || thumbnailUrl) && (
+        <div className="space-y-1">
+          {onPatch ? (
+            <HeroThumbnailField
+              url={thumbnailUrl}
+              emoji={thumbnailEmoji || '✍️'}
+              name={name}
+              onCommit={(u) => onPatch({ thumbnailUrl: u })}
+            />
+          ) : (
+            <div className="aspect-[16/10] overflow-hidden rounded-2xl border border-border bg-muted">
+              <ImageZoom src={thumbnailUrl!} alt={name} className="h-full w-full object-cover" />
+            </div>
+          )}
+          <p className="text-[11px] text-ink/40">목록 카드·히어로 썸네일 {thumbnailUrl ? '' : '— 없으면 브랜드 기본 이미지로 나가요'}</p>
+        </div>
+      )}
       <div className="flex items-center gap-2">
         <span
           className={cn(
@@ -737,8 +761,13 @@ function GuideCardPreview({
   url,
   jobTags,
   body,
+  thumbnailUrl,
+  thumbnailEmoji,
   onPatch,
-}: Pick<ToolPreviewProps, 'name' | 'description' | 'url' | 'jobTags' | 'body' | 'onPatch'>) {
+}: Pick<
+  ToolPreviewProps,
+  'name' | 'description' | 'url' | 'jobTags' | 'body' | 'thumbnailUrl' | 'thumbnailEmoji' | 'onPatch'
+>) {
   const host = (() => {
     try {
       return url ? new URL(url).host : '';
@@ -749,7 +778,21 @@ function GuideCardPreview({
   return (
     <div className="mx-auto max-w-[360px]">
       <div className="rounded-[10px] border border-border bg-white overflow-hidden">
-        <div className="flex h-20 items-center justify-center bg-muted text-sm font-bold text-ink/60">{jobTags?.[0] ?? '가이드'}</div>
+        {/* 카드 상단 이미지 = 썸네일 슬롯. 편집 중이면 그 자리가 그대로 드롭존이 된다. */}
+        {onPatch ? (
+          <HeroThumbnailField
+            url={thumbnailUrl}
+            emoji={thumbnailEmoji || '📘'}
+            name={name}
+            onCommit={(u) => onPatch({ thumbnailUrl: u })}
+          />
+        ) : thumbnailUrl ? (
+          <div className="h-20 overflow-hidden">
+            <ImageZoom src={thumbnailUrl} alt={name} className="h-full w-full object-cover" />
+          </div>
+        ) : (
+          <div className="flex h-20 items-center justify-center bg-muted text-sm font-bold text-ink/60">{jobTags?.[0] ?? '가이드'}</div>
+        )}
         <div className="p-4 space-y-1.5">
           {jobTags?.[0] && (
             <span className="inline-block rounded-[3px] bg-accent-50 px-1.5 py-0.5 text-[9.5px] font-bold text-accent">{jobTags[0]}</span>
@@ -881,9 +924,27 @@ export function ToolPreview(props: ToolPreviewProps) {
             </p>
           )
         ) : category === 'prompt' ? (
-          <PromptCardPreview name={props.name} description={props.description} url={props.url} body={body} onPatch={props.onPatch} onBody={props.onBody} />
+          <PromptCardPreview
+            name={props.name}
+            description={props.description}
+            url={props.url}
+            body={body}
+            thumbnailUrl={props.thumbnailUrl}
+            thumbnailEmoji={props.thumbnailEmoji}
+            onPatch={props.onPatch}
+            onBody={props.onBody}
+          />
         ) : (
-          <GuideCardPreview name={props.name} description={props.description} url={props.url} jobTags={props.jobTags} body={body} onPatch={props.onPatch} />
+          <GuideCardPreview
+            name={props.name}
+            description={props.description}
+            url={props.url}
+            jobTags={props.jobTags}
+            body={body}
+            thumbnailUrl={props.thumbnailUrl}
+            thumbnailEmoji={props.thumbnailEmoji}
+            onPatch={props.onPatch}
+          />
         )}
       </div>
     </div>
