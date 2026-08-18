@@ -126,6 +126,9 @@ export function AiImageFill({
       </div>
       <p className="mb-2.5 text-[11px] text-ink/45 break-keep">
         공식 사이트(랜딩·문서·기능 페이지)를 훑어 실제 사용 화면을 찾고 기능별로 매칭해요. 내 컴퓨터에서만 동작합니다.
+        <span className="mt-1 block">
+          훑을 사이트가 없는 프롬프트·가이드의 썸네일은 위 &lsquo;썸네일 후보&rsquo;를 쓰세요.
+        </span>
       </p>
       <label className="mb-2.5 flex items-start gap-2 text-[11px] text-ink/60">
         <input

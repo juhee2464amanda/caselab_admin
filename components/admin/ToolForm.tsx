@@ -25,6 +25,7 @@ import { RichSectionsEditor } from '@/components/admin/section-editors/RichSecti
 import type { RichSection } from '@/types/content';
 import { RefineProvider, RefinePanel } from '@/components/admin/RefinePanel';
 import { AiImageFill } from '@/components/admin/AiImageFill';
+import { ThumbnailSuggest } from '@/components/admin/ThumbnailSuggest';
 
 const CATEGORIES = ['tool', 'prompt', 'guide', 'context-card'] as const;
 const CATEGORY_LABELS: Record<typeof CATEGORIES[number], string> = {
@@ -241,6 +242,23 @@ export function ToolForm({ initial, onSaved, startInPreview }: Props) {
   const promptCategory = isPromptCategory(parsedBody?.promptCategory) ? parsedBody.promptCategory : '';
   const promptSource = typeof parsedBody?.source === 'string' ? parsedBody.source : '';
   const promptSourceUrl = typeof parsedBody?.sourceUrl === 'string' ? parsedBody.sourceUrl : '';
+
+  // 썸네일 검색어를 뽑을 본문 발췌 — 프롬프트는 전문, 도구·가이드는 소개 문단·기능·섹션 제목.
+  // 제목만으로는 "무엇에 대한 자료인지"가 안 잡혀 추상어 검색으로 흐른다(썸네일 후보 패널이 씀).
+  const bodyExcerpt = useMemo(() => {
+    const b = parsedBody;
+    if (!b) return '';
+    const parts: string[] = [];
+    if (typeof b.prompt === 'string') parts.push(b.prompt);
+    const about = b.about as { paragraphs?: string[] } | undefined;
+    if (Array.isArray(about?.paragraphs)) parts.push(about.paragraphs.join(' '));
+    const features = b.features as { title?: string; desc?: string }[] | undefined;
+    if (Array.isArray(features))
+      parts.push(features.map((f) => [f?.title, f?.desc].filter(Boolean).join(' — ')).join(' / '));
+    const secs = b.sections as RichSection[] | undefined;
+    if (Array.isArray(secs)) parts.push(secs.map((s) => s?.heading).filter(Boolean).join(' / '));
+    return parts.filter(Boolean).join('\n').slice(0, 1200);
+  }, [parsedBody]);
 
   const sections = (parsedBody?.sections as RichSection[] | undefined) ?? [];
   function setSections(next: RichSection[]) {
@@ -686,6 +704,17 @@ export function ToolForm({ initial, onSaved, startInPreview }: Props) {
 
         {/* 우측 레일: 발행 준비 신호등(필수 항목 인라인 수정) + AI 제안 패널 */}
         <aside className="space-y-6">
+          {/* 썸네일 후보 — 캡처할 사이트가 없는 프롬프트·가이드의 주 경로(이미지 채우기 위에 둔다) */}
+          <ThumbnailSuggest
+            name={name}
+            description={description}
+            category={category}
+            promptCategory={promptCategory || undefined}
+            excerpt={bodyExcerpt}
+            thumbnailUrl={thumbnailUrl}
+            onPick={(u) => setThumbnailUrl(u)}
+          />
+
           {/* 이미지 채우기 — 초안 편집·상세 필드 어느 모드에서든 보이도록 레일에 둔다 */}
           <AiImageFill
             toolUrl={url}
