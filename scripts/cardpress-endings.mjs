@@ -212,7 +212,7 @@ body{font-family:-apple-system,"Pretendard","Apple SD Gothic Neo",sans-serif}
     <span class="batt"></span></span></div>
   <div class="head">
     <div class="avatar"><img src="avatar.png"></div>
-    <div class="who"><div class="handle">${ig.username ? '@' + ig.username : '@caselab_ai_'}</div>
+    <div class="who"><div class="handle">${ig.username ? '@' + ig.username : '@ai_caselab'}</div>
       <div class="name">${ig.name || ''}</div></div>
   </div>
   <div class="bio">${bio.map((l) => `<div>${l}</div>`).join('')}</div>
@@ -278,7 +278,7 @@ body{font-family:-apple-system,"Pretendard","Apple SD Gothic Neo",sans-serif}
         <span class="batt"></span></span></div>
       <div class="head">
         <div class="avatar"><img src="avatar.png"></div>
-        <div class="who"><div class="handle">${ig.username ? '@' + ig.username : '@caselab_ai_'}</div>
+        <div class="who"><div class="handle">${ig.username ? '@' + ig.username : '@ai_caselab'}</div>
           <div class="name">${ig.name || ''}</div></div>
       </div>
       <div class="bio">${bio.map((l) => `<div>${l}</div>`).join('')}</div>

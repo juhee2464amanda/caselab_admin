@@ -29,7 +29,7 @@ export const ENDING_ASSETS = {
   linkCard: `${BASE}/comp-link-split.png`,
 };
 
-/** 인스타 핸들 — lib/constants.ts 단일 정의(@caselab_ai_). 카드에 잘못 박히면 유입이 끊긴다 */
+/** 인스타 핸들 — lib/constants.ts 단일 정의(@ai_caselab). 카드에 잘못 박히면 유입이 끊긴다 */
 const IG_HANDLE = INSTAGRAM_HANDLE;
 
 /** 포인트색은 카테고리색(cat-case/trend/tool)이 아니라 **브랜드 컬러**로 고정한다.

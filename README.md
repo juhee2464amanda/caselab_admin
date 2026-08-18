@@ -27,7 +27,7 @@
 | DB | Supabase Free |
 | 이메일 발송 | Gmail SMTP (`caselab.kr@gmail.com`, 일 500건) |
 | AI 초안 | **비활성** — Claude Max로 직접 작성 → admin 폼 복붙 |
-| 인스타 | `@caselab_ai_` |
+| 인스타 | `@ai_caselab` |
 | 운영비 | 월 $0, 연 $0 |
 
 자세한 결정 변경 이력은 `docs/04_dev_plan.md §18` 참고.
