@@ -186,6 +186,7 @@ body{font-family:-apple-system,"Pretendard","Apple SD Gothic Neo",sans-serif}
 .head{display:flex;align-items:center;gap:16px;margin-top:14px}
 .avatar{width:78px;height:78px;border-radius:50%;overflow:hidden;background:#DDD;flex-shrink:0}
 .avatar img{width:100%;height:100%;object-fit:cover;display:block}
+.avatar .init{width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:34px;font-weight:800;color:#fff;background:linear-gradient(135deg,#1B64DA,#4E90F5)}
 .who .handle{font-size:19px;font-weight:800;letter-spacing:-.01em}
 .who .name{margin-top:2px;font-size:14px;color:#6B6B74}
 .bio{margin-top:14px;font-size:13.5px;line-height:1.62;color:#2C2C33}
@@ -211,7 +212,7 @@ body{font-family:-apple-system,"Pretendard","Apple SD Gothic Neo",sans-serif}
     <span class="bar" style="height:9px"></span><span class="bar" style="height:11px"></span>
     <span class="batt"></span></span></div>
   <div class="head">
-    <div class="avatar"><img src="avatar.png"></div>
+    <div class="avatar">${ig.profile_picture_url ? '<img src="avatar.png">' : `<div class="init">${(ig.username || 'c')[0].toUpperCase()}</div>`}</div>
     <div class="who"><div class="handle">${ig.username ? '@' + ig.username : '@ai_caselab'}</div>
       <div class="name">${ig.name || ''}</div></div>
   </div>
@@ -258,6 +259,7 @@ body{font-family:-apple-system,"Pretendard","Apple SD Gothic Neo",sans-serif}
 .head{display:flex;align-items:center;gap:16px;margin-top:12px}
 .avatar{width:86px;height:86px;border-radius:50%;overflow:hidden;background:#DDD;flex-shrink:0}
 .avatar img{width:100%;height:100%;object-fit:cover;display:block}
+.avatar .init{width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:38px;font-weight:800;color:#fff;background:linear-gradient(135deg,#1B64DA,#4E90F5)}
 .who .handle{font-size:21px;font-weight:800;letter-spacing:-.01em}
 .who .name{margin-top:3px;font-size:15px;color:#6B6B74}
 .bio{margin-top:16px;font-size:15.5px;line-height:1.6;color:#2C2C33}
@@ -277,7 +279,7 @@ body{font-family:-apple-system,"Pretendard","Apple SD Gothic Neo",sans-serif}
         <span class="bar" style="height:9px"></span><span class="bar" style="height:11px"></span>
         <span class="batt"></span></span></div>
       <div class="head">
-        <div class="avatar"><img src="avatar.png"></div>
+        <div class="avatar">${ig.profile_picture_url ? '<img src="avatar.png">' : `<div class="init">${(ig.username || 'c')[0].toUpperCase()}</div>`}</div>
         <div class="who"><div class="handle">${ig.username ? '@' + ig.username : '@ai_caselab'}</div>
           <div class="name">${ig.name || ''}</div></div>
       </div>
@@ -344,8 +346,11 @@ if (igToken) {
     );
     const ig = await res.json();
     if (ig.error) throw new Error(ig.error.message);
-    const pic = await fetch(ig.profile_picture_url);
-    await writeFile(path.join(OUT, 'avatar.png'), Buffer.from(await pic.arrayBuffer()));
+    // 갓 만든 계정은 프로필 사진이 없어 profile_picture_url이 아예 안 온다 — 그땐 이니셜 원으로
+    if (ig.profile_picture_url) {
+      const pic = await fetch(ig.profile_picture_url);
+      await writeFile(path.join(OUT, 'avatar.png'), Buffer.from(await pic.arrayBuffer()));
+    }
     await writeFile(path.join(OUT, 'profile.html'), profileHtml(ig));
     const pctx = await browser.newContext({ viewport: { width: 1120, height: 900 } });
     const ppage = await pctx.newPage();
