@@ -10,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { RichTextarea } from '@/components/admin/RichTextarea';
 import { GalleryField } from '@/components/admin/BlockListEditor';
 import { ThumbnailField } from '@/components/admin/ThumbnailField';
+import { ThumbnailSuggest } from '@/components/admin/ThumbnailSuggest';
 import { createSupabaseBrowserClient } from '@/lib/supabase/client';
 
 type GuideImage = { url: string; caption?: string };
@@ -191,6 +192,16 @@ export function GuideManager({ initial }: { initial: Guide[] }) {
             <Input className="mt-1" value={f.thumbLabel} onChange={(e) => setF((p) => ({ ...p, thumbLabel: e.target.value }))} placeholder="Anthropic / GitHub …" />
           </div>
         </div>
+        {/* 썸네일 후보 — 상세 편집(/admin/tools/[id]) 레일과 같은 패널. 여기서 등록할 때도 바로 고를 수 있게. */}
+        <ThumbnailSuggest
+          className="rounded-lg border border-border p-4"
+          name={f.name}
+          description={f.description}
+          category="guide"
+          excerpt={f.bodyRich || f.description}
+          thumbnailUrl={f.thumbImage}
+          onPick={(url) => setF((p) => ({ ...p, thumbImage: url }))}
+        />
         <div>
           <Label className="text-xs">상세 본문 <span className="text-ink/40">(선택 · 채우면 본가에 내부 상세페이지가 생기고 카드가 그리로 연결돼요. 비우면 카드가 원문 링크로 직행 · 텍스트 선택 후 서식)</span></Label>
           <RichTextarea className="mt-1" rows={6} value={f.bodyRich} onChange={(v) => setF((p) => ({ ...p, bodyRich: v }))} placeholder={'이 가이드를 왜/어떻게 보면 좋은지, 핵심 요약, 우리 맥락에서의 포인트 등.\n비워두면 예전처럼 카드가 바로 원문으로 연결돼요.'} />

@@ -11,6 +11,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { createSupabaseBrowserClient } from '@/lib/supabase/client';
 import { uploadEbookPdf, MAX_PDF_BYTES } from '@/lib/ebook/uploadEbookPdf';
 import { EbookPdfUpload } from '@/components/admin/EbookPdfUpload';
+import { ThumbnailField } from '@/components/admin/ThumbnailField';
+import { ThumbnailSuggest } from '@/components/admin/ThumbnailSuggest';
 
 // 피드백 #8-1 — ebook 등록/편집 겸용. products insert/update (읽는 분단위는 body.read_minutes).
 // 신규: PDF 업로드는 insert 후 product id로 ebooks 버킷에 올리고 pdf_path 저장 (handoff).
@@ -143,10 +145,8 @@ export function EbookForm({ initial }: { initial?: ProductRow }) {
         </div>
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <div>
-          <Label className="text-xs">썸네일 URL</Label>
-          <Input className="mt-1" value={f.thumbnail_url} onChange={(e) => setF((p) => ({ ...p, thumbnail_url: e.target.value }))} placeholder="https://..." />
-        </div>
+        {/* 썸네일 — URL 생입력만 있던 자리. 다른 편집 화면과 같이 업로드·끌어놓기까지 되게 맞춘다. */}
+        <ThumbnailField value={f.thumbnail_url} onChange={(url) => setF((p) => ({ ...p, thumbnail_url: url }))} />
         <div>
           <Label className="text-xs">상태</Label>
           <Select value={f.status} onValueChange={(v) => setF((p) => ({ ...p, status: v as 'active' | 'archived' }))}>
@@ -176,6 +176,15 @@ export function EbookForm({ initial }: { initial?: ProductRow }) {
         <Label className="text-xs">설명</Label>
         <Textarea className="mt-1" rows={3} value={f.description} onChange={(e) => setF((p) => ({ ...p, description: e.target.value }))} />
       </div>
+      {/* 썸네일 후보 — 제목·설명으로 표지 사진을 찾는다(다른 편집 화면과 같은 패널). 설명 아래에 둬야 검색어가 잡힌다. */}
+      <ThumbnailSuggest
+        className="rounded-lg border border-border p-4"
+        name={f.title}
+        description={f.description}
+        category="ebook"
+        thumbnailUrl={f.thumbnail_url}
+        onPick={(url) => setF((p) => ({ ...p, thumbnail_url: url }))}
+      />
 
       <div>
         <Label className="text-xs">상세 본문 (JSON — 목차·소개·통계 등, 선택)</Label>

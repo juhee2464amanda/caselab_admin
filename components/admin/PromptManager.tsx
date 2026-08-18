@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { ThumbnailField } from '@/components/admin/ThumbnailField';
+import { ThumbnailSuggest } from '@/components/admin/ThumbnailSuggest';
 import { RichTextarea } from '@/components/admin/RichTextarea';
 import { GalleryField } from '@/components/admin/BlockListEditor';
 import { createSupabaseBrowserClient } from '@/lib/supabase/client';
@@ -205,6 +206,17 @@ export function PromptManager({ initial }: { initial: PromptRow[] }) {
           </div>
         </div>
         <ThumbnailField value={f.thumbnailUrl} onChange={(url) => setF((p) => ({ ...p, thumbnailUrl: url }))} />
+        {/* 썸네일 후보 — 상세 편집(/admin/tools/[id]) 레일과 같은 패널. 여기서 등록할 때도 바로 고를 수 있게. */}
+        <ThumbnailSuggest
+          className="rounded-lg border border-border p-4"
+          name={f.name}
+          description={f.description}
+          category="prompt"
+          promptCategory={f.category}
+          excerpt={f.prompt}
+          thumbnailUrl={f.thumbnailUrl}
+          onPick={(url) => setF((p) => ({ ...p, thumbnailUrl: url }))}
+        />
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           <div><Label className="text-xs">출처 라벨</Label><Input className="mt-1" value={f.source} onChange={(e) => setF((p) => ({ ...p, source: e.target.value }))} placeholder="Anthropic 공식" /></div>
           <div><Label className="text-xs">출처 URL</Label><Input className="mt-1" value={f.sourceUrl} onChange={(e) => setF((p) => ({ ...p, sourceUrl: e.target.value }))} placeholder="https://…" /></div>

@@ -40,6 +40,7 @@ export function ThumbnailSuggest({
   promptCategory,
   excerpt,
   thumbnailUrl,
+  className,
   onPick,
 }: {
   name: string;
@@ -49,6 +50,8 @@ export function ThumbnailSuggest({
   /** 본문 발췌 — 프롬프트 전문·가이드 앞부분 */
   excerpt?: string;
   thumbnailUrl: string;
+  /** 겉면 — 기본은 우측 레일용 카드. 폼 안에 끼워 넣을 때는 얇은 테두리로 바꾼다(카드 속 카드 방지). */
+  className?: string;
   onPick: (url: string) => void;
 }) {
   const [running, setRunning] = useState(false);
@@ -103,7 +106,7 @@ export function ThumbnailSuggest({
   const blocked = !name.trim() ? '제목을 먼저 입력해 주세요' : null;
 
   return (
-    <section className="card p-5">
+    <section className={className ?? 'card p-5'}>
       <div className="mb-2 flex items-center gap-2">
         <Images className="h-4 w-4 shrink-0 text-accent" />
         <h2 className="text-sm font-semibold">썸네일 후보 (Unsplash)</h2>

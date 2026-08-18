@@ -260,6 +260,16 @@ export function ToolForm({ initial, onSaved, startInPreview }: Props) {
     return parts.filter(Boolean).join('\n').slice(0, 1200);
   }, [parsedBody]);
 
+  // 이미지 채우기 매칭 대상 — 초안 body의 기능 목록(title/desc). 제목이 그대로 반영 키가 된다.
+  const fillTargets = useMemo(() => {
+    const fs = parsedBody?.features;
+    return Array.isArray(fs)
+      ? (fs as { title?: string; desc?: string }[])
+          .filter((f) => f?.title)
+          .map((f) => ({ title: String(f.title).trim(), desc: f.desc ? String(f.desc) : undefined }))
+      : [];
+  }, [parsedBody]);
+
   const sections = (parsedBody?.sections as RichSection[] | undefined) ?? [];
   function setSections(next: RichSection[]) {
     const merged: Record<string, unknown> = { ...(parsedBody ?? {}) };
@@ -717,35 +727,36 @@ export function ToolForm({ initial, onSaved, startInPreview }: Props) {
 
           {/* 이미지 채우기 — 초안 편집·상세 필드 어느 모드에서든 보이도록 레일에 둔다 */}
           <AiImageFill
-            toolUrl={url}
+            kind="tool"
+            url={url}
             name={name}
-            parsedBody={parsedBody}
+            targets={fillTargets}
             thumbnailUrl={thumbnailUrl}
+            blockedReason={
+              !url ? '메타의 URL 필드를 먼저 채워주세요' : !parsedBody ? '본문 JSON 오류를 먼저 고쳐주세요' : null
+            }
+            applyHint="체크한 이미지는 제목이 일치하는 기능(‘이 도구가 잘하는 것’) 아래 이미지로 들어가고, 일치하는 기능이 없으면 ‘추가 섹션’으로 들어가요. 반영 뒤에도 수정·삭제할 수 있어요."
             onApply={(patch) => {
               if (patch.thumbnailUrl) setThumbnailUrl(patch.thumbnailUrl);
-              // features 이미지 슬롯 채움 + 추가 섹션을 한 번의 body 갱신으로 처리
+              // features 이미지 슬롯 채움 + 추가 섹션을 한 번의 body 갱신으로 처리.
+              // 같은 기능에 두 장을 고르면 첫 장만 슬롯에 넣고 나머지는 추가 섹션으로 보존한다
+              // (체크한 이미지는 버리지 않는다).
               const merged: Record<string, unknown> = { ...(parsedBody ?? {}) };
-              const leftovers: RichSection[] = [];
-              if (patch.featureImages.length) {
-                const remaining = [...patch.featureImages];
-                if (Array.isArray(merged.features)) {
-                  merged.features = (merged.features as Record<string, unknown>[]).map((f) => {
-                    const hit = remaining.findIndex((m) => m.title === String(f?.title ?? '').trim());
-                    if (hit === -1) return f;
-                    const [m] = remaining.splice(hit, 1);
-                    // feature.image 계약은 {url, caption?}만 허용 (strict 스키마 — alt 넣으면 발행 차단)
-                    return { ...f, image: { url: m.url, ...(m.caption ? { caption: m.caption } : {}) } };
-                  });
-                }
-                // 반영 시점에 기능이 사라졌으면 버리지 말고 추가 섹션으로 보존
-                for (const m of remaining) {
-                  leftovers.push({
-                    heading: m.title,
-                    blocks: [{ type: 'image', url: m.url, alt: m.alt, caption: m.caption }],
-                  });
-                }
+              const remaining = [...patch.images];
+              if (Array.isArray(merged.features)) {
+                merged.features = (merged.features as Record<string, unknown>[]).map((f) => {
+                  const hit = remaining.findIndex((m) => m.title === String(f?.title ?? '').trim());
+                  if (hit === -1) return f;
+                  const [m] = remaining.splice(hit, 1);
+                  // feature.image 계약은 {url, caption?}만 허용 (strict 스키마 — alt 넣으면 발행 차단)
+                  return { ...f, image: { url: m.url, ...(m.caption ? { caption: m.caption } : {}) } };
+                });
               }
-              const nextSections = [...sections, ...patch.addSections, ...leftovers];
+              const leftovers: RichSection[] = remaining.map((m) => ({
+                heading: m.title,
+                blocks: [{ type: 'image', url: m.url, alt: m.alt, caption: m.caption }],
+              }));
+              const nextSections = [...sections, ...leftovers];
               if (nextSections.length) merged.sections = nextSections;
               else delete merged.sections;
               syncBody(JSON.stringify(merged, null, 2));
