@@ -339,6 +339,8 @@ type C1Input = Extract<RenderSlideInput, { template: 'C1' }>;
 
 function C1(input: C1Input) {
   switch (input.props.coverLayout) {
+    case 'v3':
+      return C1V3(input);
     case 'center':
       return C1Center(input);
     case 'band':
@@ -348,6 +350,740 @@ function C1(input: C1Input) {
     default:
       return C1Bottom(input);
   }
+}
+
+// ---------- C1 v3 · 잠금 규격 커버 ----------
+// 피드 상위 계정(팔로워 5.7만, 게시물 102개) 분석 결과: 그 계정은 레이아웃을 한 번도 안 바꾼다.
+// 상단은 비우고, 헤드라인은 예외 없이 2줄, 워드마크는 바닥 중앙, 스크림은 항상 깔려 있다.
+// 다양성은 오직 배경 아트(coverArt 7종)에서만 나온다 — 규격이 같아야 그리드가 한 매체로 읽힌다.
+//
+// 규격(1080×1350 실측치, 원안의 cqw를 px로 환산):
+//   좌우 여백 65 · 텍스트 블록 바닥 130 · 스크림 하단 66% · 아이브로우 33 · 헤드라인 99 · 워드마크 27
+const V3_PAD = 65;
+const V3_BLOCK_BOTTOM = 130;
+const V3_SCRIM_H = Math.round(CARD_H * 0.66);
+const V3_EYEBROW = 33;
+const V3_HEADLINE = 99;
+const V3_WM = 27;
+const V3_WM_BOTTOM = 50;
+
+// 하이라이트는 사람이 고르지 않는다 — 어두우면 블루, 밝으면 라임. 배경 밝기로만 정해서
+// 시리즈 전체에 색 규칙이 보이게 한다(전에는 한 장은 파랑, 한 장은 초록이라 규칙이 안 보였다).
+const V3_BLUE = '#2F4BF0';
+const V3_LIME = '#C6F24E';
+
+const V3_SCRIM: Record<'dark' | 'light', string> = {
+  dark: 'linear-gradient(to top, rgba(6,8,12,0.94) 22%, rgba(6,8,12,0.72) 46%, rgba(6,8,12,0) 100%)',
+  light:
+    'linear-gradient(to top, rgba(255,255,255,0.96) 22%, rgba(255,255,255,0.78) 46%, rgba(255,255,255,0) 100%)',
+};
+
+/** 아트별 기본 톤 — 밝은 아트 두 종만 light. 사람이 매번 고르지 않게 기본값을 못 박는다 */
+function v3Tone(props: { coverArt?: string; tone?: 'dark' | 'light' }): 'dark' | 'light' {
+  if (props.tone) return props.tone;
+  return props.coverArt === 'studio' || props.coverArt === 'data' ? 'light' : 'dark';
+}
+
+const fill = (extra: CSSProperties = {}): CSSProperties => ({
+  position: 'absolute',
+  left: 0,
+  top: 0,
+  width: CARD_W,
+  height: CARD_H,
+  display: 'flex',
+  ...extra,
+});
+
+// 터미널 — 개발 도구·설정 소재. 줄 앞 마커로 색을 정한다: '>' 프롬프트 / '#' 흐린 줄 / '!' 경고
+function ArtTerm({ text }: { text?: string }) {
+  // 기본값에 그럴듯한 수치를 넣지 않는다 — 운영자가 안 채우면 지어낸 데이터가 그대로 발행된다
+  const lines = (text ?? '> 명령어를 여기에\n# 출력 줄\n! 강조할 줄').split('\n');
+  return (
+    <div
+      style={fill({
+        flexDirection: 'column',
+        background: '#0C0E13',
+        padding: `${97}px ${V3_PAD}px`,
+        fontSize: 37,
+        color: '#D6DEE8',
+      })}
+    >
+      {lines.map((raw, i) => {
+        const m = /^([>#!])\s?(.*)$/.exec(raw);
+        const body = m ? m[2] : raw;
+        const color = m?.[1] === '>' ? '#7EE787' : m?.[1] === '#' ? '#67717F' : m?.[1] === '!' ? '#E3B341' : '#D6DEE8';
+        return (
+          <div key={i} style={{ display: 'flex', height: 78, alignItems: 'center', color, whiteSpace: 'pre' }}>
+            {m?.[1] === '>' ? `$ ${body}` : body}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// 오브젝트 스튜디오컷(밝음) — 스위치 하나로 "껐다"를 그림으로 끝낸다
+function ArtStudio() {
+  const w = 605;
+  const h = 313;
+  const x = Math.round((CARD_W - w) / 2);
+  const y = 300;
+  return (
+    <div style={fill({ background: 'radial-gradient(ellipse at 50% 22%, #F3F4F6 0%, #D9DCE2 55%, #B9BEC8 100%)' })}>
+      <div
+        style={{
+          position: 'absolute',
+          left: x,
+          top: y,
+          width: w,
+          height: h,
+          display: 'flex',
+          borderRadius: 160,
+          background: 'linear-gradient(180deg,#3B4150,#232833)',
+          boxShadow: '0 64px 108px -32px rgba(30,35,48,0.45)',
+        }}
+      />
+      <div
+        style={{
+          position: 'absolute',
+          left: x + 28,
+          top: y + 28,
+          width: 257,
+          height: 257,
+          display: 'flex',
+          borderRadius: 129,
+          background: 'linear-gradient(180deg,#FFFFFF,#DFE3EA)',
+          boxShadow: '0 17px 32px rgba(0,0,0,0.35)',
+        }}
+      />
+      <div
+        style={{
+          position: 'absolute',
+          left: x + w - 200,
+          top: y + Math.round(h / 2) - 44,
+          display: 'flex',
+          fontSize: 65,
+          fontWeight: 800,
+          color: 'rgba(255,255,255,0.28)',
+        }}
+      >
+        OFF
+      </div>
+    </div>
+  );
+}
+
+// 매크로 클로즈업(어두움) — 키캡 하나. 초록 글로우로 "실행 중"의 인상만 남긴다
+function ArtMacro() {
+  return (
+    <div style={fill({ background: 'radial-gradient(ellipse at 62% 30%, #2A3040 0%, #0D1017 62%, #06080C 100%)' })}>
+      <div
+        style={{
+          position: 'absolute',
+          left: -108,
+          top: 108,
+          width: 756,
+          height: 756,
+          display: 'flex',
+          background: 'radial-gradient(circle at 50% 50%, rgba(126,231,135,0.30) 0%, rgba(126,231,135,0) 62%)',
+        }}
+      />
+      <div
+        style={{
+          position: 'absolute',
+          left: 291,
+          top: 210,
+          width: 497,
+          height: 432,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          borderRadius: 43,
+          transform: 'rotate(-2deg)',
+          background: 'linear-gradient(160deg,#4A5364 0%,#232935 46%,#161B24 100%)',
+          boxShadow: '0 86px 151px -43px rgba(0,0,0,0.7)',
+        }}
+      >
+        <div
+          style={{
+            display: 'flex',
+            fontSize: 58,
+            fontWeight: 700,
+            letterSpacing: '0.28em',
+            paddingLeft: 16,
+            color: 'rgba(255,255,255,0.32)',
+          }}
+        >
+          enter
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// 인용·밈 — 사용자 대사를 배경에 크게 눕힌다. 가장 저비용, 가장 잘 걸리는 유형
+function ArtQuote({ text }: { text?: string }) {
+  const q = text ?? '사용자 대사를\n여기에\n넣으세요';
+  return (
+    <div style={fill({ background: '#1B1F2B' })}>
+      <div
+        style={{
+          position: 'absolute',
+          left: V3_PAD,
+          top: 30,
+          display: 'flex',
+          fontSize: 281,
+          fontWeight: 800,
+          color: V3_LIME,
+        }}
+      >
+        “
+      </div>
+      <div
+        style={{
+          position: 'absolute',
+          left: 76,
+          top: 250,
+          width: CARD_W - 152,
+          display: 'flex',
+          flexDirection: 'column',
+          fontSize: 151,
+          fontWeight: 800,
+          letterSpacing: '-0.06em',
+          color: 'rgba(255,255,255,0.14)',
+        }}
+      >
+        {q.split('\n').map((line, i) => (
+          <div key={i} style={{ display: 'flex', height: 166, alignItems: 'center' }}>
+            {line}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// 3D 이리데슨트 블롭 — 트렌드·추상 소재.
+// ⚠️ 원안의 conic-gradient는 Satori가 못 읽는다(에러 없이 통째로 사라진다) → radial 4겹으로 대체.
+function ArtIri() {
+  const box = { left: 140, top: 150, size: 800 };
+  const layer = (bg: string): CSSProperties => ({
+    position: 'absolute',
+    left: box.left,
+    top: box.top,
+    width: box.size,
+    height: box.size,
+    display: 'flex',
+    borderRadius: box.size / 2,
+    background: bg,
+  });
+  return (
+    <div style={fill({ background: '#07090E' })}>
+      <div style={layer('radial-gradient(circle at 34% 30%, #4B6BFF 0%, rgba(75,107,255,0) 62%)')} />
+      <div style={layer('radial-gradient(circle at 70% 38%, #9B5CF6 0%, rgba(155,92,246,0) 58%)')} />
+      <div style={layer('radial-gradient(circle at 60% 74%, #F45D9B 0%, rgba(244,93,155,0) 56%)')} />
+      <div style={layer('radial-gradient(circle at 28% 68%, #3BE0C8 0%, rgba(59,224,200,0) 54%)')} />
+      <div style={layer('radial-gradient(circle at 38% 28%, rgba(255,255,255,0.85) 0%, rgba(255,255,255,0) 42%)')} />
+    </div>
+  );
+}
+
+// 데이터 차트(밝음) — 숫자가 있는 케이스.
+// ⚠️ 인라인 <svg>는 Satori에서 불안정 → data URI <img>로 넣는다(이건 확실히 그려진다).
+function ArtData({ text }: { text?: string }) {
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 80">
+    <path d="M4 68 L40 30 L74 26 L96 24" fill="none" stroke="#0A0C11" stroke-width="2.4" stroke-linecap="round"/>
+    <path d="M96 24 L128 70 L196 72" fill="none" stroke="#C4453B" stroke-width="2.4" stroke-linecap="round" stroke-dasharray="5 4"/>
+    <circle cx="96" cy="24" r="4.6" fill="#C4453B"/>
+  </svg>`;
+  return (
+    <div style={fill({ background: 'linear-gradient(180deg,#FBFBFC,#EDEFF3)' })}>
+      <img
+        src={`data:image/svg+xml;utf8,${encodeURIComponent(svg)}`}
+        width={907}
+        height={367}
+        style={{ position: 'absolute', left: 86, top: 216 }}
+      />
+      {text ? (
+        <div
+          style={{
+            position: 'absolute',
+            left: 86,
+            top: 150,
+            display: 'flex',
+            fontSize: 40,
+            fontWeight: 700,
+            color: '#8A92A3',
+          }}
+        >
+          {text.split('\n')[0]}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+// 사진 — 기존 소재 그대로. v3는 하단 스크림이 따로 있으므로 여기선 전체 톤만 살짝 눌러준다.
+function ArtPhoto({ image, overlay, pos }: { image?: string; overlay: number; pos?: string }) {
+  return (
+    <>
+      {image ? (
+        <img
+          data-bg="1"
+          src={image}
+          width={CARD_W}
+          height={CARD_H}
+          style={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            width: CARD_W,
+            height: CARD_H,
+            objectFit: 'cover',
+            objectPosition: pos ?? '50% 50%',
+          }}
+        />
+      ) : (
+        <div style={fill({ background: 'linear-gradient(135deg,#232a3d 0%,#12151f 100%)' })} />
+      )}
+      <div style={fill({ background: `rgba(0,0,0,${overlay})` })} />
+    </>
+  );
+}
+
+/** Simple Icons 슬러그 → CDN URL. 이미 URL이면 그대로 둔다.
+ *  Satori가 원격 SVG를 그대로 렌더하는 것을 확인함(2026-08-18) — 로고를 벤더링할 필요가 없다. */
+function iconUrl(slugOrUrl: string): string {
+  return /^https?:\/\//.test(slugOrUrl)
+    ? slugOrUrl
+    : `https://cdn.simpleicons.org/${encodeURIComponent(slugOrUrl)}`;
+}
+
+/** 로고를 얹는 흰 타일 — 브랜드 색을 살리려면 어두운 배경에 흰 판을 깔아야 한다 */
+function LogoTile({ src, x, y, size, pad }: { src: string; x: number; y: number; size: number; pad: number }) {
+  return (
+    <div
+      style={{
+        position: 'absolute',
+        left: x,
+        top: y,
+        width: size,
+        height: size,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        borderRadius: Math.round(size * 0.22),
+        background: '#FFFFFF',
+        boxShadow: '0 40px 80px -30px rgba(0,0,0,0.75)',
+      }}
+    >
+      <img src={src} width={size - pad * 2} height={size - pad * 2} style={{ objectFit: 'contain' }} />
+    </div>
+  );
+}
+
+// 로고 2~3개를 나란히 — 조합 자체가 "따라하면 되는 레시피"라는 신호가 된다(레퍼런스 120만).
+function ArtLogos({ icons }: { icons?: string[] }) {
+  const list = (icons?.length ? icons : ['claude', 'notion']).slice(0, 3);
+  const size = list.length >= 3 ? 250 : 300;
+  const gap = list.length >= 3 ? 56 : 96;
+  const total = list.length * size + (list.length - 1) * gap;
+  const x0 = Math.round((CARD_W - total) / 2);
+  const y = 330;
+  return (
+    <div style={fill({ background: 'radial-gradient(ellipse at 50% 28%, #1B2233 0%, #0A0C11 70%)' })}>
+      {list.map((it, i) => (
+        <LogoTile key={i} src={iconUrl(it)} x={x0 + i * (size + gap)} y={y} size={size} pad={Math.round(size * 0.24)} />
+      ))}
+      {list.slice(1).map((_, i) => (
+        <div
+          key={`x${i}`}
+          style={{
+            position: 'absolute',
+            left: x0 + (i + 1) * (size + gap) - gap,
+            top: y + Math.round(size / 2) - 34,
+            width: gap,
+            display: 'flex',
+            justifyContent: 'center',
+            fontSize: 58,
+            fontWeight: 700,
+            color: 'rgba(255,255,255,0.42)',
+          }}
+        >
+          ×
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// 아이콘 자리를 ?로 가림 — 이 피드 최고 조회수(265만)가 쓴 방식. 정보를 덜 주는 쪽이 더 눌린다.
+// artIcons를 주면 앞의 몇 칸만 실제 로고로 열어 "나머지는 뭐지"를 만든다.
+function ArtMask({ icons }: { icons?: string[] }) {
+  // 3×2 — 3줄로 깔면 마지막 줄이 스크림에 먹혀서 축소했을 때 얼룩으로 남는다
+  const CELL = 290;
+  const GAP = 36;
+  const cols = 3;
+  const rows = 2;
+  const x0 = Math.round((CARD_W - (cols * CELL + (cols - 1) * GAP)) / 2);
+  const y0 = 150;
+  const shown = icons ?? [];
+  return (
+    <div style={fill({ background: 'radial-gradient(ellipse at 50% 24%, #191F2E 0%, #0A0C11 72%)' })}>
+      {Array.from({ length: cols * rows }, (_, i) => {
+        const x = x0 + (i % cols) * (CELL + GAP);
+        const y = y0 + Math.floor(i / cols) * (CELL + GAP);
+        const icon = shown[i];
+        return icon ? (
+          <LogoTile key={i} src={iconUrl(icon)} x={x} y={y} size={CELL} pad={62} />
+        ) : (
+          <div
+            key={i}
+            style={{
+              position: 'absolute',
+              left: x,
+              top: y,
+              width: CELL,
+              height: CELL,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              borderRadius: 55,
+              background: 'rgba(255,255,255,0.06)',
+              border: '2px solid rgba(255,255,255,0.10)',
+              fontSize: 104,
+              fontWeight: 800,
+              color: 'rgba(255,255,255,0.30)',
+            }}
+          >
+            ?
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// 3D 오브젝트 한 개 — coverImage에 투명배경 PNG(Fluent Emoji 3D · 3dicons 등)를 넣는다.
+// 없으면 이리데슨트 구체로 떨어져서 빈 카드가 나가지 않는다.
+function ArtObject({ image }: { image?: string }) {
+  if (!image) return <ArtIri />;
+  const size = 620;
+  return (
+    <div style={fill({ background: 'radial-gradient(ellipse at 50% 30%, #1A2130 0%, #07090E 72%)' })}>
+      <div
+        style={{
+          position: 'absolute',
+          left: Math.round((CARD_W - 840) / 2),
+          top: 60,
+          width: 840,
+          height: 840,
+          display: 'flex',
+          background: 'radial-gradient(circle at 50% 50%, rgba(120,150,255,0.28) 0%, rgba(120,150,255,0) 62%)',
+        }}
+      />
+      <img
+        src={image}
+        width={size}
+        height={size}
+        style={{
+          position: 'absolute',
+          left: Math.round((CARD_W - size) / 2),
+          top: 170,
+          objectFit: 'contain',
+        }}
+      />
+    </div>
+  );
+}
+
+// 정밀 숫자 2개 — 반올림하지 않은 끝자리가 실제 데이터로 읽힌다(3만·5만은 광고로 읽힌다).
+// artText 형식: "8시간 21분|세션 유지\n47회|하루 승인 요청"
+function ArtNumbers({ text }: { text?: string }) {
+  const rows = (text ?? '숫자|설명\n숫자|설명')
+    .split('\n')
+    .slice(0, 2)
+    .map((l) => {
+      const [value, label] = l.split('|');
+      return { value: value?.trim() ?? '', label: label?.trim() ?? '' };
+    });
+  return (
+    <div style={fill({ flexDirection: 'column', background: 'linear-gradient(160deg,#121826 0%,#07090E 68%)', padding: `120px ${V3_PAD}px` })}>
+      {rows.map((r, i) => (
+        <div key={i} style={{ display: 'flex', flexDirection: 'column', marginBottom: 56 }}>
+          <div style={{ display: 'flex', fontSize: 146, fontWeight: 800, letterSpacing: '-0.05em', color: i === 0 ? '#C6F24E' : '#FFFFFF' }}>
+            {r.value}
+          </div>
+          <div style={{ display: 'flex', fontSize: 38, fontWeight: 600, color: 'rgba(255,255,255,0.5)', marginTop: 6 }}>
+            {r.label}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function V3Art({ props }: { props: C1Input['props'] }) {
+  switch (props.coverArt) {
+    case 'logos':
+      return <ArtLogos icons={props.artIcons} />;
+    case 'mask':
+      return <ArtMask icons={props.artIcons} />;
+    case 'object':
+      return <ArtObject image={props.coverImage} />;
+    case 'numbers':
+      return <ArtNumbers text={props.artText} />;
+    case 'term':
+      return <ArtTerm text={props.artText} />;
+    case 'studio':
+      return <ArtStudio />;
+    case 'macro':
+      return <ArtMacro />;
+    case 'quote':
+      return <ArtQuote text={props.artText} />;
+    case 'iri':
+      return <ArtIri />;
+    case 'data':
+      return <ArtData text={props.artText} />;
+    default:
+      return <ArtPhoto image={props.coverImage} overlay={props.overlay ?? 0.22} pos={props.coverPos} />;
+  }
+}
+
+// ---------- 콘텐츠 썸네일(16:9) ----------
+// 본가 카드는 썸네일을 16:9로 가운데 크롭한다(components/content/RelatedCarousel.tsx).
+// 세로 커버(1080×1350)를 그대로 넣으면 v3의 핵심인 하단 블록이 통째로 잘려나가므로
+// 같은 규격의 언어를 16:9에 다시 앉힌다 — 아트 → 스크림 → 아이브로우+2줄 → 바닥 워드마크.
+export const THUMB_W = 1200;
+export const THUMB_H = 675;
+
+// 16:9는 세로 카드를 잘라 쓰는 게 아니라 **반으로 나눈다**.
+// 아트를 확대해 들여다보면(첫 시도) 아트마다 주인공 위치가 달라서 어떤 건 머리가 잘리고
+// 어떤 건 숫자가 스크림에 먹혔다. 오른쪽 540×675는 정확히 4:5 — 세로 아트를 0.5배로 줄이면
+// 잘리는 데 없이 통째로 들어가고, 왼쪽은 글 전용이라 사진이 뭐가 오든 헤드라인이 안 죽는다.
+const WIDE_ART_W = 540;
+const WIDE_SCALE = WIDE_ART_W / CARD_W; // 0.5
+
+function C1V3Wide({ accent, props }: C1Input) {
+  const tone = v3Tone(props);
+  const dark = tone === 'dark';
+  const base = hlBg(props, dark ? V3_BLUE : V3_LIME);
+  const eyebrow = props.kicker ?? props.tag ?? DEFAULT_TAGS[accent];
+  const panelBg = dark ? '#07090E' : '#F3F4F6';
+  const artX = THUMB_W - WIDE_ART_W;
+  const isPhoto = !props.coverArt || props.coverArt === 'photo';
+  return (
+    <div
+      style={{
+        position: 'relative',
+        width: THUMB_W,
+        height: THUMB_H,
+        display: 'flex',
+        flexDirection: 'column',
+        overflow: 'hidden',
+        fontFamily: FONT,
+        wordBreak: 'keep-all',
+        background: panelBg,
+        color: dark ? '#fff' : INK,
+      }}
+    >
+      {/* 오른쪽 — 아트 통째로 */}
+      <div
+        style={{
+          position: 'absolute',
+          left: artX,
+          top: 0,
+          width: WIDE_ART_W,
+          height: THUMB_H,
+          display: 'flex',
+          overflow: 'hidden',
+        }}
+      >
+        {isPhoto ? (
+          props.coverImage ? (
+            <img
+              data-bg="1"
+              src={props.coverImage}
+              width={WIDE_ART_W}
+              height={THUMB_H}
+              style={{ width: WIDE_ART_W, height: THUMB_H, objectFit: 'cover', objectPosition: props.coverPos ?? '50% 50%' }}
+            />
+          ) : (
+            <div
+              style={{
+                width: WIDE_ART_W,
+                height: THUMB_H,
+                display: 'flex',
+                background: 'linear-gradient(135deg,#232a3d 0%,#12151f 100%)',
+              }}
+            />
+          )
+        ) : (
+          <div
+            style={{
+              position: 'absolute',
+              left: 0,
+              top: 0,
+              width: CARD_W,
+              height: CARD_H,
+              display: 'flex',
+              transform: `scale(${WIDE_SCALE})`,
+              transformOrigin: 'top left',
+            }}
+          >
+            <V3Art props={props} />
+          </div>
+        )}
+      </div>
+      {/* 이음매 — 글 패널 쪽으로 아트를 흘려서 두 쪽이 갈라져 보이지 않게 한다 */}
+      <div
+        style={{
+          position: 'absolute',
+          left: artX - 1,
+          top: 0,
+          width: 150,
+          height: THUMB_H,
+          display: 'flex',
+          background: `linear-gradient(to right, ${panelBg} 0%, ${dark ? 'rgba(7,9,14,0)' : 'rgba(243,244,246,0)'} 100%)`,
+        }}
+      />
+      {/* 왼쪽 — 글 전용 */}
+      <div
+        style={{
+          position: 'absolute',
+          left: 56,
+          bottom: 88,
+          width: artX - 112,
+          display: 'flex',
+          flexDirection: 'column',
+        }}
+      >
+        <div
+          style={{
+            display: 'flex',
+            fontSize: 22,
+            fontWeight: 700,
+            marginBottom: 16,
+            color: dark ? 'rgba(255,255,255,0.66)' : '#6B7382',
+          }}
+        >
+          {eyebrow}
+        </div>
+        <div
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            fontSize: 46,
+            fontWeight: 800,
+            letterSpacing: '-0.052em',
+            color: dark ? '#fff' : INK,
+          }}
+        >
+          {highlightLines(props.title, props.hl, { minHeight: 60 }, v3Hl(props, base, dark))}
+        </div>
+      </div>
+      <div style={{ position: 'absolute', left: 56, bottom: 40, display: 'flex' }}>
+        <div
+          style={{
+            display: 'flex',
+            fontSize: 18,
+            fontWeight: 800,
+            letterSpacing: '0.42em',
+            color: dark ? 'rgba(255,255,255,0.5)' : 'rgba(10,12,17,0.38)',
+          }}
+        >
+          CASELAB
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** v3 형광펜 — box형은 톤에 따라 글자색이 갈린다(라임 위 흰 글씨는 안 읽힌다) */
+function v3Hl(props: C1Input['props'], base: string, dark: boolean): CSSProperties {
+  const s = hlSpan(props, base, dark);
+  if (props.hlStyle && props.hlStyle !== 'box') return s;
+  return { ...s, background: base, color: dark ? '#fff' : INK };
+}
+
+function C1V3({ accent, props }: C1Input) {
+  const tone = v3Tone(props);
+  const dark = tone === 'dark';
+  const base = hlBg(props, dark ? V3_BLUE : V3_LIME);
+  const eyebrow = props.kicker ?? props.tag ?? DEFAULT_TAGS[accent];
+  return (
+    <div style={{ ...cardBase, background: dark ? '#07090E' : '#F3F4F6', color: dark ? '#fff' : INK }}>
+      <V3Art props={props} />
+      <div
+        style={{
+          position: 'absolute',
+          left: 0,
+          bottom: 0,
+          width: CARD_W,
+          height: V3_SCRIM_H,
+          display: 'flex',
+          background: V3_SCRIM[tone],
+        }}
+      />
+      <div
+        style={{
+          position: 'absolute',
+          left: V3_PAD,
+          bottom: V3_BLOCK_BOTTOM,
+          width: CARD_W - V3_PAD * 2,
+          display: 'flex',
+          flexDirection: 'column',
+        }}
+      >
+        <div
+          style={{
+            display: 'flex',
+            fontSize: V3_EYEBROW,
+            fontWeight: 700,
+            marginBottom: 26,
+            color: dark ? 'rgba(255,255,255,0.66)' : '#6B7382',
+          }}
+        >
+          {eyebrow}
+        </div>
+        <div
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            fontSize: V3_HEADLINE,
+            fontWeight: 800,
+            letterSpacing: '-0.052em',
+            color: dark ? '#fff' : INK,
+          }}
+        >
+          {highlightLines(props.title, props.hl, { minHeight: Math.round(V3_HEADLINE * 1.24) }, v3Hl(props, base, dark))}
+        </div>
+      </div>
+      <div
+        style={{
+          position: 'absolute',
+          left: 0,
+          bottom: V3_WM_BOTTOM,
+          width: CARD_W,
+          display: 'flex',
+          justifyContent: 'center',
+        }}
+      >
+        <div
+          style={{
+            display: 'flex',
+            fontSize: V3_WM,
+            fontWeight: 800,
+            letterSpacing: '0.42em',
+            paddingLeft: 11, // 자간이 마지막 글자 뒤에도 붙어서 그만큼 왼쪽으로 밀린다
+            color: dark ? 'rgba(255,255,255,0.5)' : 'rgba(10,12,17,0.38)',
+          }}
+        >
+          CASELAB
+        </div>
+      </div>
+    </div>
+  );
 }
 
 // bottom — 기존 기본형(좌하단). titleAnchor로 세로 위치만 옮긴다.
@@ -2884,4 +3620,11 @@ export function renderSlide(input: RenderSlideInput): ReactNode {
     case 'B9':
       return <B9 {...input} />;
   }
+}
+
+/** 콘텐츠 썸네일(16:9) 렌더 — C1 v3 커버만 지원한다.
+ *  나머지 템플릿은 16:9로 앉힐 자리가 없어서 라우트에서 막는다(조용히 이상한 그림을 내보내지 않는다). */
+export function renderThumb16x9(input: RenderSlideInput): ReactNode {
+  if (input.template !== 'C1') return null;
+  return C1V3Wide(input);
 }

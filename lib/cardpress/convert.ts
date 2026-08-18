@@ -7,6 +7,32 @@ import type { CardTemplateId } from '@/types/cardpress';
 // 사진형으로 갈아탈 방법이 없었다. 여기서는 글을 잃지 않고 즉시 옮기는 경로를 만든다.
 // (문장을 다시 쓰고 싶으면 기존 AI 재작성 경로를 그대로 쓰면 된다)
 
+// v3 커버의 아트 11종 — 운영자가 고르는 유일한 축이다(레이아웃은 안 흔든다).
+// 이 중 사진 한 종만 스톡 검색이 필요하고, 7종은 렌더 때 코드로 그려져서 이미지 수급이 아예 없다.
+export const COVER_ART_OPTIONS: Array<{ value: string; label: string }> = [
+  { value: 'photo', label: '① 사진' },
+  { value: 'term', label: '② 터미널' },
+  { value: 'studio', label: '③ 오브젝트(밝음)' },
+  { value: 'macro', label: '④ 매크로' },
+  { value: 'quote', label: '⑤ 인용·밈' },
+  { value: 'iri', label: '⑥ 3D 블롭' },
+  { value: 'data', label: '⑦ 데이터(밝음)' },
+  { value: 'logos', label: '⑧ 로고 나란히' },
+  { value: 'mask', label: '⑨ 아이콘 가리기' },
+  { value: 'object', label: '⑩ 3D 오브젝트' },
+  { value: 'numbers', label: '⑪ 정밀 숫자' },
+];
+
+/** artText를 쓰는 아트 — 나머지는 입력칸을 아예 안 띄운다 */
+export const ART_TEXT_ARTS = ['term', 'quote', 'data', 'numbers'];
+
+export const ART_TEXT_HINT: Record<string, string> = {
+  term: '> claude\\n# 허용할까요?\\n! 47번째 요청',
+  quote: '밤새\\n돌려놨는데\\n멈춰있음',
+  data: '세션 유지 시간',
+  numbers: '8시간 21분|무중단 세션\\n6.7MB|앱 용량',
+};
+
 export const TEMPLATE_LABEL: Record<CardTemplateId, string> = {
   C1: 'C1 사진커버', C2: 'C2 다크커버', C3: 'C3 툴커버', C4: 'C4 VS커버', C5: 'C5 빅넘버커버',
   B1: 'B1 타임라인', B2: 'B2 불릿', B3: 'B3 용어', B4: 'B4 선언',

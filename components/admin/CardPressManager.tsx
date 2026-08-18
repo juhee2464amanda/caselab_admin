@@ -12,7 +12,15 @@ import { renderSlide } from '@/lib/cardpress/templates';
 import { RenderSlideSchema } from '@/types/cardpress';
 import type { CardSlide, CardTemplateId, CardAccent } from '@/types/cardpress';
 import { CardTemplatePicker, type PickResult } from '@/components/admin/CardTemplatePicker';
-import { convertProps, IMAGE_KEY, PHOTO_ALT, TEMPLATE_LABEL } from '@/lib/cardpress/convert';
+import {
+  ART_TEXT_ARTS,
+  ART_TEXT_HINT,
+  COVER_ART_OPTIONS,
+  convertProps,
+  IMAGE_KEY,
+  PHOTO_ALT,
+  TEMPLATE_LABEL,
+} from '@/lib/cardpress/convert';
 import {
   CTA_ENDINGS,
   CTA_TYPE_HINTS,
@@ -1024,7 +1032,17 @@ function CardEditor({ card, sourceTitle }: { card: CardRow; sourceTitle?: string
     );
   }
   function patchStyle(
-    key: 'accentColor' | 'overlay' | 'coverPos' | 'titleAnchor' | 'coverLayout' | 'hlStyle',
+    key:
+      | 'accentColor'
+      | 'overlay'
+      | 'coverPos'
+      | 'titleAnchor'
+      | 'coverLayout'
+      | 'hlStyle'
+      | 'coverArt'
+      | 'artText'
+      | 'artIcons'
+      | 'tone',
     value: unknown
   ) {
     patchPropsAt(selIdx, { [key]: value });
@@ -1359,12 +1377,76 @@ function CardEditor({ card, sourceTitle }: { card: CardRow; sourceTitle?: string
               onChange={(e) => patchStyle('coverLayout', e.target.value)}
               className="border border-border rounded px-1 py-0.5 bg-transparent"
             >
+              <option value="v3">v3 잠금 규격</option>
               <option value="bottom">기본(좌하단)</option>
               <option value="center">센터 포스터</option>
               <option value="band">하단 밴드</option>
               <option value="giant">하단 초대형</option>
             </select>
           </label>
+        )}
+        {/* v3는 레이아웃을 안 흔든다 — 고르는 건 '그림'뿐. 아트마다 필요한 재료가 달라서 입력칸도 같이 바뀐다 */}
+        {s.template === 'C1' && (s.props.coverLayout as string) === 'v3' && (
+          <>
+            <label className="flex items-center gap-1">
+              아트
+              <select
+                value={(s.props.coverArt as string) ?? 'photo'}
+                onChange={(e) => patchStyle('coverArt', e.target.value)}
+                className="border border-border rounded px-1 py-0.5 bg-transparent"
+              >
+                {COVER_ART_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            {ART_TEXT_ARTS.includes((s.props.coverArt as string) ?? 'photo') && (
+              <label className="flex items-center gap-1">
+                아트 글
+                <input
+                  value={(s.props.artText as string) ?? ''}
+                  onChange={(e) => patchStyle('artText', e.target.value)}
+                  placeholder={ART_TEXT_HINT[(s.props.coverArt as string) ?? 'photo']}
+                  title={'줄바꿈은 \\n 으로 넣습니다'}
+                  className="w-56 border border-border rounded px-1 py-0.5 bg-transparent"
+                />
+              </label>
+            )}
+            {['logos', 'mask'].includes((s.props.coverArt as string) ?? '') && (
+              <label className="flex items-center gap-1">
+                로고
+                <input
+                  value={((s.props.artIcons as string[]) ?? []).join(', ')}
+                  onChange={(e) =>
+                    patchStyle(
+                      'artIcons',
+                      e.target.value
+                        .split(',')
+                        .map((v) => v.trim())
+                        .filter(Boolean)
+                    )
+                  }
+                  placeholder="claude, notion"
+                  title="Simple Icons 슬러그 또는 이미지 URL (쉼표로 구분)"
+                  className="w-44 border border-border rounded px-1 py-0.5 bg-transparent"
+                />
+              </label>
+            )}
+            <label className="flex items-center gap-1">
+              톤
+              <select
+                value={(s.props.tone as string) ?? 'auto'}
+                onChange={(e) => patchStyle('tone', e.target.value === 'auto' ? undefined : e.target.value)}
+                className="border border-border rounded px-1 py-0.5 bg-transparent"
+              >
+                <option value="auto">자동</option>
+                <option value="dark">어둡게</option>
+                <option value="light">밝게</option>
+              </select>
+            </label>
+          </>
         )}
         {/* 세로 앵커는 좌하단형에서만 의미 — 나머지 유형은 자리가 구조로 정해진다 */}
         {s.template === 'C1' && ((s.props.coverLayout as string) ?? 'bottom') === 'bottom' && (
@@ -2740,7 +2822,8 @@ function PhotoCreditPanel({
 // ── 이미지 트레이 — 원본 콘텐츠 / Unsplash 두 갈래 ──────────────────
 // 스톡 사진만으로는 "그 콘텐츠의 사진"이 안 나온다. 소스에 붙어 있는 원본 링크(씨앗 source_url ·
 // 콘텐츠 출처 · 자료실 공식 페이지)를 긁어오는 경로와, 참고 링크를 직접 붙여넣는 경로를 같이 둔다.
-type TrayImage = { id: string; thumb: string; full: string; credit?: string };
+// bright — 대표색이 밝아서 흰 글자가 죽을 수 있는 사진(Unsplash 라우트가 판정해 뒤로 민다)
+type TrayImage = { id: string; thumb: string; full: string; credit?: string; bright?: boolean };
 
 function ImageTray({ card, onPick, onCover, onThreadsCover, onCredits }: {
   card: CardRow;
@@ -2820,7 +2903,7 @@ function ImageTray({ card, onPick, onCover, onThreadsCover, onCredits }: {
     }
   }
 
-  const Thumb = ({ url, thumb, credit }: { url: string; thumb: string; credit?: string }) => (
+  const Thumb = ({ url, thumb, credit, bright }: { url: string; thumb: string; credit?: string; bright?: boolean }) => (
     <div className="relative group shrink-0">
       <img
         src={thumb}
@@ -2829,6 +2912,14 @@ function ImageTray({ card, onPick, onCover, onThreadsCover, onCredits }: {
         draggable
         onDragStart={(e) => e.dataTransfer.setData('text/plain', url)}
       />
+      {bright && (
+        <span
+          title="대표색이 밝아요 — 흰 글자·워드마크가 죽을 수 있습니다. 쓰려면 어둡기를 올리세요."
+          className="absolute top-1 left-1 rounded bg-amber-500/90 px-1 text-[9px] text-white"
+        >
+          밝음
+        </span>
+      )}
       <div className="absolute inset-0 hidden group-hover:flex flex-col items-center justify-center gap-1 bg-black/55 rounded-md">
         <button onClick={() => onPick(url)} className="text-[10px] text-white bg-accent rounded px-1.5 py-0.5">선택 슬라이드에</button>
         <button onClick={() => onThreadsCover(url)} className="text-[10px] text-white bg-white/20 rounded px-1.5 py-0.5">스레드 커버로</button>
@@ -2949,7 +3040,7 @@ function ImageTray({ card, onPick, onCover, onThreadsCover, onCredits }: {
         {notice[tab] && <p className="text-xs text-ink/40">{notice[tab]}</p>}
         {results[tab].length > 0 && (
           <div className="flex gap-2 overflow-x-auto pb-1">
-            {results[tab].map((r) => <Thumb key={r.id} url={r.full} thumb={r.thumb} credit={r.credit} />)}
+            {results[tab].map((r) => <Thumb key={r.id} url={r.full} thumb={r.thumb} credit={r.credit} bright={r.bright} />)}
           </div>
         )}
         {tab === 'source' && (

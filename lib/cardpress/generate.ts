@@ -469,8 +469,18 @@ function lintSlide(template: CardTemplateId, props: Record<string, unknown>): st
 
 const TEMPLATE_SPECS = `[템플릿별 props 규격 — 줄바꿈은 문자열 안 "\\n", **강조**는 포인트색 볼드 마커]
 - C1 사진몰입 커버 / C2 문장형 다크 커버 / C3 툴 커버: {"kicker":"≤14자 프레이밍 한 줄(C1, 선택 — '~의 경제학'·'~시대의 사건' 식)","title":"2~3줄, 줄당 ≤12자","hl":"title 속 핵심 단어 1개(부분 문자열 그대로, 짧게)","sub":"≤28자 — 궁금증을 증폭하는 한 줄 또는 구체 스펙(N개 중 M개는 ~, 대상 독자). '읽기 N분·적용 N분' 같은 시간 표기 금지(웹 개념 — 인스타에선 무의미)","footer":"@영문개념 ≤20자(C1, 선택 — 예: @BLINDSPOT PASS)"} (C2는 "eyebrow":"≤16자 도입" 추가 가능)
-  · C1 커버 유형(선택): "coverLayout":"bottom|center|band|giant" — bottom 좌하단(기본) / center 가운데 포스터(대칭적·선언형 소재) / band 상단 사진+하단 검은 밴드(인물·화면 스크린샷처럼 사진이 복잡할 때, "label":"≤16자 캡슐 라벨" 같이 낼 것) / giant 하단 초대형(제목이 2줄 이하 + 줄당 ≤10자인 짧고 센 헤드라인일 때만). 안 내면 시스템이 소재로 자동 배정한다
-  · 형광펜 표현(선택): "hlStyle":"box|text|underline" — 큰 타이포(center·giant)는 text(글자색만)가 낫고, box는 한 단어를 도장 찍듯 눌러야 할 때
+  · C1 커버는 v3 잠금 규격이 기본이다. 레이아웃(하단 스크림·2줄 헤드라인·바닥 워드마크)은 고정이고 "그림"만 고른다.
+    → C1 title은 **반드시 2줄**로 낼 것(줄당 ≤12자). 3줄은 축소했을 때 마지막 줄이 먼저 죽는다.
+  · C1 아트(선택): "coverArt":"photo|term|studio|macro|quote|iri|data|logos|mask|object|numbers"
+    - photo 사진(coverImage 있을 때) / studio 밝은 오브젝트컷 / macro 어두운 클로즈업 / iri 3D 블롭 — 재료 없이 성립
+    - term 터미널 로그: "artText"에 줄마다 접두사 — '> ' 입력 / '# ' 흐린 줄 / '! ' 강조. 도구·설정 소재에.
+    - quote 인용·밈: "artText"에 사용자 대사 3~4줄(줄당 ≤7자).
+    - numbers 정밀 숫자 2개: "artText"에 "값|설명" 2줄. **반올림하지 말 것** — 8시간 21분·$28,367처럼 끝자리가 살아야 실제 데이터로 읽힌다.
+    - data 차트: "artText"에 축 라벨 한 줄.
+    - logos 로고 나란히 / mask 아이콘 가리기: "artIcons":["claude","notion"] — 브랜드 슬러그 2~3개(소문자·공백 없음).
+    - object 3D 오브젝트: 이미지가 따로 필요해서 AI가 고르지 말 것.
+    ⚠️ artText·artIcons는 **재료가 실제로 있을 때만** 낼 것. 지어내면 없는 사실이 카드로 나간다. 안 내면 시스템이 재료 없는 아트로 자동 배정한다.
+  · 형광펜 표현: v3에서는 규격에 잠겨 있다(어두우면 블루 박스·밝으면 라임 박스) — "hlStyle"을 내지 말 것.
 - C5 빅넘버 커버: {"kicker":"≤20자 맥락 1줄","big":"거대 숫자/단어 ≤6자 (예: 10배, 11, FOCUS)","resolve":"1~2줄, 줄당 ≤16자 해소 문장 (**강조** 1개)","footer":"@영문개념(선택)"} — 핵심이 숫자/단어 하나로 요약될 때. 사진 없어도 성립
 - B1 타임라인: {"lead":"≤36자 도입(선택, **강조** 1개)","heading":"≤13자 한 줄","hl":"heading 속 핵심 구","rows":[{"term":"≤8자","desc":"≤14자"}] 2~5개}
 - B2 불릿/개요: {"banner":"≤14자(✓ 접두 가능)","lead":"≤32자 — 이 장에서 가장 중요한 사실 한 줄 (개요 역할 슬라이드는 필수)","bullets":["≤30자, **강조** 각 1개"] 2~4개}
@@ -954,18 +964,20 @@ function seedOf(text: string): number {
   return h;
 }
 
-/** C1 커버 유형 자동 배정 — AI가 coverLayout을 안 냈을 때.
- *  전부 좌하단으로 나가면 소재가 달라도 같은 카드로 보인다(운영자 지적 2026-08-17).
- *  아무렇게나 섞지 않고 "이 소재에서 안전한 유형"만 후보로 두고 그 안에서 해시로 고른다. */
-function pickCoverLayout(props: Record<string, unknown>): 'bottom' | 'center' | 'band' | 'giant' {
-  const title = typeof props.title === 'string' ? props.title : '';
-  const lines = title.split('\n');
-  const longest = Math.max(...lines.map((l) => l.replace(/\s/g, '').length), 0);
-  // 사진이 없으면 그라데이션 배경 — 좌하단은 위쪽이 통째로 비어 허전하다. 센터가 유일하게 선다
-  if (!props.coverImage) return 'center';
-  const pool: Array<'bottom' | 'center' | 'band' | 'giant'> = ['bottom', 'center', 'band'];
-  if (lines.length <= 2 && longest <= 10) pool.push('giant'); // 초대형은 짧고 센 헤드라인에만
-  return pool[seedOf(title) % pool.length];
+// 구 pickCoverLayout(bottom/center/band/giant 자동 배정)은 2026-08-18 제거.
+// 레이아웃을 섞는 것이 다양성이라는 전제 자체가 틀렸다 — 규격이 흔들리면 그리드가 흩어진다.
+// 4종은 운영자가 직접 고를 때만 나오고, 자동 배정은 v3 아트(pickCoverArt)가 대신한다.
+
+/** v3 아트 자동 배정 — AI가 coverArt를 안 냈을 때.
+ *  ⚠️ 재료가 필요한 아트(term·quote·numbers·data)는 여기서 절대 고르지 않는다.
+ *  그 아트들은 글이 없으면 자리표시 문구가 그대로 카드에 찍혀 나간다 —
+ *  없는 사실이 카드로 나가는 것보다 그림이 심심한 쪽이 낫다. */
+function pickCoverArt(props: Record<string, unknown>): string {
+  if (typeof props.artText === 'string' && props.artText.trim()) return 'term';
+  const pool = props.coverImage
+    ? ['photo', 'macro', 'iri', 'studio']
+    : ['iri', 'macro', 'studio', 'mask'];
+  return pool[seedOf(String(props.title ?? '')) % pool.length];
 }
 
 /** 형광펜 표현 자동 — 큰 타이포(센터·초대형)에 색 박스를 얹으면 무겁다. 나머지는 박스/밑줄을 번갈아 */
@@ -1005,11 +1017,17 @@ function finalizeSlides(
       // P 계열은 사진이 정체성 — 계획에 이미지가 있으면 항상 image로 (AI는 image를 생성하지 않는다)
       if (s.template.startsWith('P') && !props.image) props.image = planned.image;
     }
-    // 커버 유형·형광펜 표현 — 미지정이면 소재로 자동 배정(사진 배치 뒤에 판단해야 사진 유무가 반영된다)
+    // 커버 유형·아트·형광펜 — 미지정이면 소재로 자동 배정(사진 배치 뒤에 판단해야 사진 유무가 반영된다).
+    // 기본은 v3 잠금 규격 — 레이아웃은 고정하고 아트로만 다양성을 낸다. 기존 4종은 운영자가 직접 고를 때만 나온다.
     if (s.template === 'C1') {
-      if (!props.coverLayout) props.coverLayout = pickCoverLayout(props);
-      if (props.hl && !props.hlStyle)
+      if (!props.coverLayout) props.coverLayout = 'v3';
+      if (props.coverLayout === 'v3') {
+        if (!props.coverArt) props.coverArt = pickCoverArt(props);
+        // v3는 형광펜이 규격에 잠겨 있다(어두우면 블루 박스 / 밝으면 라임 박스) — 표현을 흔들지 않는다
+        delete props.hlStyle;
+      } else if (props.hl && !props.hlStyle) {
         props.hlStyle = pickHlStyle(String(props.coverLayout), seedOf(String(props.title ?? '')));
+      }
     }
     return { ...s, order: i + 1, props };
   });

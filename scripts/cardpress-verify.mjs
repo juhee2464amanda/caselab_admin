@@ -50,6 +50,21 @@ const SAMPLES = [
   ['C1', { coverLayout: 'center', kicker: '검수의 경제학', title: '검수 시간이\n70% 줄었다', hl: '70%', hlStyle: 'text', sub: '초안 40분이 6분이 된 이유', footer: '@REVIEW LOOP', coverImage: PHOTO_BRIGHT }, { suffix: '-center' }],
   ['C1', { coverLayout: 'band', label: 'AI 도구 | 자동화', title: '검수 시간이\n70% 줄었다', hl: '70%', sub: '초안 40분이 6분이 된 이유', coverImage: PHOTO_BRIGHT }, { suffix: '-band' }],
   ['C1', { coverLayout: 'giant', tag: '실전 케이스', title: '검수를\n안 하기로 했다', hl: '검수', hlStyle: 'underline', coverImage: PHOTO_BRIGHT }, { suffix: '-giant' }],
+  // ── C1 v3 잠금 규격 × 아트 11종 ──────────────────────────
+  // 레이아웃은 하나뿐이라 검사할 게 "그림이 실제로 그려졌는가"다. Satori는 못 읽는 CSS를
+  // 에러 없이 통째로 지운다(실제로 conic-gradient 블롭·비네트가 검은 판으로 나갔다) —
+  // 아트가 사라지면 스크림만 남아 글자량·대비가 정상으로 통과하므로 11종을 각각 렌더해 둔다.
+  ['C1', { coverLayout: 'v3', coverArt: 'photo', kicker: '검수의 경제학', title: '검수 시간이\n70% 줄었다', hl: '70%', coverImage: PHOTO_BRIGHT }, { suffix: '-v3-photo', contrastFromY: 840 }],
+  ['C1', { coverLayout: 'v3', coverArt: 'term', kicker: '검수의 경제학', title: '검수 시간이\n70% 줄었다', hl: '70%', artText: '> claude review\n# 초안 3개 생성\n# 체크리스트 5줄\n! 반려율 12%' }, { suffix: '-v3-term', contrastFromY: 840 }],
+  ['C1', { coverLayout: 'v3', coverArt: 'studio', kicker: '검수의 경제학', title: '검수 시간이\n70% 줄었다', hl: '70%' }, { suffix: '-v3-studio', contrastFromY: 840 }],
+  ['C1', { coverLayout: 'v3', coverArt: 'macro', kicker: '검수의 경제학', title: '검수 시간이\n70% 줄었다', hl: '70%' }, { suffix: '-v3-macro', contrastFromY: 840 }],
+  ['C1', { coverLayout: 'v3', coverArt: 'quote', kicker: '검수의 경제학', title: '검수 시간이\n70% 줄었다', hl: '70%', artText: '초안이\n매번\n산으로 감' }, { suffix: '-v3-quote', contrastFromY: 840 }],
+  ['C1', { coverLayout: 'v3', coverArt: 'iri', kicker: '검수의 경제학', title: '검수 시간이\n70% 줄었다', hl: '70%' }, { suffix: '-v3-iri', contrastFromY: 840 }],
+  ['C1', { coverLayout: 'v3', coverArt: 'data', kicker: '검수의 경제학', title: '검수 시간이\n70% 줄었다', hl: '70%', artText: '검수 시간' }, { suffix: '-v3-data', contrastFromY: 840 }],
+  ['C1', { coverLayout: 'v3', coverArt: 'logos', kicker: '검수의 경제학', title: '검수 시간이\n70% 줄었다', hl: '70%', artIcons: ['claude', 'notion'] }, { suffix: '-v3-logos', contrastFromY: 840 }],
+  ['C1', { coverLayout: 'v3', coverArt: 'mask', kicker: '검수의 경제학', title: '검수 시간이\n70% 줄었다', hl: '70%' }, { suffix: '-v3-mask', contrastFromY: 840 }],
+  ['C1', { coverLayout: 'v3', coverArt: 'object', kicker: '검수의 경제학', title: '검수 시간이\n70% 줄었다', hl: '70%', coverImage: 'https://raw.githubusercontent.com/microsoft/fluentui-emoji/main/assets/Sleeping%20face/3D/sleeping_face_3d.png' }, { suffix: '-v3-object', contrastFromY: 840 }],
+  ['C1', { coverLayout: 'v3', coverArt: 'numbers', kicker: '검수의 경제학', title: '검수 시간이\n70% 줄었다', hl: '70%', artText: '6분|초안 작성\n12%|반려율' }, { suffix: '-v3-numbers', contrastFromY: 840 }],
   ['C2', { eyebrow: '워크플로', title: '구현해줘가\n틀린 이유', hl: '틀린 이유', sub: '지시가 아니라 제약을 준다' }],
   ['C3', { title: 'Claude Code', hl: 'Code', sub: '터미널에 상주하는 코딩 에이전트', tag: '도구' }],
   ['C4', { eyebrow: '초안 생성, 뭐가 더 낫나', vsA: { name: '지시형', by: '시켜만 두기' }, vsB: { name: '제약형', by: '조건을 박기' }, sub: '3개월 비교 기록' }],
@@ -280,7 +295,13 @@ async function main() {
     if (a.glyphCells < 6)
       problems.push(`글자 소실 의심 — 글자 셀 ${a.glyphCells}개 (배경과 같은 색으로 렌더됐을 수 있음)`);
     // 질량 있는 밝은 글자만 실패 사유로 (작은 라벨의 중간 대비는 경고까지만)
-    const badLight = opts.skipContrast ? [] : a.lightCells.filter((c) => c.contrast < MIN_CONTRAST);
+    // contrastFromY: 이 y 위에 있는 셀은 대비 검사에서 뺀다. v3 커버는 위쪽이 통째로 '그림'이라
+    // 3D 구체·이모지·흰 로고 타일의 밝은 픽셀이 글자로 잡혀 FAIL이 났다(글자는 전부 아래에 있다).
+    const badLight = opts.skipContrast
+      ? []
+      : a.lightCells.filter(
+          (c) => c.contrast < MIN_CONTRAST && (opts.contrastFromY === undefined || c.y >= opts.contrastFromY)
+        );
     const hard = badLight.filter((c) => c.mass >= 150 && c.contrast < 3.0);
     if (hard.length) {
       const w = hard.reduce((m, c) => (c.contrast < m.contrast ? c : m));
