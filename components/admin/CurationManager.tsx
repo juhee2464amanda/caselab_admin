@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { ArrowUp, ArrowDown, Star, Pin } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { createSupabaseBrowserClient } from '@/lib/supabase/client';
-import { MAX_SUB, SLOT_TYPE, SUB_SLOTS, placeAsHero, placeAsSub, type Kind } from '@/lib/featured-slots';
+import { ALWAYS_ON, MAX_SUB, SLOT_TYPE, SUB_SLOTS, placeAsHero, placeAsSub, type Kind } from '@/lib/featured-slots';
 
 // 홈 히어로 큐레이션 — 대표 1개 + Sub(추가 노출).
 //   · 본가 홈은 featured_contents(slot_type='hero')를 slot 순서대로 캐러셀 렌더. slot=1이 대표.
@@ -19,6 +19,10 @@ export type Slot = {
   content_id: string | null;
   tool_id: string | null;
   active: boolean;
+  // 예약 노출 창 판정 — 'always'(상시)만 홈에 뜬다. expired/pending은 여기선 배치돼 보이지만 홈에선 빠진다.
+  window: 'always' | 'expired' | 'pending';
+  from: string | null;
+  until: string | null;
   kind: Kind;
   badge: string;
   title: string;
@@ -135,9 +139,17 @@ export function CurationManager({
     if (j < 0 || j >= sorted.length) return;
     const other = sorted[j];
     void run(async () => {
-      const a = await fc().update({ content_id: other.content_id, tool_id: other.tool_id }).eq('id', entry.id);
-      const b = await fc().update({ content_id: entry.content_id, tool_id: entry.tool_id }).eq('id', other.id);
+      const a = await fc().update({ content_id: other.content_id, tool_id: other.tool_id, ...ALWAYS_ON }).eq('id', entry.id);
+      const b = await fc().update({ content_id: entry.content_id, tool_id: entry.tool_id, ...ALWAYS_ON }).eq('id', other.id);
       return [a, b];
+    });
+  }
+
+  // 예약 노출 창 해제 — 만료/예약 상태라 홈에서만 빠지는 슬롯을 상시 노출로 되돌린다.
+  function clearWindow(entry: Slot) {
+    void run(async () => {
+      const { error } = await fc().update(ALWAYS_ON).eq('id', entry.id);
+      return [{ error }];
     });
   }
 
@@ -146,11 +158,11 @@ export function CurationManager({
     const slot1 = entries.find((e) => e.slot === 1);
     void run(async () => {
       if (!slot1) {
-        const { error } = await fc().update({ slot: 1 }).eq('id', entry.id);
+        const { error } = await fc().update({ slot: 1, ...ALWAYS_ON }).eq('id', entry.id);
         return [{ error }];
       }
-      const a = await fc().update({ content_id: entry.content_id, tool_id: entry.tool_id }).eq('id', slot1.id);
-      const b = await fc().update({ content_id: slot1.content_id, tool_id: slot1.tool_id }).eq('id', entry.id);
+      const a = await fc().update({ content_id: entry.content_id, tool_id: entry.tool_id, ...ALWAYS_ON }).eq('id', slot1.id);
+      const b = await fc().update({ content_id: slot1.content_id, tool_id: slot1.tool_id, ...ALWAYS_ON }).eq('id', entry.id);
       return [a, b];
     });
   }
@@ -176,6 +188,18 @@ export function CurationManager({
   const Badge = ({ kind, label }: { kind: Kind; label: string }) => (
     <span className={`shrink-0 text-[10px] font-medium rounded px-1.5 py-0.5 ${badgeTone(kind)}`}>{label}</span>
   );
+
+  // 예약 노출 창 경고 — 여기선 배치돼 보이는데 홈에선 빠지는 상태를 슬롯 옆에 바로 드러낸다.
+  const day = (iso: string | null) => (iso ? iso.slice(0, 10) : '');
+  const WindowWarn = ({ entry }: { entry: Slot }) =>
+    entry.window === 'always' ? null : (
+      <span className="shrink-0 inline-flex items-center gap-1 text-[11px] rounded px-1.5 py-0.5 bg-amber-100 text-amber-800">
+        {entry.window === 'expired' ? `⚠️ ${day(entry.until)} 만료 · 홈 미노출` : `⏳ ${day(entry.from)}부터 노출`}
+        <button disabled={busy} onClick={() => clearWindow(entry)} className="underline hover:no-underline disabled:opacity-50">
+          상시로
+        </button>
+      </span>
+    );
 
   const RankBlock = ({ title, items, metric }: { title: string; items: RankItem[]; metric: 'views' | 'saves' }) => (
     <div>
@@ -237,6 +261,7 @@ export function CurationManager({
                     <Star className="h-4 w-4 text-accent shrink-0" />
                     <Badge kind={hero.kind} label={hero.badge} />
                     <span className="font-medium truncate">{hero.title}</span>
+                    <WindowWarn entry={hero} />
                   </div>
                   <div className="flex items-center gap-2 shrink-0 text-xs">
                     <button onClick={() => toggleActive(hero)} className={hero.active ? 'text-green-700 hover:underline' : 'text-ink/50 hover:underline'}>{hero.active ? '노출' : '숨김'}</button>
@@ -268,6 +293,7 @@ export function CurationManager({
                     <span className="text-xs font-bold text-ink/30 tabular-nums w-5 shrink-0">#{idx + 2}</span>
                     <Badge kind={s.kind} label={s.badge} />
                     <span className="font-medium truncate">{s.title}</span>
+                    <WindowWarn entry={s} />
                   </div>
                   <div className="flex items-center gap-2 shrink-0 text-xs">
                     <button disabled={busy} onClick={() => promote(s)} className="inline-flex items-center gap-1 text-accent hover:underline disabled:opacity-50"><Star className="h-3 w-3" /> 대표로</button>
