@@ -3,20 +3,28 @@
 import { useEffect, useState } from 'react';
 import { Sparkles, AlertCircle, ImagePlus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
-import type { RichSection } from '@/types/content';
 
 // 초안 기준 이미지 자동 채움 패널 (로컬 admin 전용).
 // 버튼 → /api/admin/suggest-images (사이트 캡처 + Claude 매칭 + 버킷 업로드, 1~3분)
-// → 후보 미리보기 → 체크한 것만 반영: 기능 제목과 일치하면 해당 기능의 이미지 슬롯
-// (features[i].image, '이 도구가 잘하는 것' 아래), 아니면 추가 섹션(image 블록).
+// → 후보 미리보기 → 체크한 것만 반영.
+//
+// 고른 이미지를 **어디에 넣을지는 호출하는 폼이 정한다**(onApply). 자료실(ToolForm)은 기능 이미지
+// 슬롯이 있고 콘텐츠(TrackForm)는 본문 섹션 블록 배열이라, 본문 스키마가 다른 만큼 배치 규칙도 다르다.
+// 이 패널은 "무엇을 매칭 대상으로 삼을지(targets)"와 "어느 사이트를 훑을지(url)"만 받는다.
+//
 // Playwright·Claude CLI가 운영자 Mac에만 있으므로 localhost에서만 노출한다(스튜디오 버튼과 같은 정책).
 
-interface Match {
+/** 반영 대상 이미지 — title은 매칭된 대상(기능·섹션) 제목 그대로 */
+export interface FilledImage {
   title: string;
   url: string;
-  alt: string;
-  caption: string;
+  alt?: string;
+  caption?: string;
+}
+
+interface Match extends FilledImage {
   origin: 'official' | 'external';
   sourceUrl: string;
   sourceLabel: string;
@@ -28,23 +36,45 @@ interface SuggestResult {
   stats?: { candidates: number; pages: number; external: number };
 }
 
+const COPY = {
+  tool: {
+    intro: '공식 사이트(랜딩·문서·기능 페이지)를 훑어 실제 사용 화면을 찾고 기능별로 매칭해요.',
+    slot: '기능',
+  },
+  content: {
+    intro: '출처 사이트(공식 발표·문서)를 훑어 실제 화면을 찾고 본문 섹션별로 매칭해요.',
+    slot: '섹션',
+  },
+} as const;
+
 export function AiImageFill({
-  toolUrl,
+  kind = 'tool',
+  url,
+  onUrlChange,
+  urlCandidates = [],
   name,
-  parsedBody,
+  targets,
+  blockedReason,
   thumbnailUrl,
+  applyHint,
   onApply,
 }: {
-  toolUrl: string;
+  /** 카피·서버 프롬프트의 말투를 정한다 (자료실=기능 / 콘텐츠=섹션) */
+  kind?: 'tool' | 'content';
+  /** 훑을 사이트. 콘텐츠처럼 URL 필드가 없는 폼은 onUrlChange로 여기서 직접 입력받는다. */
+  url: string;
+  onUrlChange?: (url: string) => void;
+  /** 본문 출처·북마크에서 뽑은 주소 후보 (클릭하면 url에 채운다) */
+  urlCandidates?: { label: string; url: string }[];
   name: string;
-  parsedBody: Record<string, unknown> | null;
+  /** 이미지를 매칭할 대상 — 자료실은 기능, 콘텐츠는 본문 섹션 */
+  targets: { title: string; desc?: string }[];
+  /** 호출자가 정하는 차단 사유 (URL 미입력·본문 JSON 오류 등). 있으면 버튼이 잠긴다. */
+  blockedReason?: string | null;
   thumbnailUrl: string;
-  onApply: (patch: {
-    thumbnailUrl?: string;
-    // 기능 제목이 일치한 이미지 — ToolForm이 body.features[i].image에 넣는다
-    featureImages: { title: string; url: string; alt?: string; caption?: string }[];
-    addSections: RichSection[];
-  }) => void;
+  /** '선택 반영' 아래에 붙는 안내 — 어디로 들어가는지는 폼마다 다르다 */
+  applyHint: string;
+  onApply: (patch: { thumbnailUrl?: string; images: FilledImage[] }) => void;
 }) {
   const [visible, setVisible] = useState(false);
   const [running, setRunning] = useState(false);
@@ -60,13 +90,6 @@ export function AiImageFill({
   }, []);
   if (!visible) return null;
 
-  // 초안 body의 features(title/desc)를 매칭 대상으로 사용
-  const features = Array.isArray(parsedBody?.features)
-    ? (parsedBody!.features as { title?: string; desc?: string }[])
-        .filter((f) => f?.title)
-        .map((f) => ({ title: String(f.title), desc: f.desc ? String(f.desc) : undefined }))
-    : [];
-
   async function run() {
     setRunning(true);
     setErr(null);
@@ -75,7 +98,7 @@ export function AiImageFill({
       const res = await fetch('/api/admin/suggest-images', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ url: toolUrl, name, features, includeExternal }),
+        body: JSON.stringify({ url, name, features: targets, includeExternal, kind }),
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error ?? `실패 (${res.status})`);
@@ -92,31 +115,22 @@ export function AiImageFill({
 
   function apply() {
     if (!result) return;
-    // 기능 제목과 일치하면 해당 기능의 이미지 슬롯으로. 같은 기능에 두 장을 고르면
-    // 첫 장만 슬롯에 넣고 나머지는 추가 섹션으로 보존한다(체크한 이미지는 버리지 않는다).
-    const featureTitles = new Set(features.map((f) => f.title.trim()));
-    const featureImages: { title: string; url: string; alt?: string; caption?: string }[] = [];
-    const addSections: RichSection[] = [];
-    for (const m of result.matches.filter((_, i) => picked.has(i))) {
-      const title = m.title.trim();
-      if (featureTitles.delete(title)) {
-        featureImages.push({ title, url: m.url, alt: m.alt || undefined, caption: m.caption || undefined });
-      } else {
-        addSections.push({
-          heading: m.title,
-          blocks: [{ type: 'image' as const, url: m.url, alt: m.alt || undefined, caption: m.caption || undefined }],
-        });
-      }
-    }
     onApply({
       thumbnailUrl: useThumb && result.thumbnail ? result.thumbnail.url : undefined,
-      featureImages,
-      addSections,
+      images: result.matches
+        .filter((_, i) => picked.has(i))
+        .map((m) => ({
+          title: m.title.trim(),
+          url: m.url,
+          alt: m.alt || undefined,
+          caption: m.caption || undefined,
+        })),
     });
     setResult(null);
   }
 
-  const blocked = !toolUrl ? '메타의 URL 필드를 먼저 채워주세요' : !parsedBody ? '본문 JSON 오류를 먼저 고쳐주세요' : null;
+  const copy = COPY[kind];
+  const blocked = blockedReason ?? null;
 
   return (
     <section className="card p-5">
@@ -125,8 +139,47 @@ export function AiImageFill({
         <h2 className="text-sm font-semibold">이미지 채우기 (AI)</h2>
       </div>
       <p className="mb-2.5 text-[11px] text-ink/45 break-keep">
-        공식 사이트(랜딩·문서·기능 페이지)를 훑어 실제 사용 화면을 찾고 기능별로 매칭해요. 내 컴퓨터에서만 동작합니다.
+        {copy.intro} 내 컴퓨터에서만 동작합니다.
+        <span className="mt-1 block">
+          훑을 사이트가 없으면 위 &lsquo;썸네일 후보&rsquo;를 쓰세요.
+        </span>
       </p>
+
+      {/* URL 필드가 없는 폼(콘텐츠)용 — 훑을 주소를 여기서 직접 고른다 */}
+      {onUrlChange && (
+        <div className="mb-2.5">
+          <Input
+            value={url}
+            onChange={(e) => onUrlChange(e.target.value)}
+            placeholder="훑을 사이트 주소 (https://…)"
+            className="h-8 text-xs"
+            disabled={running}
+          />
+          {urlCandidates.length > 0 && (
+            <div className="mt-1.5 flex flex-wrap gap-1">
+              {urlCandidates.map((c) => (
+                <button
+                  key={c.url}
+                  type="button"
+                  onClick={() => onUrlChange(c.url)}
+                  disabled={running}
+                  title={c.url}
+                  className={cn(
+                    'max-w-full truncate rounded-full border px-2 py-0.5 text-[10px] disabled:opacity-50',
+                    c.url === url ? 'border-accent/60 bg-accent/5 text-ink' : 'border-border text-ink/60 hover:border-accent/50 hover:text-ink',
+                  )}
+                >
+                  {c.label}
+                </button>
+              ))}
+            </div>
+          )}
+          <p className="mt-1 text-[10px] text-ink/40 break-keep">
+            본문 출처·링크에서 가져온 후보예요. 원문(공식 발표·문서) 주소일수록 실제 화면이 많이 나와요.
+          </p>
+        </div>
+      )}
+
       <label className="mb-2.5 flex items-start gap-2 text-[11px] text-ink/60">
         <input
           type="checkbox"
@@ -142,6 +195,7 @@ export function AiImageFill({
       </label>
       <Button
         size="sm"
+        type="button"
         variant="outline"
         className="h-8 w-full text-xs"
         onClick={run}
@@ -186,7 +240,7 @@ export function AiImageFill({
 
           {result.matches.length === 0 && !result.thumbnail && (
             <p className="text-[11px] text-ink/50">
-              기능에 맞는 실사용 화면을 찾지 못했어요. &lsquo;리뷰·외부 문서까지 찾기&rsquo;를 켜고 다시 시도해 보세요.
+              {copy.slot}에 맞는 실제 화면을 찾지 못했어요. &lsquo;리뷰·외부 문서까지 찾기&rsquo;를 켜고 다시 시도해 보세요.
             </p>
           )}
 
@@ -226,12 +280,10 @@ export function AiImageFill({
 
           {(result.matches.length > 0 || result.thumbnail) && (
             <div>
-              <Button size="sm" variant="accent" className="h-8 w-full text-xs" onClick={apply}>
+              <Button size="sm" type="button" variant="accent" className="h-8 w-full text-xs" onClick={apply}>
                 선택 반영
               </Button>
-              <p className="mt-1.5 text-[11px] text-ink/45 break-keep">
-                체크한 이미지는 제목이 일치하는 기능(&lsquo;이 도구가 잘하는 것&rsquo;) 아래 이미지로 들어가고, 일치하는 기능이 없으면 &lsquo;추가 섹션&rsquo;으로 들어가요. 반영 뒤에도 수정·삭제할 수 있어요.
-              </p>
+              <p className="mt-1.5 text-[11px] text-ink/45 break-keep">{applyHint}</p>
             </div>
           )}
         </div>

@@ -244,6 +244,33 @@ export function ToolForm({ initial, onSaved, startInPreview }: Props) {
   const promptSource = typeof parsedBody?.source === 'string' ? parsedBody.source : '';
   const promptSourceUrl = typeof parsedBody?.sourceUrl === 'string' ? parsedBody.sourceUrl : '';
 
+  // 썸네일 검색어를 뽑을 본문 발췌 — 프롬프트는 전문, 도구·가이드는 소개 문단·기능·섹션 제목.
+  // 제목만으로는 "무엇에 대한 자료인지"가 안 잡혀 추상어 검색으로 흐른다(썸네일 후보 패널이 씀).
+  const bodyExcerpt = useMemo(() => {
+    const b = parsedBody;
+    if (!b) return '';
+    const parts: string[] = [];
+    if (typeof b.prompt === 'string') parts.push(b.prompt);
+    const about = b.about as { paragraphs?: string[] } | undefined;
+    if (Array.isArray(about?.paragraphs)) parts.push(about.paragraphs.join(' '));
+    const features = b.features as { title?: string; desc?: string }[] | undefined;
+    if (Array.isArray(features))
+      parts.push(features.map((f) => [f?.title, f?.desc].filter(Boolean).join(' — ')).join(' / '));
+    const secs = b.sections as RichSection[] | undefined;
+    if (Array.isArray(secs)) parts.push(secs.map((s) => s?.heading).filter(Boolean).join(' / '));
+    return parts.filter(Boolean).join('\n').slice(0, 1200);
+  }, [parsedBody]);
+
+  // 이미지 채우기 매칭 대상 — 초안 body의 기능 목록(title/desc). 제목이 그대로 반영 키가 된다.
+  const fillTargets = useMemo(() => {
+    const fs = parsedBody?.features;
+    return Array.isArray(fs)
+      ? (fs as { title?: string; desc?: string }[])
+          .filter((f) => f?.title)
+          .map((f) => ({ title: String(f.title).trim(), desc: f.desc ? String(f.desc) : undefined }))
+      : [];
+  }, [parsedBody]);
+
   const sections = (parsedBody?.sections as RichSection[] | undefined) ?? [];
   function setSections(next: RichSection[]) {
     const merged: Record<string, unknown> = { ...(parsedBody ?? {}) };
@@ -687,49 +714,49 @@ export function ToolForm({ initial, onSaved, startInPreview }: Props) {
 
         {/* 우측 레일: 발행 준비 신호등(필수 항목 인라인 수정) + AI 제안 패널 */}
         <aside className="space-y-6">
-          {/* 썸네일 후보 — 사이트 캡처(AiImageFill)가 통하지 않는 프롬프트·가이드까지 커버한다.
-              고른 후보는 여기서 바로 thumbnail_url로 들어가고, 미리보기의 썸네일 슬롯에도 즉시 반영된다. */}
+          {/* 썸네일 후보 — 캡처할 사이트가 없는 프롬프트·가이드의 주 경로(이미지 채우기 위에 둔다) */}
           <ThumbnailSuggest
             name={name}
             description={description}
             category={category}
             promptCategory={promptCategory || undefined}
-            promptText={typeof parsedBody?.prompt === 'string' ? parsedBody.prompt.slice(0, 800) : undefined}
-            value={thumbnailUrl}
-            onPick={setThumbnailUrl}
+            excerpt={bodyExcerpt}
+            thumbnailUrl={thumbnailUrl}
+            onPick={(u) => setThumbnailUrl(u)}
           />
 
           {/* 이미지 채우기 — 초안 편집·상세 필드 어느 모드에서든 보이도록 레일에 둔다 */}
           <AiImageFill
-            toolUrl={url}
+            kind="tool"
+            url={url}
             name={name}
-            parsedBody={parsedBody}
+            targets={fillTargets}
             thumbnailUrl={thumbnailUrl}
+            blockedReason={
+              !url ? '메타의 URL 필드를 먼저 채워주세요' : !parsedBody ? '본문 JSON 오류를 먼저 고쳐주세요' : null
+            }
+            applyHint="체크한 이미지는 제목이 일치하는 기능(‘이 도구가 잘하는 것’) 아래 이미지로 들어가고, 일치하는 기능이 없으면 ‘추가 섹션’으로 들어가요. 반영 뒤에도 수정·삭제할 수 있어요."
             onApply={(patch) => {
               if (patch.thumbnailUrl) setThumbnailUrl(patch.thumbnailUrl);
-              // features 이미지 슬롯 채움 + 추가 섹션을 한 번의 body 갱신으로 처리
+              // features 이미지 슬롯 채움 + 추가 섹션을 한 번의 body 갱신으로 처리.
+              // 같은 기능에 두 장을 고르면 첫 장만 슬롯에 넣고 나머지는 추가 섹션으로 보존한다
+              // (체크한 이미지는 버리지 않는다).
               const merged: Record<string, unknown> = { ...(parsedBody ?? {}) };
-              const leftovers: RichSection[] = [];
-              if (patch.featureImages.length) {
-                const remaining = [...patch.featureImages];
-                if (Array.isArray(merged.features)) {
-                  merged.features = (merged.features as Record<string, unknown>[]).map((f) => {
-                    const hit = remaining.findIndex((m) => m.title === String(f?.title ?? '').trim());
-                    if (hit === -1) return f;
-                    const [m] = remaining.splice(hit, 1);
-                    // feature.image 계약은 {url, caption?}만 허용 (strict 스키마 — alt 넣으면 발행 차단)
-                    return { ...f, image: { url: m.url, ...(m.caption ? { caption: m.caption } : {}) } };
-                  });
-                }
-                // 반영 시점에 기능이 사라졌으면 버리지 말고 추가 섹션으로 보존
-                for (const m of remaining) {
-                  leftovers.push({
-                    heading: m.title,
-                    blocks: [{ type: 'image', url: m.url, alt: m.alt, caption: m.caption }],
-                  });
-                }
+              const remaining = [...patch.images];
+              if (Array.isArray(merged.features)) {
+                merged.features = (merged.features as Record<string, unknown>[]).map((f) => {
+                  const hit = remaining.findIndex((m) => m.title === String(f?.title ?? '').trim());
+                  if (hit === -1) return f;
+                  const [m] = remaining.splice(hit, 1);
+                  // feature.image 계약은 {url, caption?}만 허용 (strict 스키마 — alt 넣으면 발행 차단)
+                  return { ...f, image: { url: m.url, ...(m.caption ? { caption: m.caption } : {}) } };
+                });
               }
-              const nextSections = [...sections, ...patch.addSections, ...leftovers];
+              const leftovers: RichSection[] = remaining.map((m) => ({
+                heading: m.title,
+                blocks: [{ type: 'image', url: m.url, alt: m.alt, caption: m.caption }],
+              }));
+              const nextSections = [...sections, ...leftovers];
               if (nextSections.length) merged.sections = nextSections;
               else delete merged.sections;
               syncBody(JSON.stringify(merged, null, 2));

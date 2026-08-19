@@ -8,6 +8,11 @@
 //    새 노출 영역이 필요하면 slot_type을 늘리기 전에 본가 렌더러부터 만들 것.
 //
 // 슬롯 구성: #1 = 대표(Hero), #2~5 = Sub(추가 노출). 본가 캐러셀 limit 5와 일치.
+//
+// ⚠️ featured_from / featured_until(예약 노출 창)은 admin에서 더 이상 설정하지 않는다.
+//    본가는 여전히 이 창을 필터한다 — 창이 지난 행은 admin 큐레이션엔 "배치됨"으로 보이는데
+//    홈에선 조용히 빠진다(2026-08-19 대표 슬롯이 안 뜬 원인: 2026-08-11에 만료된 옛 창).
+//    그래서 쓰기 경로는 항상 null(상시 노출)로 덮고, 남아 있는 창은 큐레이션 화면이 경고로 드러낸다.
 
 import type { createSupabaseBrowserClient } from '@/lib/supabase/client';
 
@@ -21,6 +26,9 @@ export const SUB_SLOTS = [2, 3, 4, 5];
 export const MAX_SUB = SUB_SLOTS.length;
 
 export type PlaceResult = { ok: boolean; message: string };
+
+/** 예약 노출 창 해제 — 모든 쓰기에 함께 실어 "만료된 창 때문에 홈에서만 안 보이는" 슬롯을 원천 차단. */
+export const ALWAYS_ON = { featured_from: null, featured_until: null } as const;
 
 type SlotRow = { id: string; slot: number; content_id: string | null; tool_id: string | null };
 
@@ -61,13 +69,13 @@ export async function placeAsHero(sb: Sb, t: Target): Promise<PlaceResult> {
   if (slot1) {
     const free = freeSubSlot(rows, dup?.id);
     const { error } = free
-      ? await sb.from('featured_contents').update({ slot: free }).eq('id', slot1.id)
+      ? await sb.from('featured_contents').update({ slot: free, ...ALWAYS_ON }).eq('id', slot1.id)
       : await sb.from('featured_contents').delete().eq('id', slot1.id);
     if (error) return { ok: false, message: error.message };
   }
   const { error } = await sb
     .from('featured_contents')
-    .insert({ slot_type: SLOT_TYPE, slot: HERO_SLOT, ...payload(t.kind, t.id), active: true });
+    .insert({ slot_type: SLOT_TYPE, slot: HERO_SLOT, ...payload(t.kind, t.id), active: true, ...ALWAYS_ON });
   if (error) return { ok: false, message: error.message };
   return { ok: true, message: '홈 대표(#1)에 배치했어요.' };
 }
@@ -83,10 +91,10 @@ export async function placeAsSub(sb: Sb, t: Target): Promise<PlaceResult> {
   if (!free) return full;
 
   const { error } = dup
-    ? await sb.from('featured_contents').update({ slot: free }).eq('id', dup.id)
+    ? await sb.from('featured_contents').update({ slot: free, ...ALWAYS_ON }).eq('id', dup.id)
     : await sb
         .from('featured_contents')
-        .insert({ slot_type: SLOT_TYPE, slot: free, ...payload(t.kind, t.id), active: true });
+        .insert({ slot_type: SLOT_TYPE, slot: free, ...payload(t.kind, t.id), active: true, ...ALWAYS_ON });
   if (error) return { ok: false, message: error.message };
   return { ok: true, message: `Sub #${free}에 배치했어요.` };
 }

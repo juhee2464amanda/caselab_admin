@@ -6,7 +6,7 @@ export const dynamic = 'force-dynamic';
 
 // Unsplash API 약관: 사진을 실제로 채택(다운로드)할 때 그 사진의 download_location을 한 번 호출해야 한다.
 // 검색 결과를 보기만 한 사진은 호출하지 않는다 — 그래서 검색(suggest-thumbnail)이 아니라 '반영' 시점에 부른다.
-// 실패해도 사용자 흐름은 막지 않는다(썸네일은 이미 우리 버킷에 복사된 뒤).
+// 실패해도 사용자 흐름은 막지 않는다(썸네일은 이미 우리 버킷에 복사된 뒤다).
 export async function POST(req: NextRequest) {
   const supabase = await createSupabaseServerClient();
   const {

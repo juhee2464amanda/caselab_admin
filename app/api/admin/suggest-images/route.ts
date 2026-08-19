@@ -100,41 +100,49 @@ function contentTypeOf(file: string): string {
   return 'image/jpeg';
 }
 
-const MATCH_SYSTEM = `당신은 콘텐츠 운영 어시스턴트입니다. 도구 소개 콘텐츠의 각 기능에 맞는 이미지를 후보 중에서 고릅니다.
+// 매칭 대상의 이름만 다르다 — 자료실은 '기능', 콘텐츠(케이스·트렌드)는 본문 '섹션'.
+// 고르는 기준(실사용 화면 우선·억지 매칭 금지)은 같다.
+type FillKind = 'tool' | 'content';
+const SLOT_LABEL: Record<FillKind, string> = { tool: '기능', content: '섹션' };
+const SUBJECT_LABEL: Record<FillKind, string> = { tool: '도구 소개 콘텐츠', content: 'AI 트렌드·케이스 콘텐츠' };
 
-가장 중요한 기준 — **실제로 그 기능을 쓰는 화면**을 고르세요:
-- 좋음: 제품 UI, 입력과 결과가 보이는 화면, 설정·대시보드·결과 리포트 등 기능이 실제로 동작하는 모습
+const matchSystem = (kind: FillKind) => `당신은 콘텐츠 운영 어시스턴트입니다. ${SUBJECT_LABEL[kind]}의 각 ${SLOT_LABEL[kind]}에 맞는 이미지를 후보 중에서 고릅니다.
+
+가장 중요한 기준 — **실제로 그것을 쓰는 화면**을 고르세요:
+- 좋음: 제품 UI, 입력과 결과가 보이는 화면, 설정·대시보드·결과 리포트 등 실제로 동작하는 모습
 - 나쁨: 히어로 카피만 큰 랜딩 상단, 가격표, 고객사 로고 나열, 장식용 일러스트, 다운로드 배너
 - 마케팅 컷밖에 없다면 억지로 고르지 말고 null을 반환하세요.
 
 그 외 규칙:
 - 반드시 Read 도구로 후보 파일을 전부 열어 실제 화면을 확인하고 판단하세요. 파일명·라벨만으로 추측하지 마세요.
-- 같은 후보를 여러 기능에 중복 배정하지 마세요(가장 잘 맞는 한 곳에만).
-- 기능과 무관한 화면뿐이면 그 기능의 candidate는 null (억지 매칭 금지).
-- 썸네일은 도구의 정체성이 한눈에 보이는 컷을 고르되, 후보가 모두 부적합하면 useOg=true.
+- 같은 후보를 여러 ${SLOT_LABEL[kind]}에 중복 배정하지 마세요(가장 잘 맞는 한 곳에만).
+- 그 ${SLOT_LABEL[kind]}과 무관한 화면뿐이면 candidate는 null (억지 매칭 금지).
+- 썸네일은 정체성이 한눈에 보이는 컷을 고르되, 후보가 모두 부적합하면 useOg=true.
 - alt는 화면을 사실대로 묘사(한국어, 1문장), caption은 콘텐츠 독자용 짧은 설명(한국어).
 
 아래 JSON 객체 하나만 출력하세요(설명 없이):
 {
   "thumbnail": { "candidate": 0 | null, "useOg": false },
-  "features": [ { "title": "기능 제목 그대로", "candidate": 2 | null, "alt": "…", "caption": "…" } ]
+  "features": [ { "title": "${SLOT_LABEL[kind]} 제목 그대로", "candidate": 2 | null, "alt": "…", "caption": "…" } ]
 }`;
 
 function buildMatchingPrompt(
+  kind: FillKind,
   name: string,
   features: FeatureInput[],
   capture: { title: string; pageText: string; candidates: Candidate[] },
 ) {
+  const slot = SLOT_LABEL[kind];
   const list = capture.candidates
     .map((c) => `- candidate ${c.index}: ${c.path}\n    (${c.label} · ${c.kind === 'embedded' ? '페이지에 실린 이미지' : '페이지 캡처'})`)
     .join('\n');
   const featureList = features.length
     ? features.map((f, i) => `${i + 1}. ${f.title}${f.desc ? ` — ${f.desc}` : ''}`).join('\n')
-    : '(기능 목록 없음 — 대표 화면만 골라주세요)';
-  return `도구 이름: ${name}
+    : `(${slot} 목록 없음 — 대표 화면만 골라주세요)`;
+  return `${kind === 'tool' ? '도구 이름' : '콘텐츠 제목'}: ${name}
 사이트 제목: ${capture.title}
 
-[기능 목록]
+[${slot} 목록]
 ${featureList}
 
 [이미지 후보]
@@ -143,7 +151,7 @@ ${list}
 [사이트 본문 발췌]
 ${capture.pageText.slice(0, 2000)}
 
-위 후보 파일을 Read로 모두 열어 실제 내용을 확인한 뒤, 각 기능을 가장 잘 보여주는 후보를 고르세요.`;
+위 후보 파일을 Read로 모두 열어 실제 내용을 확인한 뒤, 각 ${slot}을 가장 잘 보여주는 후보를 고르세요.`;
 }
 
 export async function POST(req: NextRequest) {
@@ -159,14 +167,26 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: '이미지 채우기는 로컬 admin에서만 사용할 수 있어요.' }, { status: 400 });
   }
 
-  const { url, name, features, includeExternal } = (await req.json()) as {
+  const body = (await req.json()) as {
     url?: string;
     name?: string;
     features?: FeatureInput[];
     includeExternal?: boolean;
+    /** 자료실(기능 매칭) / 콘텐츠(본문 섹션 매칭) — 프롬프트 말투만 달라진다 */
+    kind?: FillKind;
   };
+  const { url, name, features, includeExternal } = body;
+  const kind: FillKind = body.kind === 'content' ? 'content' : 'tool';
   if (!url || !/^https?:\/\//.test(url)) {
-    return NextResponse.json({ error: '도구 공식 URL이 필요해요. 메타의 URL 필드를 먼저 채워주세요.' }, { status: 400 });
+    return NextResponse.json(
+      {
+        error:
+          kind === 'content'
+            ? '훑을 사이트 주소가 필요해요. 출처 링크를 고르거나 원문 주소를 넣어주세요.'
+            : '도구 공식 URL이 필요해요. 메타의 URL 필드를 먼저 채워주세요.',
+      },
+      { status: 400 },
+    );
   }
 
   let captureDir: string | null = null;
@@ -185,8 +205,8 @@ export async function POST(req: NextRequest) {
 
     // 4. Claude(구독 CLI)가 후보를 실제로 열어보고 기능과 매칭
     const raw = await runClaudeSubscription({
-      system: MATCH_SYSTEM,
-      prompt: buildMatchingPrompt(name ?? '', features ?? [], capture),
+      system: matchSystem(kind),
+      prompt: buildMatchingPrompt(kind, name ?? '', features ?? [], capture),
       allowedTools: ['Read'],
       model: 'opus',
       effort: 'medium',

@@ -206,14 +206,15 @@ export function PromptManager({ initial }: { initial: PromptRow[] }) {
           </div>
         </div>
         <ThumbnailField value={f.thumbnailUrl} onChange={(url) => setF((p) => ({ ...p, thumbnailUrl: url }))} />
-        {/* 붙여넣을 이미지가 없을 때 — 제목·설명으로 사진 후보를 찾거나 브랜드 카드를 만든다(ToolForm 레일과 같은 패널) */}
+        {/* 썸네일 후보 — 상세 편집(/admin/tools/[id]) 레일과 같은 패널. 여기서 등록할 때도 바로 고를 수 있게. */}
         <ThumbnailSuggest
+          className="rounded-lg border border-border p-4"
           name={f.name}
           description={f.description}
           category="prompt"
           promptCategory={f.category}
-          promptText={f.prompt.slice(0, 800)}
-          value={f.thumbnailUrl}
+          excerpt={f.prompt}
+          thumbnailUrl={f.thumbnailUrl}
           onPick={(url) => setF((p) => ({ ...p, thumbnailUrl: url }))}
         />
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">

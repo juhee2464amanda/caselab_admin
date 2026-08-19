@@ -17,6 +17,14 @@ import { CaseBodyEditor } from '@/components/admin/section-editors/CaseBodyEdito
 import { TrendBodyEditor } from '@/components/admin/section-editors/TrendBodyEditor';
 import { ContentPreview } from '@/components/admin/ContentPreview';
 import { ThumbnailField, ThumbnailDropzone } from '@/components/admin/ThumbnailField';
+import { ThumbnailSuggest } from '@/components/admin/ThumbnailSuggest';
+import { AiImageFill } from '@/components/admin/AiImageFill';
+import {
+  imageTargets,
+  captureUrlCandidates,
+  bodyExcerptForThumbnail,
+  applyImagesToBody,
+} from '@/lib/content-image-targets';
 import { RefineProvider, RefinePanel } from '@/components/admin/RefinePanel';
 
 interface Props {
@@ -155,6 +163,16 @@ export function TrackForm({ initial, onSaved, startInPreview }: Props) {
       .then(({ data }) => setCaseCats(data ?? []));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // ── 이미지 채우기·썸네일 후보 (우측 레일) 재료
+  // 콘텐츠에는 도구의 URL 같은 필드가 없다 — 훑을 주소는 본문 출처·북마크에서 뽑아 후보로 주고
+  // 패널 안에서 고르거나 직접 넣는다. 편집 화면을 열 때 첫 후보를 기본값으로 채운다.
+  const [fillUrl, setFillUrl] = useState(
+    () => captureUrlCandidates((initial?.body ?? EMPTY_TREND) as ContentBody)[0]?.url ?? ''
+  );
+  const fillTargets = useMemo(() => imageTargets(body), [body]);
+  const fillUrlCandidates = useMemo(() => captureUrlCandidates(body), [body]);
+  const thumbExcerpt = useMemo(() => bodyExcerptForThumbnail(body), [body]);
 
   // 본문 길이 기반 읽기 시간 추정 — 자동 모드면 본문이 바뀔 때마다 반영.
   const estReadMin = useMemo(() => estimateReadMin(body), [body]);
@@ -582,8 +600,42 @@ export function TrackForm({ initial, onSaved, startInPreview }: Props) {
           )}
         </div>
 
-        {/* 우측 레일: 발행 준비 신호등(필수 입력 인라인) + AI 제안 패널 */}
+        {/* 우측 레일: 이미지 패널 + 발행 준비 신호등(필수 입력 인라인) + AI 제안 패널.
+            순서·구성은 자료실 편집(ToolForm)과 맞춘다 — 두 편집 화면의 레일이 같아야 손이 헷갈리지 않는다. */}
         <aside className="space-y-6">
+          {/* 썸네일 후보 — 제목·본문에서 검색어를 만들어 Unsplash 사진을 고른다(훑을 사이트가 없어도 됨) */}
+          <ThumbnailSuggest
+            name={title}
+            description={summary}
+            category={track}
+            excerpt={thumbExcerpt}
+            thumbnailUrl={thumbnailUrl}
+            onPick={(u) => setThumbnailUrl(u)}
+          />
+
+          {/* 이미지 채우기 — 출처 사이트를 훑어 본문 섹션별 실제 화면을 찾는다(로컬 전용) */}
+          <AiImageFill
+            kind="content"
+            url={fillUrl}
+            onUrlChange={setFillUrl}
+            urlCandidates={fillUrlCandidates}
+            name={title}
+            targets={fillTargets}
+            thumbnailUrl={thumbnailUrl}
+            blockedReason={
+              !fillUrl.trim()
+                ? '훑을 사이트 주소를 넣어주세요'
+                : bodyError
+                  ? '본문 JSON 오류를 먼저 고쳐주세요'
+                  : null
+            }
+            applyHint="체크한 이미지는 제목이 같은 본문 섹션 맨 아래로 들어가고, 맞는 섹션이 없으면 ‘추가 섹션’으로 들어가요. 반영 뒤에도 본문에서 수정·삭제할 수 있어요."
+            onApply={(patch) => {
+              if (patch.thumbnailUrl) setThumbnailUrl(patch.thumbnailUrl);
+              if (patch.images.length) updateBody(applyImagesToBody(body, patch.images));
+            }}
+          />
+
           {/* 발행 준비 — 필수값을 여기서 바로 채우면 신호등이 초록으로 바뀌고 발행이 활성화된다 */}
           <section className="card p-5 xl:sticky xl:top-4">
             <div className="mb-4 flex items-center gap-2.5">
