@@ -305,6 +305,10 @@ export const CaseBodySchema = z.object({
 export const TrendBodySchema = z.object({
   kind: z.literal('trend'),
 
+  // 세부 유형(소식·실행·경고·해석) — 어떤 골격으로 생성했는지 기록. 없으면 기존 자유 포맷.
+  // 본가는 이 키를 모르므로 렌더에 영향 없음(lib/trend-variants.ts 참고).
+  variant: z.enum(['news', 'action', 'alert', 'analysis']).optional(),
+
   // D70 신규 — 본가 트렌드 페이지가 렌더하는 정본 7섹션 (모두 optional, 있는 것만 렌더).
   what: z.array(BlockSchema).optional(),
   why: z.array(BlockSchema).optional(),

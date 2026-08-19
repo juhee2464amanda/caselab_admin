@@ -3,6 +3,7 @@ import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { createSupabaseAdminClient } from '@/lib/supabase/admin';
 import { generateDraft, generateToolDraft, generatePromptDraft, generateGuideDraft } from '@/lib/ai-draft';
 import { isSeedTrack, type SeedTrack } from '@/lib/seed-tracks';
+import { isTrendVariant } from '@/lib/trend-variants';
 import { stripSeedTitleTag } from '@/lib/seed-curation';
 import { slugify } from '@/lib/utils';
 
@@ -37,6 +38,7 @@ export async function POST(req: NextRequest) {
     track?: SeedTrack;
     direction?: string;
     outline?: string[];
+    variant?: string; // 트렌드 세부 유형(선택) — 없으면 기존 자유 포맷
   };
   const ids = parsed.seedIds?.length ? parsed.seedIds : parsed.seedId ? [parsed.seedId] : [];
   const track = parsed.track;
@@ -141,6 +143,8 @@ export async function POST(req: NextRequest) {
     }
 
     // case | trend → contents. 기획방향(사람 작성)을 모든 트랙 공통으로 생성에 주입.
+    // variant: 트렌드 세부 유형(선택). sourceUrl: 씨앗 원문 → sources[0] 강제 주입.
+    const variant = track === 'trend' && isTrendVariant(parsed.variant) ? parsed.variant : undefined;
     const body = await generateDraft({
       track,
       title: mergedTitle,
@@ -149,7 +153,10 @@ export async function POST(req: NextRequest) {
       outline,
       sourceType,
       bucket,
+      variant,
+      sourceUrl: primary.source_url ?? undefined,
     });
+    if (body.kind === 'trend' && variant) body.variant = variant;
     const { data: content, error } = await admin
       .from('contents')
       .insert({

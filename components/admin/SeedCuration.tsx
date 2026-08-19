@@ -8,6 +8,8 @@ import { createSupabaseBrowserClient } from '@/lib/supabase/client';
 import { formatDate, cn } from '@/lib/utils';
 import { BUCKETS, SCORE_CUT, WINDOW_HOURS, BUCKET_CAP, VISIBLE_BUCKETS, bucketProfile, bucketFromSource, stripSeedTitleTag, type SeedBucket } from '@/lib/seed-curation';
 import { SEED_TRACKS, type SeedTrack } from '@/lib/seed-tracks';
+import { type TrendVariant } from '@/lib/trend-variants';
+import TrendVariantPicker from '@/components/admin/TrendVariantPicker';
 import { personaBadge, type DirectionProposals } from '@/lib/personas';
 import { SOURCES, sourceProfile } from '@/lib/seed-sources';
 import { ESSENCE_LABELS, essenceRows } from '@/lib/seed-essence';
@@ -71,6 +73,9 @@ export function SeedCuration({
   const [proposals, setProposals] = useState<DirectionProposals | null>(null);
   const [proposing, setProposing] = useState(false);
   const [pickedProposal, setPickedProposal] = useState<number | null>(null);
+
+  // 트렌드 세부 유형 — null = 기존 자유 포맷. 기획방향 제안과 같은 호출로 추천(1·2순위)이 온다.
+  const [variant, setVariant] = useState<TrendVariant | null>(null);
 
   // 필터 상태 (버킷은 라우팅이 아닌 soft 필터)
   const [sourceFilter, setSourceFilter] = useState<string | null>(null);
@@ -200,6 +205,7 @@ export function SeedCuration({
     setPendingTrack(track);
     setOutlineText(null); // 타입 바뀌면 개요 초기화
     clearProposals(); // 각도는 트랙(형식)에 맞춰 뽑은 것 → 타입 바뀌면 무효
+    setVariant(null); // 세부 유형도 트렌드 트랙 전제 → 초기화(기존형)
   };
 
   // 0단계(선택): 소스+독자 페르소나로 기획방향 후보 2~3개. 고르면 아래 입력칸이 채워지고, 거기서 고쳐 쓴다.
@@ -264,7 +270,13 @@ export function SeedCuration({
       const res = await fetch('/api/seeds/generate', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ seedIds: [...selected], track: pendingTrack, direction: direction.trim(), outline }),
+        body: JSON.stringify({
+          seedIds: [...selected],
+          track: pendingTrack,
+          direction: direction.trim(),
+          outline,
+          ...(pendingTrack === 'trend' && variant ? { variant } : {}),
+        }),
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || '생성 실패');
@@ -547,6 +559,19 @@ export function SeedCuration({
                     </div>
                   )}
                 </div>
+
+                {/* Step 2.5: 트렌드 세부 유형 — 기획방향 제안과 같은 호출로 온 추천(1·2순위)을 기존형과 비교해 고른다.
+                    제안 전에는 4유형 전체를 배지 없이 노출. 미선택 = 기존 자유 포맷 그대로. */}
+                {pendingTrack === 'trend' && (
+                  <div className="rounded-lg border border-dashed border-border bg-muted/30 p-2.5">
+                    <TrendVariantPicker
+                      ranking={proposals?.variantRanking}
+                      value={variant}
+                      onChange={setVariant}
+                      disabled={!!gen || outlining}
+                    />
+                  </div>
+                )}
 
                 {/* Step 3: 개요 생성 → 확인·수정 → 본문 생성 (단계적 구체화) */}
                 {outlineText === null ? (

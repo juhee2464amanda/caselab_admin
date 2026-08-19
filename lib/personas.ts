@@ -135,4 +135,9 @@ export interface DirectionProposals {
   /** 이 소스의 핵심 한 줄 — 무엇이 새롭고 왜 중요한지 */
   coreInsight: string;
   proposals: DirectionProposal[];
+  /**
+   * 트렌드 트랙 한정 — 이 소재에 맞는 세부 유형 추천(1순위·2순위 순).
+   * 운영자는 기존형 포함 3장을 비교해 고른다. 다른 트랙이거나 판단 실패면 빈 배열.
+   */
+  variantRanking: { variant: string; why: string }[];
 }

@@ -9,6 +9,8 @@ import { createSupabaseBrowserClient } from '@/lib/supabase/client';
 import { cn } from '@/lib/utils';
 import { SEED_TRACKS, type SeedTrack } from '@/lib/seed-tracks';
 import { trackEdge } from '@/lib/track-edges';
+import { type TrendVariant } from '@/lib/trend-variants';
+import TrendVariantPicker from '@/components/admin/TrendVariantPicker';
 import { TrackForm } from '@/components/admin/TrackForm';
 import { ToolForm } from '@/components/admin/ToolForm';
 import { FeaturedPlacer } from '@/components/admin/Studio';
@@ -56,6 +58,10 @@ export function MdImport() {
   // 재생성 — 값이 있으면 이 초안 id를 덮어쓴다(엣지 조정 후 다시 생성). 없으면 새 초안.
   const [replaceId, setReplaceId] = useState<string | null>(null);
 
+  // 트렌드 세부 유형 — null = 기존 자유 포맷. 엣지 제안과 같은 호출로 추천(1·2순위)이 온다.
+  const [variant, setVariant] = useState<TrendVariant | null>(null);
+  const [variantRanking, setVariantRanking] = useState<{ variant: string; why: string }[] | undefined>(undefined);
+
   // 트랙이 바뀌면 형식도 바뀌므로 제안 초기화
   const selectTrack = (t: SeedTrack) => {
     setTrack(t);
@@ -63,6 +69,8 @@ export function MdImport() {
     setPlanText('');
     setMissing([]);
     setProposed(false);
+    setVariant(null);
+    setVariantRanking(undefined);
   };
 
   const propose = async () => {
@@ -79,12 +87,14 @@ export function MdImport() {
         angle?: string;
         plan?: { section: string; note: string }[];
         missing?: string[];
+        variantRanking?: { variant: string; why: string }[];
         error?: string;
       };
       if (!res.ok) throw new Error(json.error ?? '엣지 제안 실패');
       setAngle(json.angle ?? '');
       setPlanText((json.plan ?? []).map((p) => `${p.section} — ${p.note}`).join('\n'));
       setMissing(json.missing ?? []);
+      setVariantRanking(json.variantRanking?.length ? json.variantRanking : undefined);
       setProposed(true);
     } catch (e) {
       setError((e as Error).message);
@@ -144,6 +154,7 @@ export function MdImport() {
             .filter(Boolean),
           missing,
           replaceId: replaceId || undefined,
+          ...(track === 'trend' && variant ? { variant } : {}),
         }),
       });
       const json = (await res.json()) as { id?: string; kind?: Kind; error?: string };
@@ -457,6 +468,19 @@ export function MdImport() {
                       {edgeBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Wand2 className="h-3.5 w-3.5" />} 다시
                       제안
                     </Button>
+                  </div>
+                )}
+
+                {/* 트렌드 세부 유형 — 엣지 제안과 같은 호출로 온 추천(1·2순위)을 기존형과 비교해 고른다.
+                    제안 전에는 4유형 전체를 배지 없이 노출. 미선택 = 기존 자유 포맷 그대로. */}
+                {track === 'trend' && (
+                  <div className="border-t border-border pt-3">
+                    <TrendVariantPicker
+                      ranking={variantRanking}
+                      value={variant}
+                      onChange={setVariant}
+                      disabled={busy || edgeBusy}
+                    />
                   </div>
                 )}
               </div>

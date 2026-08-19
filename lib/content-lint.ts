@@ -180,7 +180,47 @@ export function lintContent(
     checks.push({ id: 'customization-4', label: 'Customization (D70/트렌드 N/A)', passed: true });
   }
 
-  // 7. 광고/외부 링크 화이트리스트
+  // 트렌드 전용 — 출처 ≥1(원본 링크 확인 불가 문제의 차단 게이트)·과분량 경고.
+  if (isTrend) {
+    checks.push({
+      id: 'has-source',
+      label: '출처 링크 ≥ 1개',
+      passed: (body.kind === 'trend' ? body.sources?.length ?? 0 : 0) >= 1,
+    });
+    const est = estimateReadMin(body);
+    checks.push({
+      id: 'read-length',
+      label: est > 7 ? `분량 과다 (추정 ${est}분) — 압축 권장` : `분량 확인 (추정 ${est}분)`,
+      passed: est <= 7,
+      blocking: false, // 길 이유가 있으면 운영자가 넘긴다.
+    });
+  }
+
+  // 7. 편집 마커 잔존 — "[수치 검증 필요]"류 대괄호 내부 메모가 발행본에 남으면
+  //    독자 전원이 "덜 쓴 글"로 인식하고 다른 숫자까지 불신한다(페르소나 검증 12/12 지적). 차단 항목.
+  const proseAll: string[] = [];
+  harvestProse(body, proseAll);
+  const markerRe = /\[[^\]\n]{0,24}(?:검증|확인|출처|수치|TODO|채우)[^\]\n]{0,24}(?:필요|요망|안 ?됨|미정)[^\]\n]{0,24}\]|\[TODO[^\]\n]*\]/g;
+  const markers = [...new Set(proseAll.join(' ').match(markerRe) ?? [])];
+  checks.push({
+    id: 'no-editorial-markers',
+    label: markers.length === 0 ? '편집 마커 없음' : `편집 마커 잔존 (${markers.length}) — 삭제 필요`,
+    passed: markers.length === 0,
+    detail: markers.length > 0 ? markers.join(', ') : undefined,
+  });
+
+  // 8. 상대 위치 참조 — "위 '원문 보기'에서" 같은 문장은 그 요소가 없으면 독자가 헤맨다.
+  //    렌더 위치를 여기서 검증할 수 없어 경고만(운영자가 확인).
+  const relativeRefs = proseAll.join(' ').match(/위(?:의|쪽)? ['"“”‘’]?(?:원문 보기|원문|링크)['"“”‘’]?(?:에서|를|을)/g) ?? [];
+  checks.push({
+    id: 'no-relative-refs',
+    label: relativeRefs.length === 0 ? '상대 위치 참조 없음' : `상대 위치 참조 (${relativeRefs.length}) — 인라인 링크 권장`,
+    passed: relativeRefs.length === 0,
+    detail: relativeRefs.length > 0 ? [...new Set(relativeRefs)].join(', ') : undefined,
+    blocking: false,
+  });
+
+  // 9. 광고/외부 링크 화이트리스트
   const allBlocks: Block[] = body.kind === 'case'
     ? [
         // D70 본문 섹션

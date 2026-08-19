@@ -3,6 +3,7 @@ import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { createSupabaseAdminClient } from '@/lib/supabase/admin';
 import { generateDraft, generateToolDraft, generatePromptDraft, generateGuideDraft, suggestContentMeta } from '@/lib/ai-draft';
 import { isSeedTrack, type SeedTrack } from '@/lib/seed-tracks';
+import { isTrendVariant } from '@/lib/trend-variants';
 import { trackEdge } from '@/lib/track-edges';
 import { slugify } from '@/lib/utils';
 
@@ -48,6 +49,8 @@ export async function POST(req: NextRequest) {
     missing?: string[];
     /** 재생성 — 이 초안(content/tool) id를 덮어쓴다(새 초안 생성 대신). 엣지 조정 후 다시 생성용. */
     replaceId?: string;
+    /** 트렌드 세부 유형(선택) — 없으면 기존 자유 포맷 */
+    variant?: string;
   };
   const title = parsed.title?.trim();
   const markdown = parsed.markdown?.trim();
@@ -175,7 +178,9 @@ export async function POST(req: NextRequest) {
     }
 
     // case | trend → contents
-    const body = await generateDraft({ track, title, summary: markdown, direction, outline: edgePlan, sourceType: 'manual' });
+    const variant = track === 'trend' && isTrendVariant(parsed.variant) ? parsed.variant : undefined;
+    const body = await generateDraft({ track, title, summary: markdown, direction, outline: edgePlan, sourceType: 'manual', variant });
+    if (body.kind === 'trend' && variant) body.variant = variant;
     // 발행 메타 자동 채움 — 읽기/적용 시간·직무 태그·요약을 미리 채워 발행 게이트를 통과시킨다(운영자 수동 입력 마찰 제거).
     const meta = await suggestContentMeta({ title, markdown, body });
     // 재생성 — 기존 콘텐츠 초안 덮어쓰기(슬러그·발행상태 유지, 같은 트랙일 때만). 실패 시 아래 insert로 폴백.

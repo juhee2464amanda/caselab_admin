@@ -13,6 +13,13 @@ import {
   type PromptBody,
 } from '@/lib/prompt-body';
 import { sourceProfile } from '@/lib/seed-sources';
+import {
+  TREND_COMMON_RULE,
+  TREND_VARIANTS,
+  isTrendVariant,
+  trendVariantProfile,
+  type TrendVariant,
+} from '@/lib/trend-variants';
 import { PERSONA_PROMPT_BLOCK, isPersona, type DirectionProposal, type DirectionProposals } from '@/lib/personas';
 import type { SeedTrack } from '@/lib/seed-tracks';
 import { trackEdge } from '@/lib/track-edges';
@@ -93,6 +100,14 @@ ${BLOCK_RULE}
 }
 
 한국어, 1인칭 운영자 톤. 광고/제휴 링크 금지. 출처는 리서치로 확인된 실제 URL만.`;
+
+// 유형(variant) 선택 시에만 TREND_SYSTEM에 골격·신뢰 규칙을 덧붙인다.
+// 미선택 경로는 TREND_SYSTEM 원형 그대로 — 기존 자유 포맷 보존.
+function trendSystemFor(variant?: TrendVariant): string {
+  if (!variant) return TREND_SYSTEM;
+  const profile = trendVariantProfile(variant);
+  return `${TREND_SYSTEM}\n${TREND_COMMON_RULE}\n\n${profile.promptBlock}\n\n위 골격의 필수 섹션 외 나머지 키는 만들지 마세요(빈 배열도 넣지 말 것).`;
+}
 
 const TOOL_SYSTEM = `당신은 케이스랩(Caselab) 자료실의 운영자 어시스턴트입니다.
 
@@ -288,6 +303,10 @@ export interface DraftInput {
   sourceType?: string;
   /** AI 분류(bucket). 참고용. */
   bucket?: string;
+  /** 트렌드 세부 유형(선택). 미지정이면 기존 자유 포맷 그대로 생성. case 트랙에서는 무시. */
+  variant?: TrendVariant;
+  /** 씨앗 원문 URL(선택). 지정 시 sources[0]에 코드로 강제 주입 — 모델 리서치 운에 안 맡긴다. */
+  sourceUrl?: string;
 }
 
 /**
@@ -340,7 +359,7 @@ function parseModelJson(raw: string): unknown | null {
 
 /** 케이스/트렌드 초안 생성. ContentBodySchema 검증 + 실패 시 1회 repair 패스. */
 export async function generateDraft(input: DraftInput): Promise<ContentBody> {
-  const systemPrompt = `${input.track === 'case' ? CASE_SYSTEM : TREND_SYSTEM}\n\n${RESEARCH_RULE}`;
+  const systemPrompt = `${input.track === 'case' ? CASE_SYSTEM : trendSystemFor(input.variant)}\n\n${RESEARCH_RULE}`;
   const userPrompt =
     `제목: ${input.title}\n요약: ${input.summary ?? ''}` +
     contextBlock(input) +
@@ -375,7 +394,15 @@ export async function generateDraft(input: DraftInput): Promise<ContentBody> {
   if (!result.success) {
     throw new Error('AI 응답 검증 실패: ' + result.error.message);
   }
-  return result.data;
+
+  // 씨앗 원문 URL을 sources[0]에 강제 주입 — "원본 링크를 확인할 수 없다"는 모델 응답 운에 맡기지 않는다.
+  // (모델이 같은 URL을 이미 넣었으면 중복 제거하고 맨 앞으로 올린다.)
+  const body = result.data;
+  if (body.kind === 'trend' && input.sourceUrl) {
+    const rest = (body.sources ?? []).filter((s) => s.url !== input.sourceUrl);
+    body.sources = [{ label: '원문 보기', url: input.sourceUrl }, ...rest];
+  }
+  return body;
 }
 
 export interface ToolDraft {
@@ -641,14 +668,30 @@ ${PERSONA_PROMPT_BLOCK}
 - why는 그 페르소나의 실제 막힘과 연결한 한 줄. "유용하다" 같은 일반론 금지.
 - 페르소나가 즉시 거절하는 톤(수익 약속·광고·과장·근거 없는 단정) 금지.
 
+${track === 'trend' ? trendVariantRankingBlock() : ''}
+
 응답은 아래 JSON 객체 하나만 반환하세요(설명 없이):
 {
   "coreInsight": "이 소스의 핵심 한 줄 — 무엇이 새롭고 왜 지금 중요한지",
   "proposals": [
     { "headline": "각도 이름 12자 내외", "personas": ["B"], "why": "이 페르소나가 왜 궁금해하는지 한 줄", "direction": "기획방향 2~3문장" }
-  ]
+  ]${track === 'trend' ? `,
+  "variantRanking": [
+    { "variant": "news", "why": "이 소재가 왜 이 유형인지 한 줄" },
+    { "variant": "analysis", "why": "차선인 이유 한 줄" }
+  ]` : ''}
 }
 proposals는 2~3개, personas는 "A"~"E" 중 1~2개(첫 번째가 주 대상).`;
+}
+
+// 트렌드 세부 유형 추천 블록 — proposeDirections(트렌드 트랙)에만 붙는다.
+function trendVariantRankingBlock(): string {
+  return `
+[세부 유형 추천 — 트렌드 한정]
+이 소재에 가장 맞는 세부 유형을 1순위·2순위로 고르세요(variantRanking, 정확히 2개).
+${TREND_VARIANTS.map((v) => `- ${v.variant}(${v.label}): ${v.fits}`).join('\n')}
+기준은 소재의 구조입니다(주제가 아니라): 바뀐 사실이 본체면 news, 따라 할 행동이 본체면 action,
+확인 안 하면 당하는 변경이면 alert, 숫자·주장의 해석이 본체면 analysis.`;
 }
 
 /**
@@ -684,9 +727,21 @@ export async function proposeDirections(input: DirectionInput): Promise<Directio
   }
   if (!proposals.length) throw new Error('기획방향 제안을 만들지 못했어요. 다시 시도해 주세요.');
 
+  // 트렌드 세부 유형 추천 — 방향 제안과 같은 호출에서 받는다(추가 호출 0회). 실패해도 방향 제안은 유효.
+  const variantRanking: { variant: string; why: string }[] = [];
+  if (input.track === 'trend' && Array.isArray(parsed.variantRanking)) {
+    for (const item of parsed.variantRanking) {
+      const r = item as Record<string, unknown>;
+      if (isTrendVariant(r?.variant) && !variantRanking.some((x) => x.variant === r.variant)) {
+        variantRanking.push({ variant: r.variant, why: typeof r.why === 'string' ? r.why.trim() : '' });
+      }
+    }
+  }
+
   return {
     coreInsight: typeof parsed.coreInsight === 'string' ? parsed.coreInsight.trim() : '',
     proposals: proposals.slice(0, 3),
+    variantRanking: variantRanking.slice(0, 2),
   };
 }
 
@@ -699,6 +754,8 @@ export interface EdgeProposal {
   plan: { section: string; note: string }[];
   /** 트랙 형식이 요구하지만 문서에 없는 것(지어내지 말고 보강·생략 판단용) */
   missing: string[];
+  /** 트렌드 트랙 한정 — 세부 유형 추천(1순위·2순위). 다른 트랙·판단 실패면 빈 배열. */
+  variantRanking: { variant: string; why: string }[];
 }
 
 /**
@@ -721,9 +778,10 @@ ${edge.sections.map((s) => `- ${s.name}: ${s.need}`).join('\n')}
 - angle: 이 문서를 이 형식으로 풀 때의 각도 한 줄(문서의 논지를 형식의 엣지에 맞게).
 - plan: 위 섹션 각각에 대해, 문서의 어떤 내용을 어떻게 배치·압축할지 한 줄씩. 문서에 근거가 없는 섹션은 note에 "문서에 없음 — " 으로 시작해 대안(생략/보강)을 적으세요.
 - missing: 이 형식이 요구하지만 문서에 없는 것들(지어내면 안 되는 것). 없으면 빈 배열.
+${input.track === 'trend' ? trendVariantRankingBlock() : ''}
 
 응답은 아래 JSON 객체 하나만 반환하세요(설명 없이):
-{ "angle": "…", "plan": [{ "section": "섹션 이름", "note": "배치 계획 한 줄" }], "missing": ["…"] }`;
+{ "angle": "…", "plan": [{ "section": "섹션 이름", "note": "배치 계획 한 줄" }], "missing": ["…"]${input.track === 'trend' ? ', "variantRanking": [{ "variant": "news", "why": "…" }, { "variant": "analysis", "why": "…" }]' : ''} }`;
 
   const userPrompt = `제목: ${input.title}\n\n[문서]\n${input.markdown.slice(0, 16000)}\n\n위 문서의 배치 계획 JSON만 반환하세요.`;
   const raw = await callModel(system, userPrompt, { allowedTools: [], model: 'sonnet', timeoutMs: 90_000 });
@@ -744,14 +802,24 @@ ${edge.sections.map((s) => `- ${s.name}: ${s.need}`).join('\n')}
     const missing = Array.isArray(parsed.missing)
       ? parsed.missing.filter((x): x is string => typeof x === 'string' && x.trim().length > 0)
       : [];
+    const variantRanking: { variant: string; why: string }[] = [];
+    if (input.track === 'trend' && Array.isArray(parsed.variantRanking)) {
+      for (const item of parsed.variantRanking) {
+        const o = item as Record<string, unknown>;
+        if (isTrendVariant(o?.variant) && !variantRanking.some((x) => x.variant === o.variant)) {
+          variantRanking.push({ variant: o.variant, why: typeof o.why === 'string' ? o.why.trim() : '' });
+        }
+      }
+    }
     return {
       angle: typeof parsed.angle === 'string' ? parsed.angle.trim() : '',
       plan,
       missing,
+      variantRanking: variantRanking.slice(0, 2),
     };
   } catch {
     // 파싱 실패 → 빈 제안(운영자가 직접 작성하거나 제안 없이 생성)
-    return { angle: '', plan: [], missing: [] };
+    return { angle: '', plan: [], missing: [], variantRanking: [] };
   }
 }
 
