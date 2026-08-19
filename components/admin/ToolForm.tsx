@@ -549,7 +549,7 @@ export function ToolForm({ initial, onSaved, startInPreview }: Props) {
               </div>
               {/* URL 직접 입력만 두면 붙여넣을 주소가 없는 프롬프트·가이드는 썸네일을 아예 못 넣는다 —
                   콘텐츠(TrackForm)와 같은 업로드·끌어놓기·붙여넣기 입력으로 통일. */}
-              <ThumbnailField value={thumbnailUrl} onChange={setThumbnailUrl} />
+              <ThumbnailField value={thumbnailUrl} onChange={setThumbnailUrl} suggestTitle={name} />
               <div>
                 <Label className="text-xs">직무 태그</Label>
                 <div className="mt-1.5 flex flex-wrap gap-1.5">
