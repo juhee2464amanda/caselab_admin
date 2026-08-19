@@ -128,6 +128,78 @@ function captionBlockGuide(src: CardSource): string {
   return GUIDES[kind];
 }
 
+// ── 댓글 키워드 충돌 검사 ────────────────────────────────────────────────
+//
+// 왜 "같은 단어냐"만 봐서는 부족한가: 리틀리·ManyChat 계열 자동화는 트리거를 **contains(포함)**
+// 로 매칭하는 게 기본이다(exact로 두면 "프롬프트요", "프롬프트!" 같은 변형을 다 놓친다).
+// 그래서 키워드 하나가 다른 키워드의 **부분 문자열이기만 해도** 두 게시물의 규칙이 동시에 걸린다
+// — 예: A글 "프롬프트" / B글 "프롬프트정리" → B에 "프롬프트정리"를 단 사람이 A의 자동화에도 걸린다.
+// 어느 자료가 갈지는 도구 쪽 규칙 순서가 정하므로 사실상 오배송이다.
+//
+// 게다가 인스타 자체가 **한 사람당 한 게시물에 한 번만** 댓글 트리거를 발화시키고,
+// 코멘트 프라이빗 리플라이는 **댓글 1건당 메시지 1통**이 상한이다(Meta 공식 문서).
+// 즉 잘못 걸린 DM은 "다시 보내면 되는" 종류의 실수가 아니다 — 그 사람에겐 한 번뿐이다.
+const KEYWORD_LOOKBACK = 30;
+
+/** 비교용 정규화 — 공백·문장부호를 걷어내고 소문자로 */
+function normalizeKeyword(k: string): string {
+  return k.trim().toLowerCase().replace(/[\s"'`.,!?~·]/g, '');
+}
+
+/** a와 b가 contains 매칭에서 서로 걸리는가 (같거나, 한쪽이 다른 쪽을 품으면 충돌) */
+export function keywordsCollide(a: string, b: string): boolean {
+  const x = normalizeKeyword(a);
+  const y = normalizeKeyword(b);
+  if (!x || !y) return false;
+  return x === y || x.includes(y) || y.includes(x);
+}
+
+/** taken 중 충돌하는 첫 키워드(없으면 null) */
+export function keywordCollision(keyword: string, taken: string[]): string | null {
+  return taken.find((t) => keywordsCollide(keyword, t)) ?? null;
+}
+
+/** 소재 제목에서 키워드 후보를 뽑는다 — 한글 2~6자 낱말 우선, 없으면 영문 낱말.
+ *  "무엇에 대한 글인지"가 담긴 말이라야 독자가 외워서 댓글에 칠 수 있다. */
+function keywordCandidatesFromSource(src: CardSource): string[] {
+  const title = sourceTitle(src);
+  const words = title
+    .replace(/[^\p{L}\p{N}\s]/gu, ' ')
+    .split(/\s+/)
+    .map((w) => w.trim())
+    .filter(Boolean);
+  const hangul = words.filter((w) => /^[가-힣]{2,6}$/.test(w));
+  const latin = words.filter((w) => /^[A-Za-z][A-Za-z0-9]{1,9}$/.test(w));
+  // 긴 낱말이 더 고유하다 — 짧은 조사·관형어가 앞에 오는 걸 막는다
+  return [...hangul.sort((a, b) => b.length - a.length), ...latin];
+}
+
+/** 최종 댓글 키워드 결정 — 충돌하면 소재에서 뽑은 다른 후보로 갈아탄다.
+ *  전부 충돌하면 소재 낱말 + 구분 접미사로 **결정적으로** 만든다(모델 재호출 없이). */
+function resolveCtaKeyword(
+  proposed: string | undefined,
+  src: CardSource,
+  taken: string[],
+  aiProposed?: string
+): string {
+  // 운영자 지정이 충돌하면 **AI가 낸 키워드를 먼저** 써본다 — 제목 낱말은 최후의 수단이다.
+  // (제목에서 뽑으면 "흐트러지지" 같은 동사 조각이 걸린다. 실측으로 확인됨)
+  const candidates = [proposed, aiProposed, ...keywordCandidatesFromSource(src)]
+    .map((c) => c?.trim())
+    .filter((c): c is string => Boolean(c));
+
+  for (const c of candidates) {
+    if (!keywordCollision(c, taken)) return c;
+  }
+  // 여기까지 왔으면 후보가 없거나 전부 충돌 — 소재 낱말에 접미사를 붙여 새 단어를 만든다
+  const base = candidates[0] ?? '자료';
+  for (const suffix of ['정리', '노트', '가이드', '세트', '모음']) {
+    const made = `${base}${suffix}`;
+    if (!keywordCollision(made, taken)) return made;
+  }
+  return `${base}${taken.length + 1}`;
+}
+
 /** 캡션 분량 상한(공백·해시태그 제외). 프롬프트의 "260~340자"와 같은 값이어야 한다.
  *  300 → 340: 운영자가 발행한 실제 캡션이 272자·315자였다. 7비트 서사(한계 문단이 별도 문단)는
  *  300자로는 ⑥이 잘려나가고, 잘리면 글이 광고로 읽힌다. */
@@ -136,6 +208,14 @@ const CAPTION_MAX_CHARS = 340;
 /** 캡션 길이 — 공백을 뺀 글자 수로 센다(한글은 공백 비중이 커서 포함하면 기준이 흔들린다). */
 function captionLength(text: string): number {
   return text.replace(/\s/g, '').length;
+}
+
+/** 빈 줄로 나뉜 문단 수 — 캡션의 골격이 유지됐는지 판정하는 유일한 구조 지표. */
+function paragraphCount(text: string): number {
+  return text
+    .split(/\n\s*\n/)
+    .map((p) => p.trim())
+    .filter(Boolean).length;
 }
 
 /** 상한을 넘긴 캡션을 **한 번만** 다시 압축한다.
@@ -209,14 +289,6 @@ export type CardSetDraft = {
   /** 슬라이드에 자동 수급된 사진 출처 — Unsplash 가이드라인상 발행 시 표기 필요 */
   photoCredits: { url: string; credit: string; creditLink: string }[];
 };
-
-/** 빈 줄로 나뉜 문단 수 — 캡션의 골격이 유지됐는지 판정하는 유일한 구조 지표. */
-function paragraphCount(text: string): number {
-  return text
-    .split(/\n\s*\n/)
-    .map((p) => p.trim())
-    .filter(Boolean).length;
-}
 
 // 해시태그 = 브랜드 1 + 분류 1 + 소재별 2~3(AI 생성).
 // 왜 고정 태그를 5개에서 1개로 줄였나: 전에는 #케이스랩 #AI활용 #일잘러 #업무효율 #AI실험이
@@ -658,7 +730,8 @@ function planPrompt(
   source: CardSource,
   plan: SlidePlan,
   operatorEdge?: string,
-  ctaType: CardCtaType = 'channel_intro'
+  ctaType: CardCtaType = 'channel_intro',
+  takenKeywords: string[] = []
 ): string {
   // 재료는 항목당 500자로 절단 — 프롬프트가 커질수록 구독 CLI 타임아웃 위험이 커진다
   const clip = (t: string) => (t.length > 500 ? `${t.slice(0, 500)}…` : t);
@@ -692,9 +765,20 @@ function planPrompt(
         : `소재: 씨앗 아카이브 원석 (미발행 수집 글 — 재료가 거칠 수 있음. 재료에 실제로 있는 사실만 사용)
 제목: ${seedTitle(source.seed)}
 추천 각도: ${source.seed.suggested_angle ?? '(없음)'}`;
+  // 이미 쓴 키워드는 "쓰지 마라"만으로 부족하다 — 부분 문자열도 걸린다는 걸 같이 알려야
+  // 모델이 "프롬프트" 옆에 "프롬프트정리"를 내놓는 실수를 안 한다.
+  const takenLine =
+    ctaType === 'comment_dm' && takenKeywords.length
+      ? `\n\n[이미 쓴 댓글 키워드 — 전부 피할 것]
+${takenKeywords.join(' · ')}
+⚠️ 같은 단어뿐 아니라 **이 단어들을 품거나 이 단어들에 품히는 말도 금지**다.
+   자동화가 포함(contains) 매칭이라 "프롬프트"가 쓰였으면 "프롬프트정리"도 같이 걸려 DM이 잘못 나간다.
+   위 목록과 **글자가 겹치지 않는** 새 단어를 소재의 고유명사에서 뽑을 것.`
+      : '';
+
   return `[콘텐츠]
 ${header}
-CTA 유형: ${ctaType}${operatorEdge ? `\n\n[운영자 지정 엣지 — 최우선] ${operatorEdge}` : ''}
+CTA 유형: ${ctaType}${operatorEdge ? `\n\n[운영자 지정 엣지 — 최우선] ${operatorEdge}` : ''}${takenLine}
 
 [캡션 비트별 재료 — 이 소재 전용 (번호는 igCaption 7비트 구조와 같다)]
 ${captionBlockGuide(source)}
@@ -704,39 +788,114 @@ ${slideLines}`;
 }
 
 // ── 커버 후보 자동 수급 — 메타포 검색어 → Unsplash (IMAGE-SOURCES.md: portrait·다크 톤 우선) ──
-// 검수 피로를 줄이기 위해 "가장 연관도 높은 2장"만: 검색어별 최상위 결과에서 서로 다른 검색어 우선으로 2장.
+//
+// 검수 피로를 줄이려고 "가장 연관도 높은 2장"만 올린다. 그런데 검색어별 1등을 무조건 채택했더니
+// 실측(저장된 카드 6건 = 후보 12장)에서 **절반이 검색어와 한 단어도 안 맞았다**:
+//   "vault door macro dark" → 배의 조타륜 / "raccoon burglar mask macro" → 나방의 겹눈
+//   "city night lights window silhouette" → 펜던트 램프 / "unlocked padlock silhouette" → 문 손잡이
+// Unsplash는 정확히 맞는 사진이 부족하면 느슨하게 매칭한 결과를 채워서 돌려주기 때문이다.
+// 그래서 **검색어의 명사가 사진의 alt·tags·description에 하나라도 있는 것만** 후보로 올린다
+// (같은 실측에서 헛방 6→0장, 검색어 다양성은 그대로).
+//
+// 슬라이드 경로(searchUnsplash)와 맞춘 것: 무료 사진만(isFreePhoto), photo id 중복 제거.
+
+/** 톤·스타일 단어는 "무엇을 찍었나"가 아니라 "어떻게 찍었나"라서 매칭에서 뺀다 */
+const STYLE_TOKENS = new Set([
+  'dark', 'moody', 'macro', 'close', 'closeup', 'silhouette', 'minimal', 'night', 'shadow',
+  'light', 'lights', 'photo', 'photography', 'overhead', 'above', 'flat', 'lay', 'backlit', 'soft',
+  'the', 'and', 'with', 'from',
+]);
+
+/** 검색어에서 피사체를 가리키는 명사 토큰만 뽑는다 */
+function queryNouns(query: string): string[] {
+  return query
+    .toLowerCase()
+    .split(/[^a-z]+/)
+    .filter((w) => w.length > 2 && !STYLE_TOKENS.has(w));
+}
+
+/** 사진이 검색어의 명사를 하나라도 담고 있는가 (복수형은 단수로 낮춰서 비교) */
+function photoMatchesQuery(
+  photo: { alt_description?: string | null; description?: string | null; tags?: Array<{ title?: string }> },
+  nouns: string[]
+): boolean {
+  if (nouns.length === 0) return true;
+  const hay = [
+    photo.alt_description ?? '',
+    photo.description ?? '',
+    ...(photo.tags ?? []).map((t) => t.title ?? ''),
+  ]
+    .join(' ')
+    .toLowerCase();
+  return nouns.some((n) => hay.includes(n.endsWith('s') && n.length > 3 ? n.slice(0, -1) : n));
+}
+
+type RankedCover = CoverCandidate & { id: string };
+
+/** 검색어 하나로 커버 후보 풀을 받는다. passed=검색어와 맞은 것, all=폴백용 원본 순서 */
+async function searchCoverPool(
+  query: string,
+  key: string
+): Promise<{ passed: RankedCover[]; all: RankedCover[] }> {
+  try {
+    const res = await fetch(
+      `https://api.unsplash.com/search/photos?query=${encodeURIComponent(query)}&per_page=6&orientation=portrait&content_filter=high`,
+      { headers: { Authorization: `Client-ID ${key}` } }
+    );
+    if (!res.ok) return { passed: [], all: [] };
+    const data = (await res.json()) as {
+      results: Array<{
+        id: string;
+        alt_description?: string | null;
+        description?: string | null;
+        tags?: Array<{ title?: string }>;
+        urls: { raw: string; small: string };
+        asset_type?: string;
+        premium?: boolean;
+        plus?: boolean;
+        user: { name: string; links: { html: string } };
+      }>;
+    };
+    const nouns = queryNouns(query);
+    const free = data.results.filter(isFreePhoto);
+    const toCandidate = (r: (typeof free)[number]): RankedCover => ({
+      id: r.id,
+      thumb: r.urls.small,
+      // fm=jpg 필수 — Satori는 WebP를 디코드하지 못하고 조용히 검정으로 렌더한다
+      full: `${r.urls.raw}&w=1080&h=1350&fit=crop&fm=jpg&q=80`,
+      credit: r.user.name,
+      creditLink: r.user.links.html,
+    });
+    return {
+      passed: free.filter((r) => photoMatchesQuery(r, nouns)).map(toCandidate),
+      all: free.map(toCandidate),
+    };
+  } catch {
+    return { passed: [], all: [] };
+  }
+}
+
 async function fetchCoverCandidates(queries: string[]): Promise<CoverCandidate[]> {
   const key = process.env.UNSPLASH_ACCESS_KEY;
   if (!key || queries.length === 0) return [];
-  const results = await Promise.all(
-    queries.slice(0, 3).map(async (q) => {
-      try {
-        const res = await fetch(
-          `https://api.unsplash.com/search/photos?query=${encodeURIComponent(q)}&per_page=2&orientation=portrait&content_filter=high`,
-          { headers: { Authorization: `Client-ID ${key}` } }
-        );
-        if (!res.ok) return [];
-        const data = (await res.json()) as {
-          results: Array<{
-            urls: { raw: string; small: string };
-            user: { name: string; links: { html: string } };
-          }>;
-        };
-        return data.results.map((r) => ({
-          thumb: r.urls.small,
-          full: `${r.urls.raw}&w=1080&h=1350&fit=crop&fm=jpg&q=80`,
-          credit: r.user.name,
-          creditLink: r.user.links.html,
-        }));
-      } catch {
-        return [];
-      }
-    })
-  );
-  // 1순위 검색어의 1등 → 2순위 검색어의 1등 → (부족하면) 남은 결과에서 채움
-  const flat: CoverCandidate[] = [];
-  for (let i = 0; i < 2; i++) for (const r of results) if (r[i]) flat.push(r[i]);
-  return flat.slice(0, 2);
+  const pools = await Promise.all(queries.slice(0, 3).map((q) => searchCoverPool(q, key)));
+
+  const seen = new Set<string>();
+  const picked: RankedCover[] = [];
+  const take = (p?: RankedCover) => {
+    if (!p || seen.has(p.id) || picked.length >= 2) return;
+    seen.add(p.id);
+    picked.push(p);
+  };
+  // ① 검색어별 최상위 1장씩 — 서로 다른 검색어를 우선해 두 후보가 비슷한 그림이 되지 않게
+  // ② 통과한 검색어가 하나뿐이면 그 검색어의 다음 장으로 채움
+  for (let round = 0; round < 3 && picked.length < 2; round++)
+    for (const pool of pools) take(pool.passed[round]);
+  // ③ 매칭을 통과한 게 없으면 빈손보다는 낫다 — 원래 순서(검색어별 1등)로 채운다
+  for (let round = 0; round < 2 && picked.length < 2; round++)
+    for (const pool of pools) take(pool.all[round]);
+
+  return picked.map(({ id: _id, ...c }) => c);
 }
 
 // ── 슬라이드별 사진 수급 ────────────────────────────────────
@@ -1154,11 +1313,12 @@ ${opts.instruction ? `\n[운영자 수정 방향 — 최우선] ${opts.instructi
 
 export async function generateCardSet(
   source: CardSource,
-  opts?: { edge?: string; ctaType?: CardCtaType; ctaKeyword?: string }
+  opts?: { edge?: string; ctaType?: CardCtaType; ctaKeyword?: string; takenKeywords?: string[] }
 ): Promise<CardSetDraft> {
   const ctaType: CardCtaType = opts?.ctaType ?? 'channel_intro';
   const plan = sourcePlan(source);
-  const userPrompt = planPrompt(source, plan, opts?.edge, ctaType);
+  const taken = (opts?.takenKeywords ?? []).slice(0, KEYWORD_LOOKBACK);
+  const userPrompt = planPrompt(source, plan, opts?.edge, ctaType, taken);
 
   let lastRaw: z.infer<typeof GenOutputSchema> | null = null;
   let lastIssues: string[] = [];
@@ -1224,7 +1384,14 @@ ${lastIssues.map((i) => `- ${i}`).join('\n')}`;
   const tags = [...baseTags, ...normalizeTopicTags(lastRaw.topicTags, baseTags)];
   // 캡션·스레드 모두 URL 없이 나간다 — 출구는 "댓글 키워드 → DM"과 프로필 링크뿐
   const threads = stripUrls(stripMarkdown(lastRaw.threadsText)); // 스레드도 마크다운 미렌더
-  const ctaKeyword = opts?.ctaKeyword?.trim() || lastRaw.ctaKeyword?.trim() || '프롬프트';
+  // 운영자 지정 > AI 제안 > 소재명 파생. 예전 폴백('프롬프트' 고정)은 모든 카드가 같은 키워드로
+  // 나가 자동화가 어느 자료를 보낼지 알 수 없게 만들었다(실측 3회 재현) — 폴백도 소재에서 뽑는다.
+  const ctaKeyword = resolveCtaKeyword(
+    opts?.ctaKeyword?.trim() || lastRaw.ctaKeyword?.trim(),
+    source,
+    ctaType === 'comment_dm' ? taken : [],
+    lastRaw.ctaKeyword?.trim()
+  );
   const metaphorQueries = lastRaw.metaphorQueries ?? [];
 
   // 캡션이 상한을 넘으면 캡션만 한 번 더 압축한다(구조는 유지, 실패하면 원문 그대로)

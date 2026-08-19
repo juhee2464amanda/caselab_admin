@@ -94,11 +94,25 @@ export async function POST(req: NextRequest) {
     source = { kind: 'content', row: content as unknown as ContentRowLite };
   }
 
+  // 이미 쓴 댓글 키워드 — 자동화가 포함(contains) 매칭이라 겹치면 다른 게시물의 DM이 잘못 나간다.
+  // 이 소스로 만든 기존 카드는 제외(재생성이므로 자기 키워드와는 충돌하지 않는다).
+  const { data: recentCards } = await admin
+    .from('content_cards')
+    .select('cta_keyword, source_type, source_id')
+    .not('cta_keyword', 'is', null)
+    .order('created_at', { ascending: false })
+    .limit(40);
+  const takenKeywords = (recentCards ?? [])
+    .filter((c) => !(c.source_type === body.sourceType && c.source_id === body.sourceId))
+    .map((c) => c.cta_keyword as string)
+    .filter(Boolean);
+
   try {
     const draft = await generateCardSet(source, {
       edge: body.edge?.trim() || undefined,
       ctaType: body.ctaType,
       ctaKeyword: body.ctaKeyword?.trim() || undefined,
+      takenKeywords,
     });
 
     if (body.dryRun) return NextResponse.json({ dryRun: true, draft });
