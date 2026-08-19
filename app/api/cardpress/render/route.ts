@@ -3,7 +3,7 @@ import { ImageResponse } from 'next/og';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { RenderSlideSchema } from '@/types/cardpress';
 import type { ReactElement } from 'react';
-import { renderSlide, CARD_W, CARD_H } from '@/lib/cardpress/templates';
+import { renderSlide, renderThumb16x9, CARD_W, CARD_H, THUMB_W, THUMB_H } from '@/lib/cardpress/templates';
 import { loadCardFonts } from '@/lib/cardpress/fonts';
 
 export const runtime = 'nodejs';
@@ -31,18 +31,25 @@ export async function POST(req: NextRequest) {
     if (profile?.role !== 'admin') return NextResponse.json({ error: 'forbidden' }, { status: 403 });
   }
 
-  const parsed = RenderSlideSchema.safeParse(await req.json());
+  // size: '4x5'(기본, 카드뉴스) | '16x9'(콘텐츠 썸네일 — 본가 카드가 16:9로 크롭한다)
+  const body = (await req.json()) as Record<string, unknown>;
+  const wide = body.size === '16x9';
+  const parsed = RenderSlideSchema.safeParse(body);
   if (!parsed.success) {
     return NextResponse.json(
       { error: 'invalid slide payload', issues: parsed.error.issues },
       { status: 400 }
     );
   }
+  if (wide && parsed.data.template !== 'C1') {
+    return NextResponse.json({ error: '16:9는 C1 커버만 지원합니다' }, { status: 400 });
+  }
 
   try {
-    return new ImageResponse(renderSlide(parsed.data) as ReactElement, {
-      width: CARD_W,
-      height: CARD_H,
+    const node = wide ? renderThumb16x9(parsed.data) : renderSlide(parsed.data);
+    return new ImageResponse(node as ReactElement, {
+      width: wide ? THUMB_W : CARD_W,
+      height: wide ? THUMB_H : CARD_H,
       fonts: await loadCardFonts(),
       emoji: 'twemoji',
     });

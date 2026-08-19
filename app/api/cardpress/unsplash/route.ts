@@ -44,18 +44,36 @@ export async function GET(req: NextRequest) {
   const data = (await res.json()) as {
     results: Array<{
       id: string;
+      color?: string;
       urls: { raw: string; small: string };
       user: { name: string; links: { html: string } };
     }>;
   };
   return NextResponse.json({
-    results: data.results.map((r) => ({
-      id: r.id,
-      thumb: r.urls.small,
-      // 커버 규격(1080×1350, 4:5)으로 크롭된 URL — Satori가 그대로 fetch
-      full: `${r.urls.raw}&w=1080&h=1350&fit=crop&fm=jpg&q=80`,
-      credit: r.user.name,
-      creditLink: r.user.links.html,
-    })),
+    results: data.results
+      .map((r) => ({
+        id: r.id,
+        thumb: r.urls.small,
+        // 커버 규격(1080×1350, 4:5)으로 크롭된 URL — Satori가 그대로 fetch
+        full: `${r.urls.raw}&w=1080&h=1350&fit=crop&fm=jpg&q=80`,
+        credit: r.user.name,
+        creditLink: r.user.links.html,
+        bright: isBright(r.color),
+      }))
+      // 밝은 사진을 뒤로 민다 — 지우지는 않는다(대표색은 근사라 오탐이 난다. 판단은 사람이)
+      .sort((a, b) => Number(a.bright) - Number(b.bright)),
   });
+}
+
+/** 대표색으로 "흰 글자가 죽는 사진"을 가려낸다.
+ *  v3 커버는 하단 스크림이 깔리지만 스크림은 아래 66%만 덮는다 — 위쪽이 하얀 사진은
+ *  아이브로우·워드마크가 먼저 죽는다. Unsplash가 주는 color(대표색) 하나로 미리 거른다.
+ *  ⚠️ 픽셀을 재는 게 아니라 근사다. 그래서 제외가 아니라 정렬만 바꾼다(하드 필터는 오탐이 아프다). */
+function isBright(hex?: string): boolean {
+  if (!hex || !/^#[0-9a-fA-F]{6}$/.test(hex)) return false;
+  const n = parseInt(hex.slice(1), 16);
+  const [r, g, b] = [(n >> 16) & 255, (n >> 8) & 255, n & 255].map((v) => v / 255);
+  // WCAG 상대 휘도
+  const lin = (c: number) => (c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
+  return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b) > 0.45;
 }

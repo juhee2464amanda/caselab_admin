@@ -30,12 +30,52 @@ export const StyleOverrideFields = {
 //   center : 가운데 정렬 포스터형 (상단 태그 중앙 · 하단 워드마크) — 사진이 약하거나 대칭 소재
 //   band   : 상단 사진 + 하단 검은 밴드(레터박스) — 인물·스크린샷처럼 글자가 묻히는 사진에 안전
 //   giant  : 상단을 비우고 하단 절반에 초대형 2줄 — 짧고 센 헤드라인
-export const CoverLayoutSchema = z.enum(['bottom', 'center', 'band', 'giant']);
+//   v3     : 잠금 규격 (2026-08-18 도입) — 아래 CoverArt로만 다양성을 낸다
+export const CoverLayoutSchema = z.enum(['bottom', 'center', 'band', 'giant', 'v3']);
 export type CoverLayout = z.infer<typeof CoverLayoutSchema>;
+
+// v3 잠금 규격의 배경 아트 — 레이아웃(스크림·2줄 헤드라인·바닥 워드마크)은 고정하고 여기만 바꾼다.
+// 피드 상위 계정 분석 결과: 레이아웃을 흔들면 그리드가 흩어지고, 그림을 바꾸면 장르가 넓어진다.
+//   photo  : 사진 (기존 소재 그대로)
+//   term   : 터미널 로그 — 개발 도구·설정 소재
+//   studio : 오브젝트 스튜디오컷(밝음) — 스위치·제품 은유
+//   macro  : 매크로 클로즈업(어두움) — 키캡·버튼
+//   quote  : 인용·밈 — 사용자 대사
+//   iri    : 3D 이리데슨트 블롭 — 트렌드·추상 소재
+//   data   : 데이터 차트(밝음) — 숫자가 있는 케이스
+//   logos  : 로고 2~3개를 나란히 — "따라하면 되는 레시피"라는 신호 (레퍼런스 최상위 패턴)
+//   mask   : 아이콘 자리를 ?로 가림 — 정보를 덜 주는 쪽이 더 눌린다
+//   object : 3D 오브젝트 한 개 — coverImage에 PNG(투명배경)를 넣으면 글로우 위에 얹는다
+//   numbers: 정밀 숫자 2개 — 끝자리를 살린 숫자가 실제 데이터로 읽힌다($28,367 > 3만)
+export const CoverArtSchema = z.enum([
+  'photo',
+  'term',
+  'studio',
+  'macro',
+  'quote',
+  'iri',
+  'data',
+  'logos',
+  'mask',
+  'object',
+  'numbers',
+]);
+export type CoverArt = z.infer<typeof CoverArtSchema>;
 
 export const C1PropsSchema = z.object({
   ...StyleOverrideFields,
   coverLayout: CoverLayoutSchema.optional(), // 커버 유형 (기본 bottom)
+  coverArt: CoverArtSchema.optional(),       // v3 전용 배경 아트 (기본 photo)
+  // 아트 안에 들어가는 글 — term은 로그 줄('>' 프롬프트 / '#' 흐린 줄 / '!' 경고),
+  // quote는 인용문, data는 라벨, numbers는 '값|설명' 두 줄. '\n'으로 줄을 나눈다.
+  artText: z.string().optional(),
+  // logos·mask 아트에 꽂는 브랜드 아이콘. Simple Icons 슬러그('claude') 또는 이미지 URL.
+  // 슬러그는 cdn.simpleicons.org로 펼쳐진다(CC0 · 원격 SVG를 Satori가 그대로 렌더).
+  // ⚠️ openai·slack·canva는 상표 요청으로 Simple Icons에서 삭제됨 — 그건 URL로 직접 넣어야 한다.
+  artIcons: z.array(z.string().min(1)).max(9).optional(),
+  // 스크림·글자 톤. 기본은 아트에서 자동 결정(studio·data는 light, 나머지 dark).
+  // 하이라이트 색도 여기서 갈린다 — dark는 블루, light는 라임. 색을 사람이 고르지 않는 게 요점.
+  tone: z.enum(['dark', 'light']).optional(),
   kicker: z.string().optional(),     // 헤드라인 위 프레이밍 한 줄 ("~의 경제학") — 벤치마크 4층 구조
   title: z.string().min(1),          // 커버 제목 (≤17자 권장, '\n' 줄바꿈)
   hl: z.string().optional(),         // title 안의 형광펜 대상 부분 문자열
