@@ -25,3 +25,7 @@ __pycache__/
 
 # 엔딩 카드 재생성 산출물 (원본은 Supabase cardpress/endings)
 .cardpress-endings/
+
+# 콘텐츠 초안 원고 (정본은 DB — admin에 초안으로 적재해서 검수·발행한다)
+# components/content/는 코드라 지우면 안 되므로 루트만 지정(/content/).
+/content/
