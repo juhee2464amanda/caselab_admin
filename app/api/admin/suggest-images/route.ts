@@ -3,7 +3,8 @@ import { randomUUID } from 'crypto';
 import { readFile } from 'fs/promises';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { createSupabaseAdminClient } from '@/lib/supabase/admin';
-import { runClaudeSubscription, extractJson } from '@/lib/claude-cli';
+import { extractJson } from '@/lib/claude-cli';
+import { callModel } from '@/lib/ai-draft';
 import { captureSources, cleanupCapture, type Candidate } from '@/lib/site-capture';
 
 export const runtime = 'nodejs';
@@ -50,8 +51,8 @@ async function fetchOgImage(url: string): Promise<string | undefined> {
 /** 실사용 스크린샷이 실려 있을 만한 외부 페이지(리뷰·문서·튜토리얼)를 찾는다 */
 async function findExternalPages(name: string, url: string): Promise<string[]> {
   try {
-    const raw = await runClaudeSubscription({
-      system: `당신은 리서치 어시스턴트입니다. 주어진 도구의 "실제 사용 화면 스크린샷"이 실려 있는 웹페이지를 찾습니다.
+    const raw = await callModel(
+      `당신은 리서치 어시스턴트입니다. 주어진 도구의 "실제 사용 화면 스크린샷"이 실려 있는 웹페이지를 찾습니다.
 
 우선순위: 공식 문서/도움말 > 상세 리뷰 글·튜토리얼 > 소개 기사.
 제외: 스크린샷 없이 글만 있는 페이지, 로그인이 필요한 페이지, 영상 전용 페이지(YouTube 등), 애그리게이터 목록 페이지.
@@ -59,12 +60,10 @@ async function findExternalPages(name: string, url: string): Promise<string[]> {
 WebSearch로 찾고 필요하면 WebFetch로 스크린샷 유무를 확인하세요.
 아래 JSON만 출력하세요(설명 없이, 최대 3개):
 {"urls": ["https://…", "https://…"]}`,
-      prompt: `도구 이름: ${name}\n공식 사이트: ${url}\n\n이 도구의 실제 화면 스크린샷이 포함된 페이지를 찾아주세요.`,
-      allowedTools: ['WebSearch', 'WebFetch'],
-      model: 'opus',
-      effort: 'low',
-      timeoutMs: 120_000,
-    });
+      `도구 이름: ${name}\n공식 사이트: ${url}\n\n이 도구의 실제 화면 스크린샷이 포함된 페이지를 찾아주세요.`,
+      // URL 목록만 만드는 비산문 호출 — human-tone 제외(lib/human-tone.ts 예외 목록 참고)
+      { allowedTools: ['WebSearch', 'WebFetch'], model: 'opus', effort: 'low', timeoutMs: 120_000, humanTone: false },
+    );
     const parsed = JSON.parse(extractJson(raw)) as { urls?: string[] };
     const official = new URL(url).hostname.replace(/^www\./, '');
     return (parsed.urls ?? [])
@@ -204,9 +203,8 @@ export async function POST(req: NextRequest) {
     }
 
     // 4. Claude(구독 CLI)가 후보를 실제로 열어보고 기능과 매칭
-    const raw = await runClaudeSubscription({
-      system: matchSystem(kind),
-      prompt: buildMatchingPrompt(kind, name ?? '', features ?? [], capture),
+    // alt·caption은 독자에게 노출되는 산문 — callModel 경유로 human-tone 규칙을 태운다
+    const raw = await callModel(matchSystem(kind), buildMatchingPrompt(kind, name ?? '', features ?? [], capture), {
       allowedTools: ['Read'],
       model: 'opus',
       effort: 'medium',
