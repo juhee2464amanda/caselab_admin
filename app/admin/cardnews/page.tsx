@@ -33,7 +33,7 @@ export default async function AdminCardnews() {
   // 발행됨·숨김 씨앗도 검색으로 도달해야 하기 때문. 기본 노출(top3)과 카드 중복 제외는 클라이언트에서 판정.
   const { data: seeds } = await supabase
     .from('content_seeds')
-    .select('id, title, lane, status, suggested_angle, essence, created_at')
+    .select('id, title, lane, status, suggested_angle, essence, created_at, source_url')
     .order('created_at', { ascending: false })
     .limit(300);
 

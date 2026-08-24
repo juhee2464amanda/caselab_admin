@@ -962,6 +962,70 @@ export async function scoreSeed(input: { title: string; rawText?: string; source
   }
 }
 
+// ─────────────── 씨앗 원문 재가공(source_url 기반 enrichment) ───────────────
+
+export interface SeedEnrichResult {
+  /** 원문에서 재가공하면 씨앗이 유의미하게 풍부해지는가 */
+  recommend: boolean;
+  /** 판단 근거 한 줄(운영자에게 그대로 노출) */
+  reason: string;
+  /** recommend=true이고 apply 모드일 때만: 재가공된 raw_text(빈 줄로 문단 구분) */
+  enrichedRawText?: string;
+}
+
+const ENRICH_SYSTEM = `당신은 케이스랩(Caselab)의 콘텐츠 큐레이터입니다. 독자는 AI를 실무에 쓰려는 비개발자 직무인입니다.
+
+수집 봇이 만든 "씨앗 요약(raw_text)"과 그 출처 원문 전문을 비교합니다.
+씨앗의 품질 기준: 읽고 바로 따라 할 수 있어야 한다(구체 절차·복붙 가능한 지시문·실측 수치). 방향성·원칙 요약만 있으면 미달.
+
+판단(recommend):
+- 원문에 씨앗 요약에 빠진 구체 방법·예시·수치·복붙 가능한 내용이 있으면 true.
+- 씨앗 요약이 이미 원문의 실행 가능한 알맹이를 다 담았거나, 원문 자체가 개념·홍보 글이라 더 뽑을 게 없으면 false.
+
+재가공(enrichedRawText — recommend가 true일 때만):
+- 원문에서 실행 가능한 기법·절차·예시를 뽑아 한국어로 다시 쓴다. 문단은 빈 줄로 구분(카드 슬라이드 매핑 단위).
+- 원문에 없는 사실·수치를 지어내지 말 것. 원문에 복붙 가능한 프롬프트·지시문이 있으면 그대로 살린다.
+- 800~1500자 내외.
+
+응답은 JSON 객체 하나만(설명 없이):
+{ "recommend": true|false, "reason": "판단 근거 한 줄", "enrichedRawText": "재가공 전문(권장 아닐 땐 빈 문자열)" }`;
+
+/**
+ * 씨앗 raw_text와 source_url 원문 전문을 비교해 "원문 재가공"이 가치 있는지 판단하고,
+ * mode='apply'면 재가공된 raw_text까지 생성한다. 로컬 작업장 전제(Claude CLI).
+ */
+export async function enrichSeedFromSource(input: {
+  title: string;
+  rawText: string;
+  sourceText: string;
+  mode: 'check' | 'apply';
+}): Promise<SeedEnrichResult> {
+  const checkOnly = input.mode === 'check';
+  const userPrompt = `제목: ${input.title}
+
+[씨앗 요약(raw_text)]
+${input.rawText.slice(0, 6000)}
+
+[출처 원문 전문]
+${input.sourceText.slice(0, 16000)}
+
+${checkOnly ? '지금은 판단만 필요합니다. enrichedRawText는 빈 문자열로 두고 recommend·reason만 채우세요.' : 'recommend가 true면 enrichedRawText까지 완성하세요.'}
+JSON만 반환하세요.`;
+  const raw = await callModel(ENRICH_SYSTEM, userPrompt, {
+    allowedTools: [],
+    model: 'sonnet',
+    timeoutMs: checkOnly ? 60_000 : 180_000,
+  });
+  const parsed = (parseModelJson(raw) ?? {}) as Record<string, unknown>;
+  const recommend = parsed.recommend === true;
+  const enriched = typeof parsed.enrichedRawText === 'string' ? parsed.enrichedRawText.trim() : '';
+  return {
+    recommend,
+    reason: typeof parsed.reason === 'string' ? parsed.reason : '',
+    enrichedRawText: recommend && enriched ? enriched : undefined,
+  };
+}
+
 // ─────────────── 인라인 부분 수정 제안(편집 표면) ───────────────
 
 export interface RefineInput {

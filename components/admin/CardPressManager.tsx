@@ -15,7 +15,7 @@ import { CardTemplatePicker, type PickResult } from '@/components/admin/CardTemp
 import {
   ART_TEXT_ARTS,
   ART_TEXT_HINT,
-  COVER_ART_OPTIONS,
+  coverArtChoices,
   convertProps,
   IMAGE_KEY,
   PHOTO_ALT,
@@ -107,6 +107,8 @@ export type SeedSourceRow = {
   suggested_angle: string | null;
   essence: Record<string, string> | null;
   created_at: string;
+  /** 출처 원문 URL — 있으면 기획 패널에서 '원문 재가공 점검' 제공 */
+  source_url: string | null;
 };
 
 /** 씨앗 표시 제목 — 채점 헤드라인 우선, 없으면 "[lane]" 태그 벗긴 원제목 */
@@ -489,12 +491,39 @@ export function CardPressManager({
   const [composeCta, setComposeCta] = useState<CardCtaType>('channel_intro');
   const [composeKeyword, setComposeKeyword] = useState('프롬프트');
 
+  // 씨앗 원문 재가공(source_url 대비 점검 → 적용) — 얇은 씨앗을 카드 생성 전에 원문으로 살찌우는 씬
+  const [enrich, setEnrich] = useState<{
+    phase: 'idle' | 'checking' | 'applying' | 'done';
+    recommend?: boolean;
+    reason?: string;
+    applied?: boolean;
+    error?: string;
+  }>({ phase: 'idle' });
+
   function startCompose(kind: 'content' | 'tool' | 'seed', sourceId: string) {
     setComposeKind(kind);
     setComposeId(sourceId);
     setComposeEdge('');
     setComposeCta('channel_intro');
     setComposeKeyword('프롬프트');
+    setEnrich({ phase: 'idle' });
+  }
+
+  async function runEnrich(seedId: string, mode: 'check' | 'apply') {
+    setEnrich((p) => ({ ...p, phase: mode === 'check' ? 'checking' : 'applying', error: undefined }));
+    try {
+      const res = await fetch('/api/seeds/enrich', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ seedId, mode }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? `HTTP ${res.status}`);
+      setEnrich({ phase: 'done', recommend: data.recommend, reason: data.reason, applied: data.applied });
+      if (data.applied) router.refresh(); // 갱신된 raw_text가 이후 카드 생성에 쓰인다
+    } catch (e) {
+      setEnrich((p) => ({ ...p, phase: 'done', error: (e as Error).message }));
+    }
   }
 
   // ?seed=<id> 딥링크 — 씨앗 아카이브의 '카드뉴스로' 버튼이 보내는 주소.
@@ -556,6 +585,40 @@ export function CardPressManager({
           </div>
         ) : (
           <>
+            {kind === 'seed' && seedMap.get(id)?.source_url && (
+              <div className="rounded-md bg-ink/[0.03] px-2.5 py-2 text-xs space-y-1">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="font-semibold text-ink/70">원문 재가공</span>
+                  <span className="text-ink/40">씨앗 요약이 얇으면 출처 원문에서 실행 가능한 내용을 다시 뽑아옵니다</span>
+                  {enrich.phase === 'idle' && (
+                    <Button size="sm" variant="outline" onClick={() => runEnrich(id, 'check')}>
+                      원문 대비 점검
+                    </Button>
+                  )}
+                  {(enrich.phase === 'checking' || enrich.phase === 'applying') && (
+                    <span className="text-ink/50">
+                      {enrich.phase === 'checking' ? '원문과 비교 중… (~1분)' : '원문에서 재가공 중… (~3분)'}
+                    </span>
+                  )}
+                </div>
+                {enrich.phase === 'done' && enrich.error && <p className="text-red-600">{enrich.error}</p>}
+                {enrich.phase === 'done' && !enrich.error && enrich.applied && (
+                  <p className="text-green-700">재가공 완료 — 갱신된 원문으로 카드를 생성합니다. {enrich.reason}</p>
+                )}
+                {enrich.phase === 'done' && !enrich.error && !enrich.applied && enrich.recommend && (
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="badge bg-amber-100 text-amber-700">재가공 권장</span>
+                    <span className="text-ink/60">{enrich.reason}</span>
+                    <Button size="sm" variant="accent" onClick={() => runEnrich(id, 'apply')}>
+                      원문에서 재가공 (~3분)
+                    </Button>
+                  </div>
+                )}
+                {enrich.phase === 'done' && !enrich.error && !enrich.applied && enrich.recommend === false && (
+                  <p className="text-ink/50">현재 씨앗으로 충분 — {enrich.reason}</p>
+                )}
+              </div>
+            )}
             <div>
               <Label className="text-xs">기획방향 / 엣지 <span className="text-ink/40">(선택 — 비우면 AI가 이 소재의 차별점을 스스로 정의)</span></Label>
               <Textarea
@@ -1404,7 +1467,7 @@ function CardEditor({ card, sourceTitle }: { card: CardRow; sourceTitle?: string
                 onChange={(e) => patchStyle('coverArt', e.target.value)}
                 className="border border-border rounded px-1 py-0.5 bg-transparent"
               >
-                {COVER_ART_OPTIONS.map((o) => (
+                {coverArtChoices((s.props.coverArt as string) ?? 'photo').map((o) => (
                   <option key={o.value} value={o.value}>
                     {o.label}
                   </option>
@@ -1518,25 +1581,52 @@ function CardEditor({ card, sourceTitle }: { card: CardRow; sourceTitle?: string
     router.refresh();
   }
 
+  async function runGenerate() {
+    const res = await fetch('/api/cardpress/generate', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        sourceType: card.source_type,
+        sourceId: card.source_id,
+        edge: edge.trim() || undefined,
+        ctaType,
+        ctaKeyword: ctaKeyword.trim() || undefined,
+      }),
+    });
+    if (!res.ok) throw new Error((await res.json()).error ?? `HTTP ${res.status}`);
+    router.refresh();
+  }
+
   async function regenerate() {
     if (!confirm(`AI로 전체를 다시 생성할까요? 지금까지의 수정이 덮어써져요. (수 분 소요)${edge.trim() ? `\n\n엣지 방향: ${edge.trim()}` : ''}`)) return;
     setSaving(true);
     try {
-      const res = await fetch('/api/cardpress/generate', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          sourceType: card.source_type,
-          sourceId: card.source_id,
-          edge: edge.trim() || undefined,
-          ctaType,
-          ctaKeyword: ctaKeyword.trim() || undefined,
-        }),
-      });
-      if (!res.ok) throw new Error((await res.json()).error ?? `HTTP ${res.status}`);
-      router.refresh();
+      await runGenerate();
     } catch (e) {
       alert(`재생성 실패: ${(e as Error).message}`);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  // 씨앗 소스 전용 — 생성해 보니 씨앗이 얇았을 때: 출처 원문에서 raw_text를 재가공한 뒤 그걸로 전체 재생성
+  async function enrichAndRegenerate() {
+    if (!confirm('씨앗을 출처 원문에서 재가공한 뒤 카드 전체를 다시 생성할까요? 지금까지의 수정이 덮어써져요. (재가공 ~3분 + 생성 3~10분)')) return;
+    setSaving(true);
+    try {
+      const res = await fetch('/api/seeds/enrich', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ seedId: card.source_id, mode: 'apply' }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? `HTTP ${res.status}`);
+      if (!data.applied) {
+        if (!confirm(`AI 판단: 원문 재가공이 도움이 안 됩니다 — ${data.reason}\n\n그래도 지금 씨앗으로 재생성할까요?`)) return;
+      }
+      await runGenerate();
+    } catch (e) {
+      alert(`원문 재가공 재생성 실패: ${(e as Error).message}`);
     } finally {
       setSaving(false);
     }
@@ -1559,6 +1649,9 @@ function CardEditor({ card, sourceTitle }: { card: CardRow; sourceTitle?: string
         </div>
         <div className="flex items-center gap-2">
           <Button size="sm" variant="outline" onClick={regenerate} disabled={saving}>AI 전체 재생성</Button>
+          {card.source_type === 'seed' && (
+            <Button size="sm" variant="outline" onClick={enrichAndRegenerate} disabled={saving}>원문 재가공 후 재생성</Button>
+          )}
           <Button size="sm" variant="outline" onClick={remove} disabled={saving}>삭제</Button>
           <Button size="sm" variant="outline" onClick={() => save()} disabled={saving || !dirty}>{saving ? '저장 중…' : '저장'}</Button>
           <Button size="sm" variant="accent" onClick={() => save('reviewed')} disabled={saving}>검수 완료</Button>
