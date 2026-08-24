@@ -1170,6 +1170,15 @@ function CardEditor({ card, sourceTitle }: { card: CardRow; sourceTitle?: string
     setSelIdx(j);
   }
 
+  /** 슬라이드 삭제 — 체크 해제(제외)와 달리 목록에서 아예 없앤다. 저장 전까진 DB에 안 닿는다. */
+  function removeSlide(i: number) {
+    if (!confirm(`${i + 1}번 슬라이드(${TEMPLATE_LABEL[slides[i].template]})를 삭제할까요?`)) return;
+    patch((prev) => prev.filter((_, k) => k !== i));
+    setSelIdx((prev) => (prev > i ? prev - 1 : Math.min(prev, slides.length - 2 < 0 ? 0 : slides.length - 2)));
+    setEditIdx((prev) => (prev === null ? null : prev === i ? null : prev > i ? prev - 1 : prev));
+    setPickerIdx((prev) => (prev === null ? null : prev === i ? null : prev > i ? prev - 1 : prev));
+  }
+
   function applyEdit(i: number, form: Record<string, string>) {
     patch((prev) =>
       prev.map((s, k) => (k === i ? { ...s, props: formToProps(s.template, s.props, form) } : s))
@@ -1636,6 +1645,13 @@ function CardEditor({ card, sourceTitle }: { card: CardRow; sourceTitle?: string
                     </button>
                     <button onClick={() => setEditIdx(editIdx === i ? null : i)} className="px-1.5 py-0.5 rounded border border-border hover:bg-ink/5 text-accent">
                       {editIdx === i ? '닫기' : '편집'}
+                    </button>
+                    <button
+                      onClick={() => removeSlide(i)}
+                      className="px-1.5 py-0.5 rounded border border-border hover:bg-red-50 text-red-500"
+                      title="이 슬라이드를 목록에서 삭제 (저장해야 확정)"
+                    >
+                      삭제
                     </button>
                   </div>
                 </div>
