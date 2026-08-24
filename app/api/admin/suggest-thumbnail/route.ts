@@ -138,7 +138,7 @@ export async function POST(req: NextRequest) {
 [설명] ${(input.description ?? '').slice(0, 600) || '(없음)'}
 [본문 발췌] ${(input.excerpt ?? '').slice(0, 900) || '(없음)'}`,
         // 웹 리서치 불필요 — 주어진 텍스트를 검색어로 바꾸는 작업이라 가볍게.
-        { allowedTools: [], model: 'sonnet', effort: 'low', timeoutMs: 45_000 },
+        { allowedTools: [], model: 'sonnet', effort: 'low', timeoutMs: 45_000, humanTone: false },
       );
       suggestion = parseSuggestion(raw, name);
     } catch (e) {

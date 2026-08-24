@@ -2,6 +2,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { z } from 'zod';
 import { BlockSchema, ContentBodySchema, type ContentBody, JOB_TAGS, JOB_LABELS, type JobTag } from '@/types/content';
 import { runClaudeSubscription, extractJson } from '@/lib/claude-cli';
+import { HUMAN_TONE_RULE } from '@/lib/human-tone';
 import { BUCKETS, bucketProfile, isSeedBucket, type SeedBucket } from '@/lib/seed-curation';
 import { lintToolBody, ToolBodySchema } from '@/lib/tool-body';
 import {
@@ -250,6 +251,8 @@ interface CallOpts {
   /** 사고량. 미지정 시 래퍼가 'medium' 고정(개인 effortLevel 상속 차단 — lib/claude-cli.ts 참고). */
   effort?: 'low' | 'medium' | 'high' | 'xhigh';
   timeoutMs?: number;
+  /** human-tone 규칙 자동 주입. 기본 true. 채점·검색어·포맷복구처럼 산문이 아닌 호출만 false. */
+  humanTone?: boolean;
 }
 
 /**
@@ -258,7 +261,7 @@ interface CallOpts {
  * 기존엔 기본값(opus + WebSearch/WebFetch + 240s)으로 돌아 리서치를 통째로 재실행했고,
  * 최악 3회(최초+JSON복구+스키마복구)면 라우트 maxDuration을 넘겨 복구 도중 죽었다.
  */
-const REPAIR_OPTS: CallOpts = { allowedTools: [], model: 'sonnet', effort: 'low', timeoutMs: 60_000 };
+const REPAIR_OPTS: CallOpts = { allowedTools: [], model: 'sonnet', effort: 'low', timeoutMs: 60_000, humanTone: false };
 
 /** 복구 프롬프트 — 직전 원문을 그대로 주고 "다시 만들지 말고 고치라"고 지시(리서치 재실행 방지). */
 function repairPrompt(prevRaw: string, issue: string): string {
@@ -274,8 +277,10 @@ ${prevRaw.slice(0, 60000)}`;
 /** 시스템+유저 프롬프트로 모델을 호출해 응답 텍스트를 반환. 프로바이더에 따라 구독 CLI / API키 분기.
  *  (cardpress 등 다른 생성 모듈도 재사용) */
 export async function callModel(system: string, userPrompt: string, opts: CallOpts = {}): Promise<string> {
+  const { humanTone, ...rest } = opts;
+  if (humanTone !== false) system = `${system}\n\n${HUMAN_TONE_RULE}`;
   if (provider() === 'subscription') {
-    return runClaudeSubscription({ system, prompt: userPrompt, ...opts });
+    return runClaudeSubscription({ system, prompt: userPrompt, ...rest });
   }
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) throw new Error('ANTHROPIC_API_KEY 미설정 (AI_PROVIDER=apikey)');
@@ -934,7 +939,7 @@ export async function scoreSeed(input: { title: string; rawText?: string; source
     : '';
   const userPrompt = `제목: ${input.title}\n원문: ${(input.rawText ?? '').slice(0, 4000)}${sourceHint}\n\n위 씨앗을 평가해 JSON만 반환하세요.`;
   // 채점은 주어진 원문을 분류·점수 매기는 작업 → 웹서치 불필요(웹툴 제거로 속도↑) + 가벼운 모델.
-  const raw = await callModel(SCORE_SYSTEM, userPrompt, { allowedTools: [], model: 'sonnet', timeoutMs: 60_000 });
+  const raw = await callModel(SCORE_SYSTEM, userPrompt, { allowedTools: [], model: 'sonnet', timeoutMs: 60_000, humanTone: false });
 
   try {
     const parsed = (parseModelJson(raw) ?? {}) as Record<string, unknown>;
