@@ -1,0 +1,434 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>케이스맵 · caselab 콘텐츠 별자리 (mockup · 실데이터)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Marcellus&family=Noto+Serif+KR:wght@400;600&family=Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0E1118;
+    --ivory: #E9E4D6;
+    --ivory-2: #B9B4A6;
+    --ink-2: #8A8DA0;
+    --gold: #C9A96A;
+    --gold-soft: rgba(201,169,106,.35);
+    --line: rgba(233,228,214,.12);
+    --glass: rgba(14,17,24,.9);
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  html, body { height:100%; overflow:hidden; background:var(--bg); }
+  body { font-family:'Noto Sans KR', sans-serif; color:var(--ivory); }
+
+  #stage { position:absolute; inset:0; cursor:grab; }
+  #stage.dragging { cursor:grabbing; }
+  #stars { position:absolute; inset:0; pointer-events:none; }
+  .star { position:absolute; border-radius:50%; background:var(--ivory); }
+
+  #world { position:absolute; left:50%; top:50%; transform-origin:0 0; transition:transform .5s cubic-bezier(.22,1,.36,1); }
+  #world.no-anim { transition:none; }
+
+  #topbar {
+    position:fixed; top:0; left:0; right:0; z-index:40;
+    display:flex; align-items:center; gap:16px; padding:14px 20px; pointer-events:none;
+  }
+  #topbar > * { pointer-events:auto; }
+  #brand { font-family:Marcellus, serif; letter-spacing:.35em; font-size:14px; color:var(--ivory); text-transform:uppercase; }
+  #brand em { color:var(--gold); font-style:normal; }
+  #search {
+    flex:0 0 220px; background:rgba(233,228,214,.06); border:1px solid var(--line);
+    border-radius:20px; padding:8px 14px; color:var(--ivory); font-size:12px; outline:none;
+  }
+  #search::placeholder { color:var(--ink-2); }
+  #tagline { margin-left:auto; font-size:11px; letter-spacing:.18em; color:var(--ink-2); text-transform:uppercase; }
+  #tagline b { color:var(--gold); font-weight:500; }
+
+  .dept-label { position:absolute; text-align:center; transform:translate(-50%,-50%); pointer-events:none; }
+  .dept-label h2 { font-family:Marcellus, 'Noto Serif KR', serif; font-weight:400; font-size:30px; letter-spacing:.3em; color:var(--ivory); white-space:nowrap; }
+  .dept-label p { font-size:11px; letter-spacing:.22em; color:var(--ink-2); margin-top:6px; white-space:nowrap; }
+
+  .hub {
+    position:absolute; transform:translate(-50%,-50%); width:56px; height:56px; border-radius:50%;
+    border:1px solid var(--c, var(--gold)); background:rgba(14,17,24,.7);
+    display:flex; align-items:center; justify-content:center; z-index:5;
+    box-shadow:0 0 0 6px rgba(233,228,214,.03);
+  }
+  .hub svg { width:22px; height:22px; stroke:var(--c, var(--gold)); fill:none; stroke-width:1.6; }
+
+  .leaf {
+    position:absolute; transform:translate(-50%,-50%); width:13px; height:13px; border-radius:50%;
+    background:var(--ivory); border:2px solid var(--bg); cursor:pointer; z-index:4;
+    transition:transform .18s, box-shadow .18s, opacity .3s;
+  }
+  .leaf:hover, .leaf.active { transform:translate(-50%,-50%) scale(1.6); box-shadow:0 0 14px var(--gold-soft); background:var(--gold); }
+  .leaf.related { background:var(--gold); box-shadow:0 0 10px var(--gold-soft); animation:pulse 1.6s ease-in-out infinite; }
+  @keyframes pulse { 50% { box-shadow:0 0 20px var(--gold); } }
+  .leaf .lbl { position:absolute; left:18px; top:50%; transform:translateY(-50%); font-size:11px; color:var(--ivory-2); white-space:nowrap; pointer-events:none; }
+  .leaf.ll .lbl { left:auto; right:18px; text-align:right; }
+  .leaf.t-prompt { border-radius:3px; }
+  .leaf.t-tool { background:#8FA98F; }
+  .leaf.t-case, .leaf.t-trend { background:var(--gold); }
+  .leaf.dim { opacity:.1; pointer-events:none; }
+
+  #core { position:absolute; transform:translate(-50%,-50%); text-align:center; pointer-events:none; }
+  #core .ring { width:120px; height:120px; border-radius:50%; border:1px solid var(--gold-soft); margin:0 auto;
+    display:flex; align-items:center; justify-content:center; box-shadow:0 0 60px rgba(201,169,106,.12) inset; }
+  #core .ring span { font-family:Marcellus, serif; font-size:13px; letter-spacing:.3em; color:var(--gold); }
+  #core p { margin-top:10px; font-size:10px; letter-spacing:.28em; color:var(--ink-2); }
+
+  #panel {
+    position:fixed; left:20px; top:70px; z-index:50; width:340px; max-height:calc(100vh - 100px);
+    background:var(--glass); border:1px solid var(--line); border-radius:14px;
+    backdrop-filter:blur(14px); padding:22px; overflow-y:auto;
+    transform:translateX(-120%); transition:transform .35s cubic-bezier(.22,1,.36,1);
+  }
+  #panel.open { transform:translateX(0); }
+  #panel .type-badge { font-size:10px; letter-spacing:.28em; color:var(--gold); text-transform:uppercase; }
+  #panel h3 { font-family:'Noto Serif KR', serif; font-size:22px; font-weight:600; margin:8px 0 4px; line-height:1.35; }
+  #panel .crumb { font-size:11px; color:var(--ink-2); margin-bottom:14px; }
+  #panel .pain { font-size:13px; line-height:1.65; color:var(--ivory-2); margin-bottom:14px; border-left:2px solid var(--gold); padding-left:12px; }
+  #panel .excerpt {
+    background:rgba(233,228,214,.05); border:1px solid var(--line); border-radius:10px;
+    padding:14px; font-size:12px; line-height:1.7; color:var(--ivory-2); margin-bottom:16px;
+  }
+  #panel .excerpt .cap { display:block; font-size:10px; letter-spacing:.2em; color:var(--ink-2); margin-bottom:8px; text-transform:uppercase; }
+  #panel .rels { margin-bottom:16px; }
+  #panel .rels .cap { display:block; font-size:10px; letter-spacing:.2em; color:var(--ink-2); margin-bottom:8px; text-transform:uppercase; }
+  #panel .rel-chip {
+    display:inline-block; margin:0 6px 6px 0; padding:6px 11px; border-radius:16px;
+    border:1px solid var(--gold-soft); color:var(--gold); font-size:11px; cursor:pointer;
+    background:rgba(201,169,106,.06); transition:background .2s;
+  }
+  #panel .rel-chip:hover { background:rgba(201,169,106,.18); }
+  #panel .cta {
+    display:flex; align-items:center; justify-content:center; gap:8px;
+    background:var(--gold); color:#181a24; border-radius:10px; padding:12px;
+    font-size:13px; font-weight:700; text-decoration:none;
+  }
+  #panel .cta:hover { filter:brightness(1.08); }
+  #panel .close { position:absolute; top:14px; right:14px; width:26px; height:26px; border-radius:50%;
+    border:1px solid var(--line); background:none; color:var(--ivory-2); cursor:pointer; font-size:13px; }
+
+  #hint { position:fixed; bottom:18px; left:0; right:0; text-align:center; font-size:10px;
+    letter-spacing:.3em; color:var(--ink-2); text-transform:uppercase; pointer-events:none; z-index:30; }
+
+  svg.wires { position:absolute; overflow:visible; pointer-events:none; left:0; top:0; width:1px; height:1px; }
+  svg.wires line.tree { stroke:rgba(233,228,214,.16); stroke-width:1; }
+  svg.wires line.spine { stroke:rgba(201,169,106,.35); stroke-width:1; }
+  svg.wires path.rel { stroke:rgba(201,169,106,.10); stroke-width:1; fill:none; stroke-dasharray:3 5; transition:stroke .3s; }
+  svg.wires path.rel.on { stroke:rgba(201,169,106,.75); stroke-width:1.4; filter:drop-shadow(0 0 4px rgba(201,169,106,.5)); }
+</style>
+</head>
+<body>
+
+<div id="topbar">
+  <div id="brand">CASE<em>LAB</em> · MAP</div>
+  <input id="search" placeholder="콘텐츠 검색" />
+  <div id="tagline">여기서 배워가는 것들 · <b>클릭해서 가져가세요</b></div>
+</div>
+
+<div id="stage">
+  <div id="stars"></div>
+  <div id="world"></div>
+</div>
+
+<div id="panel">
+  <button class="close" onclick="closePanel()">✕</button>
+  <div class="type-badge" id="p-type"></div>
+  <h3 id="p-title"></h3>
+  <div class="crumb" id="p-crumb"></div>
+  <div class="pain" id="p-pain"></div>
+  <div class="excerpt"><span class="cap">미리보기</span><span id="p-excerpt"></span></div>
+  <div class="rels" id="p-rels" style="display:none"><span class="cap">이 별과 이어지는 콘텐츠</span><div id="p-rel-chips"></div></div>
+  <a class="cta" id="p-cta" href="#" target="_blank">본문 보기 →</a>
+</div>
+
+<div id="hint">드래그로 이동 · 휠로 확대 · 별을 클릭하면 콘텐츠와 연계가 보입니다</div>
+
+<script>
+/* ═══ 실데이터 목업 — 2026-08-24 Supabase published 콘텐츠에서 추출 ═══
+   실제 구현에서는 빌드 스크립트가 이 블록(map-data.json)을 생성한다.
+   rel = 노드 간 연계(에디터 큐레이션 or job_tags 매칭으로 자동 생성) */
+const SITE = 'https://caselab-five.vercel.app';
+const TYPE_LABEL = { prompt:'PROMPT · 프롬프트', tool:'TOOL · 도구', guide:'GUIDE · 가이드', case:'CASE · 케이스', trend:'TREND · 트렌드' };
+const TYPE_PATH  = { prompt:'prompts', tool:'tools', guide:'guides', case:'cases', trend:'trends' };
+
+const DATA = [
+  { key:'prompt', label:'프롬프트', sub:'PROMPTS · 복붙해서 바로 쓰는', color:'#C9A96A', angle:-90, nodes:[
+    { slug:'claude-code-자동-승인-모드-만들기-clauded-35aea5', title:'Claude Code 자동 승인 모드 (clauded)', type:'prompt',
+      pain:'긴 작업마다 승인 버튼을 계속 눌러야 하는 번거로움',
+      excerpt:'매번 승인을 누르지 않고 Claude Code를 자율 모드로 실행하는 별칭(clauded)을 만드는 설정. 리팩터링·일괄 수정처럼 긴 작업에 유용.',
+      rel:['claude-code-guide','agents-never-sleep-a9fb661f','fable-5-5-1b7d8078'] },
+    { slug:'tau-bench-d8053e9f', title:'여러 단계 작업, 계획대로 일 시키기', type:'prompt',
+      pain:'AI가 중간에 딴 길로 새서 멀티스텝 작업이 산으로 감',
+      excerpt:'자료 찾고 → 확인하고 → 정리하는 멀티스텝 작업에서 AI가 계획을 지키게 만드는 프롬프트 패턴. 토큰 절감 효과까지.',
+      rel:['building-effective-agents','manus-801975fc'] },
+    { slug:'prompts-chat', title:'prompts.chat 프롬프트 라이브러리', type:'guide',
+      pain:'매번 프롬프트를 처음부터 짜는 비효율',
+      excerpt:'구 awesome-chatgpt-prompts. ChatGPT·Claude·Gemini 어디서든 통하는 검증된 오픈소스 프롬프트 수백 개.',
+      rel:['dair-ai-prompt-engineering-guide','openai-prompt-best-practices'] },
+  ]},
+  { key:'tool', label:'도구', sub:'TOOLS · 오늘 설치하는', color:'#8FA98F', angle:-30, nodes:[
+    { slug:'firefliesai-286326a4', title:'Fireflies.ai', type:'tool',
+      pain:'회의 끝나면 내용 절반이 증발',
+      excerpt:'회의·통화를 자동 기록·요약하고 액션아이템 정리·검색·공유·대화 분석까지 이어주는 회의 실행 워크플로우 도구.',
+      rel:['seam-1000-voc-4d70f072'] },
+    { slug:'manus-801975fc', title:'Manus', type:'tool',
+      pain:'리서치→정리→초안까지 손이 여러 번 가는 일',
+      excerpt:'목표를 한 줄로 던지면 리서치·정리·초안 생성까지 여러 단계를 이어서 수행하는 실행형 AI 워크스페이스.',
+      rel:['tau-bench-d8053e9f','building-effective-agents'] },
+    { slug:'agents-never-sleep-a9fb661f', title:'Agents Never Sleep', type:'tool',
+      pain:'맥북을 닫으면 밤새 돌려둔 에이전트가 멈춤',
+      excerpt:'맥북을 닫아도 로컬 AI 에이전트와 장시간 작업이 끊기지 않게 유지해주는 macOS 메뉴바 유틸.',
+      rel:['claude-code-자동-승인-모드-만들기-clauded-35aea5','claude-code-guide'] },
+    { slug:'seam-1000-voc-4d70f072', title:'Seam', type:'tool',
+      pain:'앱 리뷰 수백 개를 눈으로 다 읽을 수 없음',
+      excerpt:'앱 리뷰를 최대 1,000건까지 한 번에 읽고, 반복되는 불만·칭찬을 언급 횟수와 함께 정리해주는 무료 고객조사 툴.',
+      rel:['firefliesai-286326a4','openai-customer-stories'] },
+  ]},
+  { key:'case', label:'케이스', sub:'CASES · 실제로 해본 기록', color:'#C9A96A', angle:30, nodes:[
+    { slug:'simon-willison-claude-fable-5-c51a6d5d', title:'모바일에서 원샷 게임 제작 실험', type:'case',
+      pain:'아이디어는 있는데 컴퓨터 앞에 앉을 시간이 없음',
+      excerpt:'묵혀둔 아이디어를 오직 모바일만으로 연결해서 개발한 사례. Claude Fable 5 원샷 실험 공개.',
+      rel:['claude-code-guide','manus-801975fc'] },
+    { slug:'anthropic-7-24-claude-opus-5-max-pro-f830661e', title:'Opus 5 공개 · 모델 배치의 기술', type:'trend',
+      pain:'모델이 쏟아지는데 내 일에 뭘 써야 할지 모름',
+      excerpt:'Max 기본 모델·Pro 최상위 모델 배치. 이제는 내 일을 어떤 모델에 맡길지가 실력이다.',
+      rel:['fable-5-5-1b7d8078'] },
+    { slug:'fable-5-5-1b7d8078', title:'Fable 5를 잘 쓰는 프롬프트 11가지', type:'trend',
+      pain:'새 모델이 나와도 쓰던 방식 그대로 쓰게 됨',
+      excerpt:'앤트로픽 실제 제품 엔지니어가 직접 공개한 프롬프트 11가지를 바탕으로 바로 적용.',
+      rel:['anthropic-prompt-engineering','claude-code-자동-승인-모드-만들기-clauded-35aea5'] },
+  ]},
+  { key:'docs', label:'공식 문서', sub:'DOCS · 원전으로 배우는', color:'#8F9FA9', angle:90, nodes:[
+    { slug:'anthropic-prompt-engineering', title:'Anthropic 프롬프트 엔지니어링', type:'guide',
+      pain:'프롬프트를 감으로만 쓰고 있음',
+      excerpt:'Claude를 잘 쓰기 위한 공식 가이드. 프롬프트 구조, 역할 지정, 체인 오브 소트까지.',
+      rel:['anthropic-courses','claude-cookbooks','fable-5-5-1b7d8078'] },
+    { slug:'openai-prompt-best-practices', title:'OpenAI 프롬프트 베스트 프랙티스', type:'guide',
+      pain:'GPT 답변이 들쑥날쑥',
+      excerpt:'GPT를 더 정확하게 쓰는 6가지 전략. 예시가 풍부해서 바로 따라할 수 있음.',
+      rel:['prompts-chat','openai-cookbook'] },
+    { slug:'claude-code-guide', title:'Claude Code 활용 가이드', type:'guide',
+      pain:'터미널 AI 코딩이 개발자 전유물로 느껴짐',
+      excerpt:'터미널에서 AI와 코딩하기. 비개발자도 자동화 스크립트 만들 때 유용한 부분 정리.',
+      rel:['claude-code-자동-승인-모드-만들기-clauded-35aea5','model-context-protocol','simon-willison-claude-fable-5-c51a6d5d'] },
+    { slug:'cursor-docs', title:'Cursor 공식 문서', type:'guide',
+      pain:'에디터에서 AI를 제대로 못 부려먹음',
+      excerpt:'AI가 코드를 같이 짜주는 에디터. Tab 자동완성, Cmd+K 편집, Agent 모드 가이드.',
+      rel:['model-context-protocol','claude-code-guide'] },
+    { slug:'openai-cookbook', title:'OpenAI Cookbook', type:'guide',
+      pain:'개념은 아는데 실전 예제가 없음',
+      excerpt:'실제 코드+프롬프트 예제 수백 개. 개발자가 아니어도 프롬프트 패턴을 배울 수 있음.',
+      rel:['claude-cookbooks','openai-prompt-best-practices'] },
+  ]},
+  { key:'course', label:'무료 코스', sub:'COURSES · 공짜로 제대로', color:'#A98FA5', angle:150, nodes:[
+    { slug:'anthropic-courses', title:'Anthropic Courses 5종', type:'guide',
+      pain:'어디서부터 배워야 할지 모르는 막막함',
+      excerpt:'API 기초·프롬프트 엔지니어링·실전 프롬프팅·평가·도구 사용. Anthropic이 직접 만든 인터랙티브 튜토리얼.',
+      rel:['anthropic-prompt-engineering','deeplearning-ai-short-courses'] },
+    { slug:'deeplearning-ai-short-courses', title:'DeepLearning.AI Short Courses', type:'guide',
+      pain:'긴 강의는 완주를 못 함',
+      excerpt:'Andrew Ng의 짧은 강의 모음. AI 프롬프팅, Agentic AI, RAG, LLM 앱 빌딩 등 대부분 무료.',
+      rel:['microsoft-genai-for-beginners','hugging-face-learn'] },
+    { slug:'microsoft-genai-for-beginners', title:'Generative AI for Beginners', type:'guide',
+      pain:'기초 개념이 구멍난 채로 도구만 씀',
+      excerpt:'Microsoft 공식 21레슨. LLM, 프롬프트 엔지니어링, RAG, 에이전트, 파인튜닝까지.',
+      rel:['deeplearning-ai-short-courses'] },
+    { slug:'hugging-face-learn', title:'Hugging Face Learn', type:'guide',
+      pain:'이론만 보고 손을 안 움직임',
+      excerpt:'LLM 코스, AI 에이전트, 컨텍스트 엔지니어링 등 노트북 실습 중심 무료 코스.',
+      rel:['deeplearning-ai-short-courses'] },
+  ]},
+  { key:'deep', label:'깊이 읽기', sub:'DEEP DIVE · 판을 읽는', color:'#C9A96A', angle:210, nodes:[
+    { slug:'building-effective-agents', title:'Building Effective Agents', type:'guide',
+      pain:'에이전트를 만들었는데 왜 자꾸 무너지는지 모름',
+      excerpt:'복잡한 프레임워크보다 단순·조합 가능한 패턴이 성공한다는 Anthropic의 실전 조언. 에이전트 vs 워크플로우 구분이 핵심.',
+      rel:['tau-bench-d8053e9f','model-context-protocol'] },
+    { slug:'model-context-protocol', title:'MCP — AI의 USB-C 표준', type:'guide',
+      pain:'도구 연결을 서비스마다 새로 만들어야 함',
+      excerpt:'Claude·ChatGPT·Cursor가 모두 따르는 오픈 표준. 데이터·도구·워크플로우를 한 번 만들면 어디서든 연결.',
+      rel:['claude-code-guide','cursor-docs','building-effective-agents'] },
+    { slug:'claude-cookbooks', title:'Claude Cookbooks', type:'guide',
+      pain:'RAG·도구 사용을 어디서 베껴야 할지 모름',
+      excerpt:'분류·RAG·요약·도구 사용·멀티모달·프롬프트 캐싱까지 실제로 동작하는 노트북·레시피 모음.',
+      rel:['anthropic-prompt-engineering','openai-cookbook'] },
+    { slug:'dair-ai-prompt-engineering-guide', title:'Prompt Engineering Guide (76k★)', type:'guide',
+      pain:'흩어진 프롬프팅 지식을 한 곳에서 보고 싶음',
+      excerpt:'프롬프팅·컨텍스트 엔지니어링·RAG·AI 에이전트까지 다루는 76k stars 종합 가이드. 13개 언어 번역.',
+      rel:['prompts-chat','anthropic-prompt-engineering'] },
+    { slug:'openai-customer-stories', title:'OpenAI Customer Stories', type:'guide',
+      pain:'남들은 실무에 어떻게 쓰는지 궁금함',
+      excerpt:'실제 운영 환경에서 GPT를 적용한 회사 사례 모음. 마케팅·세일즈·운영 자동화 적용 패턴.',
+      rel:['seam-1000-voc-4d70f072','stanford-ai-index'] },
+    { slug:'stanford-ai-index', title:'Stanford AI Index', type:'guide',
+      pain:'AI 뉴스는 많은데 큰 그림이 없음',
+      excerpt:'스탠퍼드 HAI의 연례 데이터 리포트. 투자·인력·모델 성능·정책까지, 가장 인용되는 공식 리포트.',
+      rel:['anthropic-7-24-claude-opus-5-max-pro-f830661e'] },
+  ]},
+];
+const ICONS = {
+  prompt:'<path d="M4 17l6-6-6-6M12 19h8"/>',
+  tool:'<path d="M14.7 6.3a4 4 0 105.4 5.4L22 14l-6 6-2.3-1.9a4 4 0 10-5.4-5.4L2 8l6-6 2.3 1.9"/>',
+  case:'<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M19 5l-2 2M7 17l-2 2"/>',
+  docs:'<path d="M2 4h7a4 4 0 014 4v12a3 3 0 00-3-3H2zM22 4h-7a4 4 0 00-4 4v12a3 3 0 013-3h8z"/>',
+  course:'<path d="M22 10L12 5 2 10l10 5 10-5zM6 12v5c0 1.7 2.7 3 6 3s6-1.3 6-3v-5"/>',
+  deep:'<circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4M11 8v6M8 11h6"/>',
+};
+
+/* ═══ 씬 구성 ═══ */
+const world = document.getElementById('world');
+const R_HUB = 380, R_LEAF = 190;
+const treeWires = [];
+const nodeBySlug = {}, posBySlug = {}, leafBySlug = {}, deptBySlug = {};
+
+function el(tag, cls, css) { const e = document.createElement(tag); if (cls) e.className = cls; Object.assign(e.style, css||{}); return e; }
+const rad = d => d * Math.PI / 180;
+
+const core = el('div'); core.id = 'core'; core.style.left = '0px'; core.style.top = '0px';
+core.innerHTML = '<div class="ring"><span>CASELAB</span></div><p>배워가는 지도</p>';
+world.appendChild(core);
+
+DATA.forEach(dept => {
+  const hx = Math.cos(rad(dept.angle)) * R_HUB;
+  const hy = Math.sin(rad(dept.angle)) * R_HUB;
+  treeWires.push({ x1:Math.cos(rad(dept.angle))*80, y1:Math.sin(rad(dept.angle))*80, x2:hx, y2:hy, spine:true });
+
+  const hub = el('div', 'hub', { left:hx+'px', top:hy+'px' });
+  hub.style.setProperty('--c', dept.color);
+  hub.innerHTML = `<svg viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round">${ICONS[dept.key]}</svg>`;
+  world.appendChild(hub);
+
+  const lblDist = R_HUB + R_LEAF + 245;
+  const lbl = el('div', 'dept-label', { left:Math.cos(rad(dept.angle))*lblDist+'px', top:Math.sin(rad(dept.angle))*lblDist+'px' });
+  lbl.innerHTML = `<h2>${dept.label}</h2><p>${dept.sub}</p>`;
+  world.appendChild(lbl);
+
+  const n = dept.nodes.length;
+  const fan = Math.min(124, 34 * (n - 1) + 18);
+  dept.nodes.forEach((node, i) => {
+    const a = dept.angle - fan/2 + (n === 1 ? fan/2 : fan * i/(n-1));
+    const jitter = (i % 2 ? 55 : -20);
+    const lx = hx + Math.cos(rad(a)) * (R_LEAF + jitter);
+    const ly = hy + Math.sin(rad(a)) * (R_LEAF + jitter);
+    treeWires.push({ x1:hx, y1:hy, x2:lx, y2:ly });
+
+    const leaf = el('div', 'leaf t-' + node.type + (Math.cos(rad(a)) < -0.15 ? ' ll' : ''), { left:lx+'px', top:ly+'px' });
+    leaf.innerHTML = `<span class="lbl">${node.title}</span>`;
+    leaf.onclick = ev => { ev.stopPropagation(); openPanel(node.slug); };
+    world.appendChild(leaf);
+
+    nodeBySlug[node.slug] = node; posBySlug[node.slug] = { x:lx, y:ly };
+    leafBySlug[node.slug] = leaf; deptBySlug[node.slug] = dept;
+  });
+});
+
+/* wires */
+const NS = 'http://www.w3.org/2000/svg';
+const svg = document.createElementNS(NS, 'svg');
+svg.setAttribute('class', 'wires');
+treeWires.forEach(w => {
+  const l = document.createElementNS(NS, 'line');
+  l.setAttribute('x1',w.x1); l.setAttribute('y1',w.y1); l.setAttribute('x2',w.x2); l.setAttribute('y2',w.y2);
+  l.setAttribute('class', w.spine ? 'spine' : 'tree');
+  svg.appendChild(l);
+});
+/* 노드 간 연계선 — 중복 제거 후 곡선으로 */
+const relPaths = {}; // key "a|b" -> path
+Object.values(nodeBySlug).forEach(node => (node.rel||[]).forEach(r => {
+  if (!posBySlug[r]) return;
+  const key = [node.slug, r].sort().join('|');
+  if (relPaths[key]) return;
+  const p1 = posBySlug[node.slug], p2 = posBySlug[r];
+  const mx = (p1.x+p2.x)/2, my = (p1.y+p2.y)/2;
+  const d = Math.hypot(p2.x-p1.x, p2.y-p1.y);
+  const cx = mx - mx*0.28 * Math.min(1, d/700), cy = my - my*0.28 * Math.min(1, d/700); // 중심 쪽으로 휘는 곡선
+  const path = document.createElementNS(NS, 'path');
+  path.setAttribute('d', `M ${p1.x} ${p1.y} Q ${cx} ${cy} ${p2.x} ${p2.y}`);
+  path.setAttribute('class', 'rel');
+  svg.appendChild(path);
+  relPaths[key] = path;
+}));
+world.insertBefore(svg, world.firstChild);
+
+/* stars */
+const stars = document.getElementById('stars');
+for (let i = 0; i < 140; i++) {
+  const s = el('div','star',{ left:Math.random()*100+'%', top:Math.random()*100+'%' });
+  const sz = Math.random()*2+0.5; s.style.width = s.style.height = sz+'px';
+  s.style.opacity = Math.random()*.25+.05;
+  stars.appendChild(s);
+}
+
+/* ═══ 팬·줌 ═══ */
+let vx = 0, vy = 20, scale = 0.62;
+function apply() { world.style.transform = `translate(${vx}px,${vy}px) scale(${scale})`; }
+apply();
+const stage = document.getElementById('stage');
+let drag = null;
+stage.addEventListener('mousedown', e => { drag = { x:e.clientX-vx, y:e.clientY-vy }; stage.classList.add('dragging'); world.classList.add('no-anim'); });
+window.addEventListener('mousemove', e => { if (!drag) return; vx = e.clientX-drag.x; vy = e.clientY-drag.y; apply(); });
+window.addEventListener('mouseup', () => { drag = null; stage.classList.remove('dragging'); world.classList.remove('no-anim'); });
+stage.addEventListener('wheel', e => {
+  e.preventDefault(); world.classList.add('no-anim');
+  const k = e.deltaY < 0 ? 1.08 : 0.93;
+  const nx = Math.min(1.8, Math.max(0.4, scale * k));
+  const cx = e.clientX - innerWidth/2, cy = e.clientY - innerHeight/2;
+  vx = cx - (cx - vx) * (nx/scale); vy = cy - (cy - vy) * (nx/scale);
+  scale = nx; apply();
+  clearTimeout(stage._wt); stage._wt = setTimeout(() => world.classList.remove('no-anim'), 100);
+}, { passive:false });
+
+/* ═══ 상세 패널 + 연계 하이라이트 ═══ */
+const panel = document.getElementById('panel');
+let activeSlug = null;
+function setRelHighlight(slug, on) {
+  const node = nodeBySlug[slug];
+  (node.rel||[]).forEach(r => {
+    const p = relPaths[[slug,r].sort().join('|')];
+    if (p) p.classList.toggle('on', on);
+    if (leafBySlug[r]) leafBySlug[r].classList.toggle('related', on);
+  });
+}
+function openPanel(slug, pan) {
+  if (activeSlug) { leafBySlug[activeSlug].classList.remove('active'); setRelHighlight(activeSlug, false); }
+  activeSlug = slug;
+  const node = nodeBySlug[slug], dept = deptBySlug[slug], leaf = leafBySlug[slug];
+  leaf.classList.add('active');
+  setRelHighlight(slug, true);
+  document.getElementById('p-type').textContent = TYPE_LABEL[node.type];
+  document.getElementById('p-title').textContent = node.title;
+  document.getElementById('p-crumb').textContent = 'caselab · ' + dept.label;
+  document.getElementById('p-pain').textContent = '"' + node.pain + '" — 이 아픔에서 시작합니다.';
+  document.getElementById('p-excerpt').textContent = node.excerpt;
+  document.getElementById('p-cta').href = SITE + '/' + TYPE_PATH[node.type] + '/' + encodeURIComponent(node.slug);
+  const rels = (node.rel||[]).filter(r => nodeBySlug[r]);
+  const wrap = document.getElementById('p-rels'), chips = document.getElementById('p-rel-chips');
+  wrap.style.display = rels.length ? '' : 'none';
+  chips.innerHTML = '';
+  rels.forEach(r => {
+    const c = el('span','rel-chip'); c.textContent = nodeBySlug[r].title;
+    c.onclick = () => openPanel(r, true);
+    chips.appendChild(c);
+  });
+  panel.classList.add('open');
+  if (pan) { const p = posBySlug[slug]; vx = -p.x*scale + 120; vy = -p.y*scale; apply(); }
+}
+function closePanel() {
+  panel.classList.remove('open');
+  if (activeSlug) { leafBySlug[activeSlug].classList.remove('active'); setRelHighlight(activeSlug, false); activeSlug = null; }
+}
+stage.addEventListener('click', e => { if (e.target === stage || e.target.id === 'world') closePanel(); });
+
+/* ═══ 검색 ═══ */
+document.getElementById('search').addEventListener('input', e => {
+  const q = e.target.value.trim().toLowerCase();
+  Object.entries(leafBySlug).forEach(([slug, l]) => {
+    const hit = !q || l.textContent.toLowerCase().includes(q);
+    l.classList.toggle('dim', !hit);
+  });
+});
+</script>
+</body>
+</html>
