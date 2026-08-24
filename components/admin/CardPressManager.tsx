@@ -8,14 +8,17 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { createSupabaseBrowserClient } from '@/lib/supabase/client';
-import { renderSlide } from '@/lib/cardpress/templates';
+import { CARD_H, CARD_W, renderSlide } from '@/lib/cardpress/templates';
 import { RenderSlideSchema } from '@/types/cardpress';
 import type { CardSlide, CardTemplateId, CardAccent } from '@/types/cardpress';
 import { CardTemplatePicker, type PickResult } from '@/components/admin/CardTemplatePicker';
 import {
   ART_TEXT_ARTS,
   ART_TEXT_HINT,
+  COVER_ART_OPTIONS,
+  COVER_ART_PRIMARY,
   coverArtChoices,
+  carryStyle,
   convertProps,
   IMAGE_KEY,
   PHOTO_ALT,
@@ -138,6 +141,7 @@ const ALT_MAP: Partial<Record<CardTemplateId, CardTemplateId[]>> = {
   P1: ['P5', 'P2', 'B2'], P2: ['P1', 'P3'], P3: ['P4', 'P2'], P4: ['P3', 'B4'],
   P5: ['P1', 'P6'], P6: ['P5', 'B7'],
   B1: ['P1'], B3: ['P2'], B5: ['P1'], B8: ['P5'], B9: ['P3'], C3: ['C1'], C4: ['C1'],
+  B10: ['P2', 'B2'], B11: ['B2', 'P1'], P7: ['P1', 'P3'],
 };
 
 // 형광펜 색 팔레트 — 캐러셀 가이드 시스템(카테고리 3색+Bad 레드) + 벤치마크 골드
@@ -251,9 +255,22 @@ const FIELDS: Record<CardTemplateId, FieldDef[]> = {
     { key: 'patternEn', label: '영어 패턴명', kind: 'input', hint: '원문 그대로 (크게 표시) — 예: Blindspot Pass' },
     { key: 'patternName', label: '한글 패턴명', kind: 'input', hint: '≤12자 (영문 아래 부제)' },
     { key: 'when', label: '어떤 상황에서', kind: 'input', hint: '≤22자' },
-    { key: 'lines', label: '맛보기 (줄마다 1줄, 3~4줄)', kind: 'lines', hint: '[변수]는 초록, # 시작 줄은 주석' },
+    { key: 'lines', label: '원문 발췌 (줄마다 1줄, 3~5줄)', kind: 'lines', hint: '[변수]는 초록, # 시작 줄은 주석' },
+    { key: 'linesKo', label: '한글 병기 (줄마다 1줄, 선택)', kind: 'lines', hint: '원문과 같은 줄 수 — 줄 아래 작게 렌더' },
     { key: 'effect', label: '기대 효과', kind: 'input', hint: '≤20자' },
     { key: 'ctaLine', label: 'CTA 문구', kind: 'input', hint: 'CTA는 캡션 전담 — 이미지에 꼭 넣고 싶을 때만' },
+  ],
+  B10: [
+    { key: 'eyebrow', label: '라벨', kind: 'input', hint: '영문 헤어라인 (예: DEEP DIVE)' },
+    { key: 'heading', label: '제목', kind: 'textarea', hint: '1~2줄 · 줄당 ≤16자' },
+    { key: 'hl', label: '형광펜 단어', kind: 'input' },
+    { key: 'body', label: '본문', kind: 'textarea', hint: '빈 줄로 문단 구분 — 2문단 이상이면 2단 칼럼' },
+    { key: 'note', label: '각주', kind: 'input', hint: '하단 회색 한 줄' },
+  ],
+  B11: [
+    { key: 'heading', label: '제목', kind: 'textarea', hint: '1~2줄 · 줄당 ≤16자' },
+    { key: 'hl', label: '형광펜 단어', kind: 'input' },
+    { key: 'cells', label: '타일 (제목 | 설명)', kind: 'pairs', pairKeys: ['title', 'desc'], hint: '3~4개 · 2×2 그리드' },
   ],
   B9: [
     { key: 'lead', label: '도입', kind: 'input' },
@@ -300,6 +317,13 @@ const FIELDS: Record<CardTemplateId, FieldDef[]> = {
     { key: 'resolve', label: '해소 문장', kind: 'textarea' },
     { key: 'footer', label: '푸터', kind: 'input' },
     { key: 'image', label: '사진 URL', kind: 'input', hint: '있으면 텍스처 수준(82% 눌림)' },
+  ],
+  P7: [
+    { key: 'eyebrow', label: '라벨', kind: 'input' },
+    { key: 'lead', label: '핵심 한 줄', kind: 'textarea', hint: '≤26자 · **강조** 1구절' },
+    { key: 'caption', label: '부연', kind: 'input', hint: '사진 아래 회색 한 줄' },
+    { key: 'image', label: '사진 URL ①', kind: 'input', hint: '비우면 그라데이션 폴백' },
+    { key: 'image2', label: '사진 URL ②', kind: 'input', hint: '있으면 2장 나란히' },
   ],
 };
 
@@ -1271,7 +1295,9 @@ function CardEditor({ card, sourceTitle }: { card: CardRow; sourceTitle?: string
       });
       if (!res.ok) throw new Error((await res.json()).error ?? `HTTP ${res.status}`);
       const { slide } = (await res.json()) as { slide: { template: CardTemplateId; props: Record<string, unknown> } };
-      patch((prev) => prev.map((x, k) => (k === i ? { ...x, template: slide.template, props: slide.props } : x)));
+      // 글은 AI가 새로 쓰되, 스타일(포인트색·커버 유형·아트)은 기존 슬라이드에서 이어받는다
+      const props = carryStyle(s.props as Record<string, unknown>, slide.props);
+      patch((prev) => prev.map((x, k) => (k === i ? { ...x, template: slide.template, props } : x)));
       setSelIdx(i);
       setPickerIdx(null);
     } catch (e) {
@@ -1295,6 +1321,40 @@ function CardEditor({ card, sourceTitle }: { card: CardRow; sourceTitle?: string
           return { ...s, template: 'C1' as const, props };
         }
         return { ...s, props };
+      })
+    );
+    setSelIdx(0);
+  }
+
+  // 인스타 Graph API 캐러셀 상한 10칸 — 엔딩 카드가 1칸을 항상 먹으므로 편집 슬라이드는 9장까지
+  const IG_SLIDE_MAX = 9;
+  const enabledCount = slides.filter((s) => s.enabled).length;
+
+  /** 켜진 슬라이드가 상한을 넘으면 뒤에서부터 제외(체크 해제) — 필수 슬라이드는 건너뛴다 */
+  function trimToMax() {
+    patch((prev) => {
+      let over = prev.filter((s) => s.enabled).length - IG_SLIDE_MAX;
+      const next = [...prev];
+      for (let i = next.length - 1; i >= 0 && over > 0; i--) {
+        if (!next[i].enabled || next[i].required) continue;
+        next[i] = { ...next[i], enabled: false };
+        over--;
+      }
+      if (over > 0) alert(`필수 슬라이드가 많아 ${IG_SLIDE_MAX}장까지 못 줄였어요. 필수 표시 슬라이드를 직접 정리해 주세요.`);
+      return next;
+    });
+  }
+
+  // 트레이의 커버 아트 클릭 → 무조건 커버(1번)에 적용. C1이 아니면 글을 그대로 옮겨 C1 v3로 전환.
+  function applyCoverArt(art: string) {
+    patch((prev) =>
+      prev.map((s, i) => {
+        if (i !== 0) return s;
+        let props = { ...s.props } as Record<string, unknown>;
+        if (s.template !== 'C1') props = convertProps(s.template, 'C1', props).props;
+        props.coverLayout = 'v3';
+        props.coverArt = art;
+        return { ...s, template: 'C1' as const, props };
       })
     );
     setSelIdx(0);
@@ -1698,6 +1758,16 @@ function CardEditor({ card, sourceTitle }: { card: CardRow; sourceTitle?: string
       <div className="grid grid-cols-1 lg:grid-cols-[1fr_400px] gap-4 items-start">
         {/* 좌: 슬라이드 리스트 */}
         <div className="space-y-3">
+          {enabledCount > IG_SLIDE_MAX && (
+            <div className="rounded-lg border border-red-300 bg-red-500/[0.04] px-3 py-2 flex items-center justify-between gap-3 text-xs">
+              <span className="text-red-600">
+                인스타 캐러셀은 엔딩 포함 10장까지 — 지금 {enabledCount + 1}장이라 발행이 막힙니다.
+              </span>
+              <button onClick={trimToMax} className="shrink-0 rounded-md border border-red-300 px-2 py-1 text-red-600 hover:bg-red-50">
+                뒤에서부터 제외해 {IG_SLIDE_MAX}장으로
+              </button>
+            </div>
+          )}
           <div className="card divide-y divide-border">
             {slides.map((s, i) => (
               <div key={i} className={`px-3 py-2.5 ${i === selIdx ? 'bg-accent/5' : ''}`}>
@@ -1759,6 +1829,10 @@ function CardEditor({ card, sourceTitle }: { card: CardRow; sourceTitle?: string
               accent={card.accent}
               fallbackImage={trayImage}
               onAdd={(slide) => {
+                if (enabledCount >= IG_SLIDE_MAX) {
+                  alert(`켜진 슬라이드가 이미 ${IG_SLIDE_MAX}장이에요. 엔딩 포함 10장이 인스타 캐러셀 상한이라, 먼저 다른 장을 제외하거나 삭제해 주세요.`);
+                  return;
+                }
                 patch((prev) => [...prev, { ...slide, order: prev.length + 1, enabled: true }]);
                 setSelIdx(slides.length);
               }}
@@ -1778,6 +1852,9 @@ function CardEditor({ card, sourceTitle }: { card: CardRow; sourceTitle?: string
 
           <ImageTray
             card={card}
+            coverSlide={slides[0]}
+            onCoverArt={applyCoverArt}
+            targetIndex={selIdx}
             onPick={(url) => assignImageAt(selIdx, url)}
             onCover={applyCover}
             onThreadsCover={(u) => { setThreadsCover(u); setDirty(true); }}
@@ -2934,8 +3011,13 @@ function PhotoCreditPanel({
 // bright — 대표색이 밝아서 흰 글자가 죽을 수 있는 사진(Unsplash 라우트가 판정해 뒤로 민다)
 type TrayImage = { id: string; thumb: string; full: string; credit?: string; bright?: boolean };
 
-function ImageTray({ card, onPick, onCover, onThreadsCover, onCredits }: {
+function ImageTray({ card, coverSlide, targetIndex, onCoverArt, onPick, onCover, onThreadsCover, onCredits }: {
   card: CardRow;
+  /** 1번 슬라이드 — 커버 아트 미리보기·현재 적용 표시의 근거 */
+  coverSlide?: CardSlide;
+  /** 지금 선택된 슬라이드 번호(0-base) — 검색 결과의 "N번 슬라이드에" 라벨용 */
+  targetIndex: number;
+  onCoverArt: (art: string) => void;
   onPick: (url: string) => void;
   onCover: (url: string) => void;
   onThreadsCover: (url: string) => void;
@@ -3030,7 +3112,7 @@ function ImageTray({ card, onPick, onCover, onThreadsCover, onCredits }: {
         </span>
       )}
       <div className="absolute inset-0 hidden group-hover:flex flex-col items-center justify-center gap-1 bg-black/55 rounded-md">
-        <button onClick={() => onPick(url)} className="text-[10px] text-white bg-accent rounded px-1.5 py-0.5">선택 슬라이드에</button>
+        <button onClick={() => onPick(url)} className="text-[10px] text-white bg-accent rounded px-1.5 py-0.5">{targetIndex + 1}번 슬라이드에 넣기</button>
         <button onClick={() => onThreadsCover(url)} className="text-[10px] text-white bg-white/20 rounded px-1.5 py-0.5">스레드 커버로</button>
       </div>
     </div>
@@ -3039,6 +3121,65 @@ function ImageTray({ card, onPick, onCover, onThreadsCover, onCredits }: {
   return (
     <div className="card p-4 space-y-3">
       <div className="text-sm font-semibold">이미지 트레이 <span className="text-xs text-ink/40 font-normal">(호버 → 배치 · 사진 자리가 없는 템플릿이면 사진형으로 바꿀지 물어봅니다)</span></div>
+      {coverSlide && (
+        <div>
+          <div className="text-[11px] text-ink/40 mb-1">
+            커버 아트 — 지금 1번 커버의 글로 그린 5종, 클릭하면 바로 커버에 적용
+          </div>
+          <div className="flex gap-3 overflow-x-auto pb-1">
+            {(() => {
+              const raw = coverSlide.props as Record<string, unknown>;
+              const base = coverSlide.template === 'C1' ? { ...raw } : convertProps(coverSlide.template, 'C1', raw).props;
+              const current =
+                coverSlide.template === 'C1' && base.coverLayout === 'v3'
+                  ? ((base.coverArt as string) ?? 'photo')
+                  : null;
+              const scale = 102 / CARD_W;
+              return COVER_ART_PRIMARY.map((art) => {
+                const parsed = RenderSlideSchema.safeParse({
+                  template: 'C1',
+                  accent: card.accent,
+                  props: { ...base, coverLayout: 'v3', coverArt: art },
+                });
+                const label = COVER_ART_OPTIONS.find((o) => o.value === art)?.label ?? art;
+                return (
+                  <button
+                    key={art}
+                    onClick={() => onCoverArt(art)}
+                    title={`${label} — 커버에 적용`}
+                    className={`relative shrink-0 h-32 w-[102px] overflow-hidden rounded-md border transition-shadow ${
+                      current === art ? 'border-accent ring-2 ring-accent' : 'border-border hover:ring-2 hover:ring-accent'
+                    }`}
+                  >
+                    {parsed.success ? (
+                      <div
+                        style={{
+                          width: CARD_W,
+                          height: CARD_H,
+                          transform: `scale(${scale})`,
+                          transformOrigin: 'top left',
+                          fontFamily: "'Pretendard','Apple SD Gothic Neo',sans-serif",
+                          pointerEvents: 'none',
+                        }}
+                      >
+                        {renderSlide(parsed.data)}
+                      </div>
+                    ) : (
+                      <span className="flex h-full items-center justify-center text-[9px] text-ink/30">미리보기 불가</span>
+                    )}
+                    {current === art && (
+                      <span className="absolute top-1 left-1 rounded bg-accent px-1 text-[9px] text-white">적용 중</span>
+                    )}
+                    <span className="absolute bottom-1 left-1 right-1 rounded bg-black/60 px-1 py-0.5 text-[9px] text-white truncate">
+                      {label}
+                    </span>
+                  </button>
+                );
+              });
+            })()}
+          </div>
+        </div>
+      )}
       {(card.cover_candidates?.length ?? 0) > 0 && (
         <div>
           <div className="text-[11px] text-ink/40 mb-1">커버 후보 — 클릭하면 바로 커버에 적용 (다크 커버면 사진 커버로 전환)</div>
@@ -3133,6 +3274,10 @@ function ImageTray({ card, onPick, onCover, onThreadsCover, onCredits }: {
               <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Unsplash 검색 (영어)" onKeyDown={(e) => e.key === 'Enter' && search(query)} />
               <Button size="sm" variant="outline" onClick={() => search(query)} disabled={searching}>{searching ? '검색 중…' : '검색'}</Button>
             </div>
+            <p className="text-[11px] text-ink/40">
+              결과 사진에 마우스를 올려 [{targetIndex + 1}번 슬라이드에 넣기] — 커버가 아닌 본문 장에도 들어가고, 사진 자리가 없는
+              템플릿이면 사진형으로 바꿀지 물어봅니다.
+            </p>
             {(card.metaphor_queries?.length ?? 0) > 0 && (
               <div className="flex items-center gap-1.5 flex-wrap">
                 <span className="text-[11px] text-ink/40">메타포 제안:</span>

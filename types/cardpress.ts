@@ -200,13 +200,94 @@ export const B8PropsSchema = z.object({
   patternEn: z.string().optional(),  // 영어 패턴명 원문 ("Blindspot Pass") — 있으면 크게, 한글은 아래 작게
   patternName: z.string().optional(),// 패턴명 (크게) — 있으면 신레이아웃으로 렌더
   when: z.string().optional(),       // 어떤 상황에서 쓰는지 한 줄
-  lines: z.array(z.string()).min(1).max(8), // 핵심 3~4줄 맛보기 ('#'주석색, [변수]=초록)
+  lines: z.array(z.string()).min(1).max(8), // 원문 발췌 3~5줄 ('#'주석색, [변수]=초록)
+  linesKo: z.array(z.string()).optional(),  // 영문 원문일 때 줄별 한글 번역 병기 (lines와 같은 길이)
   effect: z.string().optional(),     // 기대 효과 한 줄 ("방향 잡는 시간 ⅓")
   ctaLine: z.string().optional(),    // 시스템 주입 — cta_type에 따라 댓글→DM / 프로필 링크
   // legacy (구 레이아웃 저장분 렌더 호환)
   heading: z.string().optional(),
   hl: z.string().optional(),
   tip: z.string().optional(),
+});
+
+/** B12 체크리스트 — ✓박스 항목 3~6개 */
+export const B12PropsSchema = z.object({
+  ...StyleOverrideFields,
+  page: z.string().optional(),
+  heading: z.string().min(1),
+  hl: z.string().optional(),
+  items: z.array(z.string().min(1)).min(3).max(6),
+  footer: z.string().optional(),
+});
+
+/** B13 Q&A — 큰 질문 하나 + 답변 문단 */
+export const B13PropsSchema = z.object({
+  ...StyleOverrideFields,
+  page: z.string().optional(),
+  question: z.string().min(1),          // '\n' 줄바꿈
+  hl: z.string().optional(),
+  answer: z.string().min(1),
+  note: z.string().optional(),
+});
+
+/** B14 비교 2열 — A/B를 나란히 (커버 C4의 본문 버전) */
+export const B14PropsSchema = z.object({
+  ...StyleOverrideFields,
+  page: z.string().optional(),
+  heading: z.string().optional(),
+  aTitle: z.string().min(1),
+  bTitle: z.string().min(1),
+  aItems: z.array(z.string().min(1)).min(1).max(4),
+  bItems: z.array(z.string().min(1)).min(1).max(4),
+});
+
+/** B15 다크 인용 — 검정 바탕 거대 따옴표 + 인용 (B4·P4와 달리 사진 없이 타이포로) */
+export const B15PropsSchema = z.object({
+  ...StyleOverrideFields,
+  page: z.string().optional(),
+  quote: z.string().min(1),             // '\n' 줄바꿈
+  hl: z.string().optional(),
+  attribution: z.string().optional(),
+  context: z.string().optional(),       // 아래 작은 부연
+});
+
+/** B16 스탯 타일 — 숫자 2~3개를 나란히 */
+export const B16PropsSchema = z.object({
+  ...StyleOverrideFields,
+  page: z.string().optional(),
+  heading: z.string().optional(),
+  hl: z.string().optional(),
+  stats: z.array(z.object({ big: z.string().min(1), unit: z.string().optional(), label: z.string().min(1) })).min(2).max(3),
+  footer: z.string().optional(),
+});
+
+/** B17 세로 타임라인 — 점·선 레일 + 단계 3~5개 (B6 스텝의 세로 버전) */
+export const B17PropsSchema = z.object({
+  ...StyleOverrideFields,
+  page: z.string().optional(),
+  heading: z.string().min(1),
+  hl: z.string().optional(),
+  steps: z.array(z.object({ title: z.string().min(1), desc: z.string().optional() })).min(3).max(5),
+});
+
+/** B10 미니 에디토리얼 — 작은 활자 밀도형. 긴 설명을 안 자르고 잡지 칼럼처럼 싣는다 */
+export const B10PropsSchema = z.object({
+  ...StyleOverrideFields,
+  page: z.string().optional(),
+  eyebrow: z.string().optional(),    // 헤어라인 라벨
+  heading: z.string().min(1),        // 중형 제목 (44px — 다른 B보다 작다)
+  hl: z.string().optional(),
+  body: z.string().min(1),           // '\n\n' 문단 구분 — 2문단 이상이면 2단 칼럼으로 흐른다
+  note: z.string().optional(),       // 하단 각주 한 줄
+});
+
+/** B11 텍스트 그리드 — 항목 3~4개를 2×2 카드 타일로 */
+export const B11PropsSchema = z.object({
+  ...StyleOverrideFields,
+  page: z.string().optional(),
+  heading: z.string().min(1),
+  hl: z.string().optional(),
+  cells: z.array(z.object({ title: z.string().min(1), desc: z.string().optional() })).min(3).max(4),
 });
 
 export const B9PropsSchema = z.object({
@@ -284,7 +365,66 @@ export const P6PropsSchema = z.object({
   footer: z.string().optional(),
 });
 
+/** B18 다크 미니 에디토리얼 — B10의 다크 트윈 (작은 활자 2단, OLED 블랙) */
+export const B18PropsSchema = B10PropsSchema;
+
+/** C6 에디토리얼 커버 — 화이트 대여백 + 헤어라인 룰 (사진 없이 성립) */
+export const C6PropsSchema = z.object({
+  ...StyleOverrideFields,
+  kicker: z.string().optional(),
+  title: z.string().min(1),             // '\n' 2~3줄
+  hl: z.string().optional(),
+  sub: z.string().optional(),
+  footer: z.string().optional(),
+});
+
+/** C7 스플릿 커버 — 좌 다크 타이포 / 우 세로 사진 */
+export const C7PropsSchema = z.object({
+  ...StyleOverrideFields,
+  kicker: z.string().optional(),
+  title: z.string().min(1),
+  hl: z.string().optional(),
+  sub: z.string().optional(),
+  coverImage: z.string().url().optional(),
+});
+
+/** P8 폴라로이드 — 크림 바탕에 흰 프레임 사진을 살짝 기울여 */
+export const P8PropsSchema = z.object({
+  ...PhotoFields,
+  lead: z.string().min(1),
+  caption: z.string().optional(),       // 프레임 안 하단 손글씨 자리
+});
+
+/** P9 매거진 스플릿 — 좌 세로 사진 / 우 텍스트 칼럼 */
+export const P9PropsSchema = z.object({
+  ...PhotoFields,
+  eyebrow: z.string().optional(),
+  heading: z.string().min(1),           // '\n' 줄바꿈
+  hl: z.string().optional(),
+  body: z.string().min(1),
+});
+
+/** P10 디바이스 프레임 — 스크린샷을 브라우저 창 프레임에 앉히고 아래 리드 */
+export const P10PropsSchema = z.object({
+  ...PhotoFields,
+  frameLabel: z.string().optional(),    // 창 상단 파일명/URL 자리
+  lead: z.string().min(1),
+  caption: z.string().optional(),
+});
+
+/** P7 사진 그리드 — 사진 2장을 나란히(1장이면 풀폭 폴백) + 아래 리드 */
+export const P7PropsSchema = z.object({
+  ...PhotoFields,                                    // image = 첫 번째 사진
+  image2: z.string().url().optional(),               // 두 번째 사진 (트레이에서 끌어다 교체)
+  eyebrow: z.string().optional(),
+  lead: z.string().min(1),
+  caption: z.string().optional(),                    // 사진 아래 회색 부연
+});
+
 export const RenderSlideSchema = z.discriminatedUnion('template', [
+  z.object({ template: z.literal('P7'), accent: CardAccentSchema, props: P7PropsSchema }),
+  z.object({ template: z.literal('B10'), accent: CardAccentSchema, props: B10PropsSchema }),
+  z.object({ template: z.literal('B11'), accent: CardAccentSchema, props: B11PropsSchema }),
   z.object({ template: z.literal('P1'), accent: CardAccentSchema, props: P1PropsSchema }),
   z.object({ template: z.literal('P2'), accent: CardAccentSchema, props: P2PropsSchema }),
   z.object({ template: z.literal('P3'), accent: CardAccentSchema, props: P3PropsSchema }),

@@ -23,6 +23,18 @@ export const COVER_ART_OPTIONS: Array<{ value: string; label: string }> = [
   { value: 'numbers', label: '⑪ 정밀 숫자' },
 ];
 
+// 드롭다운에 기본 노출하는 5종 — 자동 배정 풀 + 재료(글·아이콘) 없이도 안전한 조합.
+// 나머지 6종은 템플릿·렌더는 그대로 살아 있고(기존 카드 호환), 이미 그 값을 쓰는
+// 슬라이드에서만 옵션에 함께 나온다.
+export const COVER_ART_PRIMARY = ['photo', 'macro', 'iri', 'studio', 'mask'];
+
+/** 노출용 옵션: 기본 5종 + (현재 값이 그 밖이면) 그 값 하나를 덧붙여 select가 깨지지 않게 한다 */
+export function coverArtChoices(current?: string): Array<{ value: string; label: string }> {
+  return COVER_ART_OPTIONS.filter(
+    (o) => COVER_ART_PRIMARY.includes(o.value) || o.value === current
+  );
+}
+
 /** artText를 쓰는 아트 — 나머지는 입력칸을 아예 안 띄운다 */
 export const ART_TEXT_ARTS = ['term', 'quote', 'data', 'numbers'];
 
@@ -37,9 +49,9 @@ export const TEMPLATE_LABEL: Record<CardTemplateId, string> = {
   C1: 'C1 사진커버', C2: 'C2 다크커버', C3: 'C3 툴커버', C4: 'C4 VS커버', C5: 'C5 빅넘버커버',
   B1: 'B1 타임라인', B2: 'B2 불릿', B3: 'B3 용어', B4: 'B4 선언',
   B5: 'B5 솔직후기', B6: 'B6 스텝', B7: 'B7 숫자', B8: 'B8 프롬프트',
-  B9: 'B9 스크린샷',
+  B9: 'B9 스크린샷', B10: 'B10 미니텍스트', B11: 'B11 그리드',
   P1: 'P1 사진+목록', P2: 'P2 사진+문단', P3: 'P3 풀사진', P4: 'P4 사진인용',
-  P5: 'P5 블랙목록', P6: 'P6 블랙빅넘버',
+  P5: 'P5 블랙목록', P6: 'P6 블랙빅넘버', P7: 'P7 사진그리드',
 };
 
 /** 한 줄 설명 — 시각 피커에서 이름 밑에 깔린다 */
@@ -58,19 +70,22 @@ export const TEMPLATE_DESC: Record<CardTemplateId, string> = {
   B7: '큰 숫자 + 캡션',
   B8: '프롬프트 패턴 맛보기 줄',
   B9: '스크린샷 + 말풍선 (사진 필수)',
+  B10: '작은 활자 2단 칼럼 · 긴 설명을 안 자르고',
+  B11: '항목 3~4개를 2×2 카드 타일로',
   P1: '사진 밴드 + 번호 목록 · 본문 기본값',
   P2: '사진 밴드 + 제목/부제/문단',
   P3: '풀사진 + 하단 헤드라인',
   P4: '풀사진 + 인용문',
   P5: '사진을 텍스처로 눌러 깐 목록',
   P6: '사진을 텍스처로 눌러 깐 빅넘버',
+  P7: '사진 2장 나란히 + 아래 리드 (1장이면 풀폭)',
 };
 
 /** 계열 그룹 — 피커 섹션 구분 */
 export const TEMPLATE_GROUPS: Array<{ label: string; hint: string; items: CardTemplateId[] }> = [
   { label: '커버', hint: '1번 슬라이드', items: ['C1', 'C2', 'C3', 'C4', 'C5'] },
-  { label: '사진 본문', hint: '사진이 주인공인 본문', items: ['P1', 'P2', 'P3', 'P4', 'P5', 'P6'] },
-  { label: '텍스트 본문', hint: '정보량이 많은 본문', items: ['B1', 'B2', 'B3', 'B4', 'B5', 'B6', 'B7', 'B8', 'B9'] },
+  { label: '사진 본문', hint: '사진이 주인공인 본문', items: ['P1', 'P2', 'P3', 'P4', 'P5', 'P6', 'P7'] },
+  { label: '텍스트 본문', hint: '정보량이 많은 본문', items: ['B1', 'B2', 'B3', 'B4', 'B5', 'B6', 'B7', 'B8', 'B9', 'B10', 'B11'] },
 ];
 
 /**
@@ -80,12 +95,12 @@ export const TEMPLATE_GROUPS: Array<{ label: string; hint: string; items: CardTe
  */
 export const IMAGE_KEY: Partial<Record<CardTemplateId, string>> = {
   C1: 'coverImage', C5: 'coverImage', B4: 'coverImage', B2: 'media', B9: 'shot',
-  P1: 'image', P2: 'image', P3: 'image', P4: 'image', P5: 'image', P6: 'image', B5: 'image',
+  P1: 'image', P2: 'image', P3: 'image', P4: 'image', P5: 'image', P6: 'image', P7: 'image', B5: 'image',
 };
 
 /** 사진을 넣고 싶을 때 갈아탈 기본 후보 — 재료 손실이 가장 적은 짝 */
 export const PHOTO_ALT: Partial<Record<CardTemplateId, CardTemplateId>> = {
-  B1: 'P1', B3: 'P2', B6: 'P1', B7: 'P6', B8: 'P5', C2: 'C1', C3: 'C1', C4: 'C1',
+  B1: 'P1', B3: 'P2', B6: 'P1', B7: 'P6', B8: 'P5', B10: 'P2', B11: 'P1', C2: 'C1', C3: 'C1', C4: 'C1',
 };
 
 export function hasImageSlot(t: CardTemplateId): boolean {
@@ -113,7 +128,12 @@ export type Bag = {
   style: Record<string, unknown>;
 };
 
-const STYLE_KEYS = ['accentColor', 'overlay', 'coverPos', 'hlColor', 'titleAnchor', 'hlStyle'] as const;
+// coverLayout·coverArt 등 커버 전용 키도 함께 나른다 — C1이 아닌 템플릿에선 렌더 스키마가
+// 무시하지만 props에 남아 있어서, 다른 템플릿을 거쳐 C1으로 돌아와도 v3·아트 설정이 살아남는다.
+const STYLE_KEYS = [
+  'accentColor', 'overlay', 'coverPos', 'hlColor', 'titleAnchor', 'hlStyle',
+  'coverLayout', 'coverArt', 'artText', 'artIcons', 'tone',
+] as const;
 
 const str = (v: unknown): string | undefined => {
   const s = typeof v === 'string' ? v.trim() : '';
@@ -147,6 +167,16 @@ function splitToItems(text?: string): string[] {
   if (bySentence.length > 1) return bySentence;
   const byDot = text.split(/\s*·\s*/).map((l) => l.trim()).filter(Boolean);
   return byDot.length > 1 ? byDot : byLine;
+}
+
+/** AI 재작성 결과에 기존 스타일(포인트색·커버 유형·아트 등)을 이어붙인다 — 글은 새로, 모양은 유지 */
+export function carryStyle(
+  oldProps: Record<string, unknown>,
+  newProps: Record<string, unknown>
+): Record<string, unknown> {
+  const out = { ...newProps };
+  for (const k of STYLE_KEYS) if (oldProps[k] !== undefined && out[k] === undefined) out[k] = oldProps[k];
+  return out;
 }
 
 export function harvest(template: CardTemplateId, raw: Record<string, unknown>): Bag {
@@ -449,6 +479,41 @@ export function convertProps(
         callouts: undefined,
       };
       break;
+    case 'B10':
+      props = {
+        ...S,
+        eyebrow: plain(bag.kicker),
+        heading: need(headline, '제목'),
+        hl: keepHl(bag.hl, headline),
+        body: need(
+          bag.body && bag.body !== headline ? bag.body : bag.items.join('\n\n') || bag.sub,
+          '본문'
+        ),
+        note: plain(bag.footer),
+      };
+      break;
+    case 'B11': {
+      const cells = fitPairs(bag, 3, 4);
+      props = {
+        ...S,
+        heading: need(headline, '제목'),
+        hl: keepHl(bag.hl, headline),
+        cells: need(
+          cells.length >= 3 ? cells.map((r) => clean({ title: plain(r.t), desc: r.d })) : undefined,
+          '항목 3개'
+        ),
+      };
+      break;
+    }
+    case 'P7':
+      props = {
+        ...S,
+        eyebrow: plain(bag.kicker),
+        lead: need(bag.body ?? headline, '핵심 한 줄'),
+        caption: bag.sub !== bag.body ? plain(bag.sub) : undefined,
+        image: bag.image,
+      };
+      break;
     case 'P1': {
       const items = fitItems(bag, 2, 4);
       props = {
@@ -540,12 +605,15 @@ export const SAMPLE_PROPS: Record<CardTemplateId, Record<string, unknown>> = {
   B7: { big: '40', unit: '%', cap: '무엇이 **얼마나** 달라졌나', sub: '측정 기준 한 줄' },
   B8: { badge: '프롬프트 패턴', patternEn: 'Pattern Name', patternName: '패턴 이름', when: '이런 상황에서', lines: ['# 언제 쓰는지 주석', '[변수]를 넣어 지시', '핵심 지시 한 줄'], effect: '기대 효과 한 줄' },
   B9: { lead: '화면에서 **여기**만 보면 됩니다' }, // shot은 호출부가 채운다(필수)
+  B10: { eyebrow: 'DEEP DIVE', heading: '작은 활자로 길게\n싣는 제목', hl: '작은 활자', body: '첫 문단을 여기에. 다른 장보다 활자가 작아 긴 설명이 들어간다.\n\n둘째 문단부터는 오른쪽 칼럼으로 흐른다.', note: '· 하단 각주 한 줄' },
+  B11: { heading: '네 가지로 정리', hl: '네 가지', cells: [{ title: '첫 항목', desc: '설명 한 줄' }, { title: '둘째 항목', desc: '설명 한 줄' }, { title: '셋째 항목', desc: '설명 한 줄' }, { title: '넷째 항목', desc: '설명 한 줄' }] },
   P1: { eyebrow: '라벨', lead: '이 장의 **핵심** 한 줄', items: ['첫 번째 항목', '두 번째 항목'] },
   P2: { eyebrow: '라벨', heading: '가장 크게 설 제목', sub: '부제 한 줄', body: '작은 회색 문단.\n위계로 읽히는 본문을 여기에.' },
   P3: { label: '라벨', title: '풀사진 위\n헤드라인', items: ['뒷받침 한 줄'], footer: '@CONCEPT' },
   P4: { quote: '인용하고 싶은 한 문장', attribution: '기록' },
   P5: { eyebrow: '라벨', lead: '이 장의 **핵심** 한 줄', items: ['첫 번째 항목', '두 번째 항목'], footer: '@CONCEPT' },
   P6: { kicker: '맥락 한 줄', big: '70%', resolve: '숫자가 말하는 **한 문장**' },
+  P7: { eyebrow: '라벨', lead: '사진 두 장이 말하는 **한 줄**', caption: '사진 아래 회색 부연 한 줄' },
 };
 
 /** 새 슬라이드용 props — 사진 자리가 있는 템플릿엔 트레이의 첫 이미지를 미리 꽂아 준다 */

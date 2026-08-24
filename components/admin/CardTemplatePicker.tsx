@@ -181,6 +181,11 @@ export function CardTemplatePicker({
               ? '지금 슬라이드의 글을 각 템플릿에 얹어 본 모습입니다. 클릭하면 그대로 옮겨져요 (AI 호출 없음).'
               : '샘플 문구로 레이아웃만 보여줍니다. 고르면 빈 슬라이드가 추가되고 바로 편집할 수 있어요.'}
           </p>
+          {busy && (
+            <p className="mt-2 rounded-md bg-accent/10 px-3 py-2 text-xs font-medium text-accent">
+              AI가 이 템플릿에 맞게 글을 다시 쓰는 중… 몇 초 걸려요. 끝나면 슬라이드에 바로 반영됩니다.
+            </p>
+          )}
         </DialogHeader>
 
         <label className="flex items-center gap-1.5 text-xs text-ink/60 mb-3">

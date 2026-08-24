@@ -130,7 +130,7 @@ function captionBlockGuide(src: CardSource): string {
 
 // ── 댓글 키워드 충돌 검사 ────────────────────────────────────────────────
 //
-// 왜 "같은 단어냐"만 봐서는 부족한가: 리틀리·ManyChat 계열 자동화는 트리거를 **contains(포함)**
+// 왜 "같은 단어냐"만 봐서는 부족한가: 리틀리 계열 자동화는 트리거를 **contains(포함)**
 // 로 매칭하는 게 기본이다(exact로 두면 "프롬프트요", "프롬프트!" 같은 변형을 다 놓친다).
 // 그래서 키워드 하나가 다른 키워드의 **부분 문자열이기만 해도** 두 게시물의 규칙이 동시에 걸린다
 // — 예: A글 "프롬프트" / B글 "프롬프트정리" → B에 "프롬프트정리"를 단 사람이 A의 자동화에도 걸린다.
@@ -280,7 +280,7 @@ export type CardSetDraft = {
   metaphorQueries: string[];
   /** AI가 정의한(또는 운영자가 지정한) 이 콘텐츠의 엣지 한 줄 — 검수 UI에서 수정·재생성 축 */
   edge: string;
-  /** CTA 유형 — comment_dm(댓글→DM, ManyChat) | info_save(저장+프로필 링크) */
+  /** CTA 유형 — comment_dm(댓글→DM, 리틀리) | info_save(저장+프로필 링크) */
   ctaType: CardCtaType;
   /** comment_dm일 때 댓글 트리거 키워드 */
   ctaKeyword: string;
@@ -431,6 +431,8 @@ function lintSlide(template: CardTemplateId, props: Record<string, unknown>): st
     rows?: { term: string; desc?: string }[];
     steps?: { title: string; desc?: string }[];
     lines?: string[];
+    linesKo?: string[];
+    cells?: { title: string; desc?: string }[];
     items?: string[];
   };
   const issues: string[] = [];
@@ -503,8 +505,25 @@ function lintSlide(template: CardTemplateId, props: Record<string, unknown>): st
       push(lintLen('patternName', p.patternName, 12));
       push(lintLen('when', p.when, 24));
       push(lintLen('effect', p.effect, 22));
-      if ((p.lines ?? []).length > 4) push([`lines ${p.lines!.length}줄 (맛보기 최대 4줄)`]);
-      for (const l of p.lines ?? []) push(lintLen('line', l, 24));
+      if ((p.lines ?? []).length > 5) push([`lines ${p.lines!.length}줄 (발췌 최대 5줄)`]);
+      for (const l of p.lines ?? []) push(lintLen('line', l, 46));
+      for (const l of p.linesKo ?? []) push(lintLen('lineKo', l, 32));
+      break;
+    case 'B10':
+      push(lintLines('heading', p.heading ?? '', 18, 2));
+      push(lintLen('body', p.body, 400));
+      push(lintLen('note', p.note, 42));
+      break;
+    case 'B11':
+      push(lintLines('heading', p.heading ?? '', 18, 2));
+      for (const c of p.cells ?? []) {
+        push(lintLen('cell.title', c.title, 14));
+        push(lintLen('cell.desc', c.desc, 46));
+      }
+      break;
+    case 'P7':
+      push(lintLen('lead', p.lead, 28));
+      push(lintLen('caption', p.caption, 52));
       break;
     // ── P 계열 (사진 편집형) — 강조는 카드당 1구절이 벤치마크 룰 ──
     case 'P1':
@@ -566,7 +585,9 @@ const TEMPLATE_SPECS = `[템플릿별 props 규격 — 줄바꿈은 문자열 �
   · 네 항목 모두 24자 이내로 압축되면 layout:"versus"(좌우 대비)를 쓰면 대칭으로 읽힌다.
 - B6 스텝: {"heading":"≤13자","hl":"핵심 구","steps":[{"title":"≤12자","desc":"≤18자"}] 2~4개}
 - B7 숫자: {"big":"숫자만 ≤4자","unit":"%·배 등(선택)","cap":"1~2줄, 줄당 ≤16자, **강조** 1개","sub":"≤38자(선택)"} — 재료에 실제로 있는 숫자만
-- B8 프롬프트 패턴: {"badge":"'패턴 03' 등 ≤8자(선택)","patternEn":"영어 패턴명 원문 그대로(재료에 있으면 필수 — 예: Blindspot Pass) ≤30자","patternName":"≤12자 한글 패턴명(patternEn 아래 부제로 렌더)","when":"≤22자 — 어떤 상황에서 쓰는지 (따옴표 없이)","lines":["≤22자/줄"] 3~4줄 핵심 맛보기 — 전문이 아니라 구조가 보이는 핵심만, 변수는 [대괄호],"effect":"≤20자 기대 효과 (실측·구체적으로)"} — 인스타에선 복사 불가이므로 '복사' 언급 금지. 이 슬라이드의 목표는 "나도 써보고 싶다". CTA(댓글 유도 등)는 캡션이 전담 — 슬라이드에 ctaLine 생성 금지
+- B8 프롬프트 패턴: {"badge":"'패턴 03' 등 ≤8자(선택)","patternEn":"영어 패턴명 원문 그대로(재료에 있으면 필수 — 예: Blindspot Pass) ≤30자","patternName":"≤12자 한글 패턴명(patternEn 아래 부제로 렌더)","when":"≤22자 — 어떤 상황에서 쓰는지 (따옴표 없이)","lines":["≤44자/줄"] 3~5줄 — **원문 발췌 우선**: 재료에 실제 프롬프트 원문이 있으면 그 문장을 그대로 인용한다(새로 짓거나 [대괄호] 패턴으로 일반화하지 말 것). 길면 문장 단위로 잘라 핵심 문장만 고르되 표현은 원문 유지, 생략은 줄 끝 … 표기. 재료에 원문이 없을 때만 구조 요약([대괄호] 변수) 허용,"linesKo":["≤30자/줄"] lines가 영문일 때만, 같은 길이로 줄별 한글 번역(재료에 한국어 번역본이 있으면 그 표현을, 없으면 간결한 직역 — 의역·요약 금지). lines가 이미 한국어면 생략,"effect":"≤20자 기대 효과 — 재료에 있는 실측만, 없으면 생략"} — 인스타에선 복사 불가이므로 '복사' 언급 금지. 이 슬라이드의 목표는 "진짜 쓰인 프롬프트를 봤다"는 신뢰 — 원문의 질감(어투·구체 명사)이 곧 증거다. CTA(댓글 유도 등)는 캡션이 전담 — 슬라이드에 ctaLine 생성 금지
+- B10 미니 에디토리얼: {"eyebrow":"≤14자 영문 라벨(선택)","heading":"1~2줄, 줄당 ≤16자","hl":"핵심 구","body":"'\\n\\n' 문단 구분 2~3문단, 총 ≤380자 — 활자가 작아(24px) 긴 설명을 안 자르고 실을 수 있다. 배경·맥락·조건 서술에 최적","note":"≤40자 각주(선택)"} — 다른 장이 전부 큰 활자일 때 리듬 전환용으로 1~2장 섞으면 좋다
+- B11 텍스트 그리드: {"heading":"1~2줄, 줄당 ≤16자","hl":"핵심 구","cells":[{"title":"≤12자","desc":"≤44자"}] 3~4개} — 병렬 항목(기능 4개·조건 4개·유형 4개)을 2×2 타일로. B2 불릿과 같은 재료라도 항목이 대등하면 이쪽이 읽기 쉽다
 
 [템플릿 선택 규칙 — 사진 우선]
 - 계획 줄에 **📷사진 있음** = 본문에서 추출한 실제 이미지가 이미 있는 장. **P 계열을 우선 선택**한다
@@ -585,7 +606,12 @@ const TEMPLATE_SPECS = `[템플릿별 props 규격 — 줄바꿈은 문자열 �
 - P3 풀사진+하단: {"label":"≤14자(선택)","title":"2~3줄, 줄당 ≤13자","items":["≤32자"] 0~3개(선택)","footer":"@영문개념(선택)"} — 사진이 주인공인 전환·강조 장. 텍스트 적을수록 강하다
 - P4 사진인용: {"quote":"≤44자 인용/선언 (따옴표 자동)","attribution":"≤22자 출처(선택)"} — B4의 사진 버전. 강한 한 문장이 있을 때
 - P5 블랙+번호목록: {"index":"'02' 같은 진행표시(선택)","eyebrow":"≤14자","lead":"≤28자","items":["≤30자"] 2~4개,"footer":"@영문개념(선택)"} — 사진이 없거나 프롬프트·코드 소재의 폴백. 타이포가 주인공
-- P6 블랙+빅넘버: {"kicker":"≤18자 맥락","big":"≤6자 거대 숫자/단어","resolve":"1~2줄, 줄당 ≤18자 해소","footer":"(선택)"} — 본문 중간에 숫자 한 방. 재료에 실재하는 숫자만`;
+- P6 블랙+빅넘버: {"kicker":"≤18자 맥락","big":"≤6자 거대 숫자/단어","resolve":"1~2줄, 줄당 ≤18자 해소","footer":"(선택)"} — 본문 중간에 숫자 한 방. 재료에 실재하는 숫자만
+- P7 사진그리드: {"eyebrow":"≤14자(선택)","lead":"≤26자 핵심 한 줄","caption":"≤50자 회색 부연(선택)"} — 재료 이미지가 2장 이상일 때(전/후, 화면 2종 비교 등). image·image2는 시스템이 채운다
+
+[템플릿 다양성 규칙]
+- 한 세트에서 같은 본문 템플릿을 3번 이상 연속으로 쓰지 말 것 (B8 프롬프트 연속은 예외)
+- 텍스트 위주 세트라면 큰 활자 장 사이에 B10(작은 활자)·B11(그리드)을 섞어 리듬을 만들 것`;
 
 const SYSTEM = `당신은 케이스랩(caselab)의 SNS 콘텐츠 에디터입니다. 발행된 웹 콘텐츠를 인스타그램 캐러셀 슬라이드 규격으로 압축 재작성합니다.
 
@@ -1154,7 +1180,7 @@ function finalizeSlides(
   ctaKeyword: string
 ): CardSlide[] {
   const total = slides.length;
-  const PAGED: CardTemplateId[] = ['B1', 'B2', 'B3', 'B5', 'B6', 'B7', 'B8', 'B9'];
+  const PAGED: CardTemplateId[] = ['B1', 'B2', 'B3', 'B5', 'B6', 'B7', 'B8', 'B9', 'B10', 'B11'];
   return slides.map(({ planIndex, ...s }, i) => {
     const props = { ...s.props };
     if (PAGED.includes(s.template)) props.page = `${i + 1} / ${total}`;

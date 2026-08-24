@@ -7,7 +7,7 @@ import { Label } from '@/components/ui/label';
 import { cn } from '@/lib/utils';
 import { ImageZoom } from '@/components/admin/ImageZoom';
 import { uploadImageFile, uploadImageFromUrl, extractDroppedImage } from '@/lib/image-upload';
-import { COVER_ART_OPTIONS } from '@/lib/cardpress/convert';
+import { COVER_ART_OPTIONS, COVER_ART_PRIMARY } from '@/lib/cardpress/convert';
 
 // 썸네일 입력 동작(업로드·끌어놓기·붙여넣기) 공통 로직.
 // 설정 패널의 ThumbnailField와 발행 레일의 ThumbnailDropzone이 둘 다 이걸 쓰고
@@ -173,7 +173,8 @@ function ThumbnailMaker({ suggestTitle, onDone }: { suggestTitle?: string; onDon
           onChange={(e) => setArt(e.target.value)}
           className="h-7 rounded-md border border-border bg-transparent px-1 text-xs"
         >
-          {COVER_ART_OPTIONS.filter((o) => !['photo', 'object', 'term', 'quote', 'data', 'numbers'].includes(o.value)).map((o) => (
+          {/* 여기엔 이미지 입력이 없어서 사진 아트는 제외 — 나머지는 카드뉴스와 같은 기본 5종 */}
+          {COVER_ART_OPTIONS.filter((o) => COVER_ART_PRIMARY.includes(o.value) && o.value !== 'photo').map((o) => (
             <option key={o.value} value={o.value}>
               {o.label}
             </option>
