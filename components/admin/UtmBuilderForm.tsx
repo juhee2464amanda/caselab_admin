@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -15,6 +15,22 @@ export function UtmBuilderForm() {
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [built, setBuilt] = useState<string | null>(null);
+  // 기존에 쓴 값들 — 같은 축을 손으로 다시 쓰다 dm/DM/dms처럼 갈라져 GA 집계가 분산되는 걸 막는다.
+  // datalist라 기존 값에서 고르는 게 기본이고, 새 값이 필요하면 그냥 타이핑하면 된다.
+  const [used, setUsed] = useState<{ source: string[]; medium: string[]; campaign: string[] }>({ source: [], medium: [], campaign: [] });
+
+  useEffect(() => {
+    supabase
+      .from('utm_links')
+      .select('source, medium, campaign')
+      .then(({ data }) => {
+        if (!data) return;
+        const uniq = (k: 'source' | 'medium' | 'campaign') =>
+          Array.from(new Set(data.map((r) => r[k]).filter(Boolean))).sort();
+        setUsed({ source: uniq('source'), medium: uniq('medium'), campaign: uniq('campaign') });
+      });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   function set<K extends keyof typeof f>(k: K, v: string) {
     setF((p) => ({ ...p, [k]: v }));
@@ -81,9 +97,12 @@ export function UtmBuilderForm() {
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
         <Field label="라벨 *"><Input value={f.label} onChange={(e) => set('label', e.target.value)} placeholder="인스타 피드 6월" /></Field>
         <Field label="target URL *"><Input value={f.target_url} onChange={(e) => set('target_url', e.target.value)} placeholder="https://caselab.kr/cases/..." /></Field>
-        <Field label="source *"><Input value={f.source} onChange={(e) => set('source', e.target.value)} placeholder="instagram" /></Field>
-        <Field label="medium *"><Input value={f.medium} onChange={(e) => set('medium', e.target.value)} placeholder="social" /></Field>
-        <Field label="campaign *"><Input value={f.campaign} onChange={(e) => set('campaign', e.target.value)} placeholder="june-launch" /></Field>
+        <Field label="source * (기존 값에서 선택 권장)"><Input list="utm-used-source" value={f.source} onChange={(e) => set('source', e.target.value)} placeholder="instagram" /></Field>
+        <Field label="medium * (기존 값에서 선택 권장)"><Input list="utm-used-medium" value={f.medium} onChange={(e) => set('medium', e.target.value)} placeholder="dm" /></Field>
+        <Field label="campaign *"><Input list="utm-used-campaign" value={f.campaign} onChange={(e) => set('campaign', e.target.value)} placeholder="june-launch" /></Field>
+        <datalist id="utm-used-source">{used.source.map((v) => <option key={v} value={v} />)}</datalist>
+        <datalist id="utm-used-medium">{used.medium.map((v) => <option key={v} value={v} />)}</datalist>
+        <datalist id="utm-used-campaign">{used.campaign.map((v) => <option key={v} value={v} />)}</datalist>
         <Field label="content (선택)"><Input value={f.content} onChange={(e) => set('content', e.target.value)} placeholder="post-0607" /></Field>
       </div>
       {error && <p className="text-sm text-red-600">{error}</p>}

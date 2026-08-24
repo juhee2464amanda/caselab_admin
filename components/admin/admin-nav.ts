@@ -94,7 +94,7 @@ export const SECTIONS: Section[] = [
     ],
   },
   {
-    // 유입 채널 운영 데스크 — ManyChat 숏링크 대장 + UTM 빌더 (구 대시보드 탭에서 이동).
+    // 유입 채널 운영 데스크 — 자동DM(리틀리) 숏링크 대장 + UTM 빌더 (구 대시보드 탭에서 이동).
     // 향후 광고 집행·유입 분석 탭이 늘어날 자리.
     key: 'marketing',
     label: '마케팅',

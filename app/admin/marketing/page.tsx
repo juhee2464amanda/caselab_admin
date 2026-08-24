@@ -2,7 +2,7 @@ import { createSupabaseServerClient, isSupabaseConfigured } from '@/lib/supabase
 import { formatDate } from '@/lib/utils';
 import { MarketingLinkForm, ShortLinkCell, ActiveToggle } from '@/components/admin/MarketingLinkForm';
 
-// /admin/marketing — 유입 링크 대장. ManyChat 숏링크(utm_links.kind='manychat')
+// /admin/marketing — 유입 링크 대장. 자동DM 숏링크(utm_links.kind='dm')
 // 생성·관리 + link_clicks 서버측 클릭 집계(총/최근 7일, 봇 제외).
 type MarketingLink = {
   id: string;
@@ -28,7 +28,7 @@ export default async function AdminMarketing() {
   const { data } = await supabase
     .from('utm_links')
     .select('id, label, code, keyword, ig_post_url, flow_name, full_url, memo, is_active, created_at')
-    .eq('kind', 'manychat')
+    .eq('kind', 'dm')
     .order('created_at', { ascending: false });
   const links = (data ?? []) as MarketingLink[];
 
@@ -54,7 +54,7 @@ export default async function AdminMarketing() {
       <header className="mb-6">
         <h1 className="font-serif text-xl sm:text-2xl font-semibold">유입 링크</h1>
         <p className="text-sm text-ink/60 mt-1">
-          ManyChat DM에 넣을 숏링크를 만들고, 게시물·키워드별 유입 클릭을 관리하세요. 클릭은 서버에서 직접 집계돼요 (봇 제외).
+          리틀리 자동DM에 넣을 숏링크를 만들고, 게시물·키워드별 유입 클릭을 관리하세요. 클릭은 서버에서 직접 집계돼요 (봇 제외).
         </p>
       </header>
 
