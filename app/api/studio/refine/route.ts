@@ -31,6 +31,7 @@ export async function POST(req: NextRequest) {
     reference?: string;
     count?: number;
     mode?: 'refine' | 'draft';
+    maxChars?: number;
   };
   const text = body.text?.trim();
   const instruction = body.instruction?.trim();
@@ -51,6 +52,10 @@ export async function POST(req: NextRequest) {
       rich: body.rich,
       reference: body.reference,
       count: body.count,
+      maxChars:
+        typeof body.maxChars === 'number' && Number.isFinite(body.maxChars) && body.maxChars > 0
+          ? Math.floor(body.maxChars)
+          : undefined,
     });
     return NextResponse.json(result);
   } catch (e) {

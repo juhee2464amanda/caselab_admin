@@ -99,6 +99,14 @@ export function RefineProvider({ children }: { children: ReactNode }) {
 
 const REFINE_PRESETS = ['더 간결하게', '더 쉽게 풀어서', '구체 사례·근거 추가', '문장 매끄럽게', '톤 다듬기'];
 
+// 분량 압축 칩 — "절반 수준으로"라고 말로만 적으면 모델이 문장만 다듬고 실제론 안 줄어서,
+// 원문 자수 × 비율을 하드 상한(maxChars)으로 서버에 넘긴다(text kind 전용). 클릭 즉시 실행.
+const LENGTH_PRESETS: { label: string; ratio: number }[] = [
+  { label: '⅔로', ratio: 2 / 3 },
+  { label: '절반으로', ratio: 0.5 },
+  { label: '⅓로', ratio: 1 / 3 },
+];
+
 // 문서 전체 수정은 "섹션 하나"가 아니라 "문서 전체에서 일관되게"가 목적이라 각도 예시가 다르다.
 const DOC_PRESETS = ['톤·용어 통일', '전체적으로 더 간결하게', '초보자도 읽히게 쉽게', '실무 적용 관점 강화', '중복 내용 정리'];
 
@@ -263,6 +271,7 @@ function RefineForm({ request, onApply }: { request: RefineRequest; onApply: (ch
   const doc = kind === 'document';
   const draftText = generate && kind === 'text'; // 빈 문단 초안 — 방향 또는 파일만으로 생성 가능
   const [instruction, setInstruction] = useState('');
+  const [lenRatio, setLenRatio] = useState<number | null>(null);
   const [reference, setReference] = useState('');
   const [refName, setRefName] = useState('');
   const [busy, setBusy] = useState(false);
@@ -291,9 +300,12 @@ function RefineForm({ request, onApply }: { request: RefineRequest; onApply: (ch
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const run = async (angle: string) => {
+  const run = async (angle: string, ratio: number | null = lenRatio) => {
     const q = angle.trim();
     if ((!q && !(draftText && reference)) || busy) return; // 문단 초안은 파일만 있어도 OK
+    // 분량 칩이 켜져 있으면 원문 자수 × 비율을 하드 상한으로 — 말("절반으로")만으론 실제로 안 줄어든다.
+    const maxChars =
+      kind === 'text' && !generate && ratio ? Math.max(40, Math.round(target.length * ratio)) : undefined;
     setBusy(true);
     setError(null);
     try {
@@ -308,7 +320,7 @@ function RefineForm({ request, onApply }: { request: RefineRequest; onApply: (ch
           ? { ...section, instruction: q, reference: reference || undefined }
           : doc
             ? { ...document, instruction: q, reference: reference || undefined }
-            : { text: target, instruction: q, rich, context, reference: reference || undefined, mode: draftText ? 'draft' : undefined };
+            : { text: target, instruction: q, rich, context, reference: reference || undefined, mode: draftText ? 'draft' : undefined, maxChars };
       const res = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -394,6 +406,45 @@ function RefineForm({ request, onApply }: { request: RefineRequest; onApply: (ch
                 {p}
               </button>
             ))}
+          </div>
+        )}
+        {/* 분량 칩(text kind 전용) — 클릭 즉시 자수 상한을 걸고 실행. 다시 누르면 해제. */}
+        {!generate && kind === 'text' && (
+          <div className="mb-1.5 flex flex-wrap items-center gap-1">
+            <span className="text-[11px] font-semibold text-ink/40">분량</span>
+            {LENGTH_PRESETS.map(({ label, ratio }) => {
+              const on = lenRatio === ratio;
+              return (
+                <button
+                  key={label}
+                  type="button"
+                  disabled={busy}
+                  onClick={() => {
+                    if (on) {
+                      setLenRatio(null);
+                      return;
+                    }
+                    setLenRatio(ratio);
+                    const q = instruction.trim() || '핵심만 남기고 압축';
+                    setInstruction(q);
+                    run(q, ratio);
+                  }}
+                  className={cn(
+                    'rounded-full border px-2 py-0.5 text-[11px] disabled:opacity-40',
+                    on
+                      ? 'border-accent bg-accent-50 font-semibold text-accent'
+                      : 'border-border text-ink/70 hover:border-accent hover:text-accent',
+                  )}
+                >
+                  {label}
+                </button>
+              );
+            })}
+            {lenRatio && (
+              <span className="text-[10.5px] text-ink/40">
+                {target.length}자 → {Math.max(40, Math.round(target.length * lenRatio))}자 이내
+              </span>
+            )}
           </div>
         )}
         <textarea

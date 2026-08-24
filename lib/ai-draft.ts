@@ -1048,6 +1048,9 @@ export interface RefineInput {
   count?: number;
   /** 'draft'면 빈 문단 초안 생성 — text 없이 방향(instruction)·참고자료(reference)로 새로 쓴다. 기본 'refine'. */
   mode?: 'refine' | 'draft';
+  /** 분량 하드 상한(공백 포함 자수). "절반 수준으로" 같은 말만으론 모델이 문장만 다듬고 내용을 안 버려서
+   *  실제로 줄지 않는다 — 자수 상한을 못박고, 초과 후보는 1회 재압축한다. refine 모드 전용. */
+  maxChars?: number;
 }
 
 /**
@@ -1096,7 +1099,11 @@ export async function refineText(input: RefineInput): Promise<{ candidates: Refi
 - 대상 텍스트의 핵심 의미·사실은 보존하고, 수정 각도가 요구하는 변화만 반영하세요.
 - 사실·수치·이름·URL을 새로 지어내지 마세요(원문에 있던 것만 사용).
 - 한국어, 케이스랩의 담백한 1인칭 운영자 톤. 본문에 이모지를 넣지 마세요.
-- 수정 각도가 길이를 명시하지 않으면 원문과 비슷한 분량을 유지하세요.
+${
+        input.maxChars
+          ? `- [분량 상한 — 최우선 규칙] 각 후보는 공백 포함 ${input.maxChars}자 이내여야 합니다. 문장을 다듬어 줄이는 것으론 부족합니다 — 덜 중요한 세부·예시·수식어·부연을 통째로 버리고 핵심만 남기세요. 상한을 넘는 후보는 무효입니다.`
+          : '- 수정 각도가 길이를 명시하지 않으면 원문과 비슷한 분량을 유지하세요.'
+      }
 - 서로 뚜렷이 다른 방향의 후보 ${count}개를 만드세요(같은 문장 재탕 금지).
 - 각 후보에 그 방향을 요약한 짧은 label을 붙이세요(8자 내외, 예: "간결 강조형", "사례 추가형", "질문 도입형"). 후보끼리 서로 다르게.
 - ${markerRule}
@@ -1129,6 +1136,42 @@ export async function refineText(input: RefineInput): Promise<{ candidates: Refi
       if (candidates.length >= count) break;
     }
   }
+
+  // 분량 상한 초과 후보 재압축(1회) — 상한을 줬는데도 넘겨 오면, 초과분만 모아 "내용을 버려서" 줄이게 한다.
+  // 재압축까지 실패한 후보는 그대로 반환(운영자가 보고 거른다).
+  const limit = !draft && input.maxChars ? input.maxChars : 0;
+  if (limit > 0 && candidates.some((c) => c.value.length > limit * 1.1)) {
+    const over = candidates
+      .map((c, i) => ({ ...c, i }))
+      .filter((c) => c.value.length > limit * 1.1);
+    const compressPrompt = `아래 후보들이 분량 상한(공백 포함 ${limit}자)을 넘었습니다. 각 후보를 ${limit}자 이내로 줄이세요.
+문장 다듬기가 아니라 덜 중요한 세부·예시·부연을 통째로 삭제해서 맞추세요. 핵심 의미·사실은 보존, 새 사실 금지. ${markerRule}
+
+${over.map((c) => `[후보 ${c.i}] (현재 ${c.value.length}자)\n${c.value}`).join('\n\n')}
+
+응답은 아래 JSON 객체 하나만 반환하세요(설명 없이, i는 위 후보 번호 그대로):
+{ "candidates": [ { "i": 0, "value": "압축한 텍스트" }, ... ] }`;
+    try {
+      const raw2 = await callModel(
+        `당신은 케이스랩(Caselab)의 콘텐츠 에디터입니다. 주어진 텍스트를 자수 상한에 맞게 압축합니다.`,
+        compressPrompt,
+        { allowedTools: [], model: 'sonnet', timeoutMs: 60_000 },
+      );
+      const parsed2 = (parseModelJson(raw2) ?? {}) as Record<string, unknown>;
+      if (Array.isArray(parsed2.candidates)) {
+        for (const c of parsed2.candidates) {
+          if (!c || typeof c !== 'object') continue;
+          const o = c as Record<string, unknown>;
+          const i = typeof o.i === 'number' ? o.i : -1;
+          const value = typeof o.value === 'string' ? o.value.trim() : '';
+          if (candidates[i] && value) candidates[i] = { ...candidates[i], value };
+        }
+      }
+    } catch {
+      // 재압축 실패 — 원 후보 그대로 둔다.
+    }
+  }
+
   return { candidates };
 }
 
