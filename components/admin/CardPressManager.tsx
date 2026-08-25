@@ -12,6 +12,7 @@ import { CARD_H, CARD_W, renderSlide } from '@/lib/cardpress/templates';
 import { RenderSlideSchema } from '@/types/cardpress';
 import type { CardSlide, CardTemplateId, CardAccent } from '@/types/cardpress';
 import { CardTemplatePicker, type PickResult } from '@/components/admin/CardTemplatePicker';
+import { STYLE_PACKS, type StylePackId } from '@/lib/cardpress/mapping';
 import {
   ART_TEXT_ARTS,
   ART_TEXT_HINT,
@@ -142,6 +143,9 @@ const ALT_MAP: Partial<Record<CardTemplateId, CardTemplateId[]>> = {
   P5: ['P1', 'P6'], P6: ['P5', 'B7'],
   B1: ['P1'], B3: ['P2'], B5: ['P1'], B8: ['P5'], B9: ['P3'], C3: ['C1'], C4: ['C1'],
   B10: ['P2', 'B2'], B11: ['B2', 'P1'], P7: ['P1', 'P3'],
+  B12: ['B2', 'P1'], B13: ['B10', 'P2'], B14: ['B11', 'B5'], B15: ['B4', 'P4'],
+  B16: ['B7', 'P6'], B17: ['B6', 'B1'], B18: ['B10', 'P5'],
+  C6: ['C1', 'C2'], C7: ['C1', 'C6'], P8: ['P3', 'P2'], P9: ['P2', 'C7'], P10: ['B9', 'P3'], P11: ['P2', 'P1'],
 };
 
 // 형광펜 색 팔레트 — 캐러셀 가이드 시스템(카테고리 3색+Bad 레드) + 벤치마크 골드
@@ -272,6 +276,62 @@ const FIELDS: Record<CardTemplateId, FieldDef[]> = {
     { key: 'hl', label: '형광펜 단어', kind: 'input' },
     { key: 'cells', label: '타일 (제목 | 설명)', kind: 'pairs', pairKeys: ['title', 'desc'], hint: '3~4개 · 2×2 그리드' },
   ],
+  B12: [
+    { key: 'heading', label: '제목', kind: 'textarea', hint: '1~2줄' },
+    { key: 'hl', label: '형광펜 단어', kind: 'input' },
+    { key: 'items', label: '체크 항목 (줄마다 1개)', kind: 'lines', hint: '3~6개 · ✓박스로 렌더' },
+    { key: 'footer', label: '각주', kind: 'input' },
+  ],
+  B13: [
+    { key: 'question', label: '질문', kind: 'textarea', hint: '1~2줄 · Q. 뒤에 크게' },
+    { key: 'hl', label: '형광펜 단어', kind: 'input' },
+    { key: 'answer', label: '답변', kind: 'textarea', hint: '≤170자 문단' },
+    { key: 'note', label: '각주', kind: 'input' },
+  ],
+  B14: [
+    { key: 'heading', label: '제목', kind: 'input', hint: '비워도 됨' },
+    { key: 'aTitle', label: '왼쪽 제목', kind: 'input', hint: 'accent 톤 열' },
+    { key: 'aItems', label: '왼쪽 항목 (줄마다 1개)', kind: 'lines' },
+    { key: 'bTitle', label: '오른쪽 제목', kind: 'input' },
+    { key: 'bItems', label: '오른쪽 항목 (줄마다 1개)', kind: 'lines' },
+  ],
+  B15: [
+    { key: 'quote', label: '인용문', kind: 'textarea', hint: '2~3줄 · 거대 따옴표 아래' },
+    { key: 'hl', label: '형광펜 단어', kind: 'input' },
+    { key: 'attribution', label: '출처', kind: 'input', hint: '앞의 — 는 자동' },
+    { key: 'context', label: '부연', kind: 'input' },
+  ],
+  B16: [
+    { key: 'heading', label: '제목', kind: 'input', hint: '비워도 됨' },
+    { key: 'stats', label: '스탯 (숫자 | 설명)', kind: 'pairs', pairKeys: ['big', 'label'], hint: '2~3개 · 단위는 숫자에 붙여도 됨' },
+    { key: 'footer', label: '각주', kind: 'input' },
+  ],
+  B17: [
+    { key: 'heading', label: '제목', kind: 'textarea' },
+    { key: 'hl', label: '형광펜 단어', kind: 'input' },
+    { key: 'steps', label: '단계 (제목 | 설명)', kind: 'pairs', pairKeys: ['title', 'desc'], hint: '3~5개 · 세로 레일' },
+  ],
+  B18: [
+    { key: 'eyebrow', label: '라벨', kind: 'input', hint: '영문 헤어라인' },
+    { key: 'heading', label: '제목', kind: 'textarea', hint: '1~2줄' },
+    { key: 'hl', label: '형광펜 단어', kind: 'input' },
+    { key: 'body', label: '본문', kind: 'textarea', hint: '빈 줄로 문단 구분 — 2문단 이상이면 2단' },
+    { key: 'note', label: '각주', kind: 'input' },
+  ],
+  C6: [
+    { key: 'kicker', label: '키커', kind: 'input', hint: '영문 라벨 (예: CASE STUDY)' },
+    { key: 'title', label: '제목', kind: 'textarea', hint: '2~3줄 · 줄당 ≤10자' },
+    { key: 'hl', label: '형광펜 단어', kind: 'input' },
+    { key: 'sub', label: '부제', kind: 'input' },
+    { key: 'footer', label: '푸터', kind: 'input' },
+  ],
+  C7: [
+    { key: 'kicker', label: '키커', kind: 'input' },
+    { key: 'title', label: '제목', kind: 'textarea', hint: '2~3줄 · 줄당 ≤9자' },
+    { key: 'hl', label: '형광펜 단어', kind: 'input' },
+    { key: 'sub', label: '부제', kind: 'input' },
+    { key: 'coverImage', label: '사진 URL', kind: 'input', hint: '오른쪽 세로 절반 · 비우면 타이포만' },
+  ],
   B9: [
     { key: 'lead', label: '도입', kind: 'input' },
     { key: 'shot', label: '스크린샷 URL', kind: 'input' },
@@ -324,6 +384,31 @@ const FIELDS: Record<CardTemplateId, FieldDef[]> = {
     { key: 'caption', label: '부연', kind: 'input', hint: '사진 아래 회색 한 줄' },
     { key: 'image', label: '사진 URL ①', kind: 'input', hint: '비우면 그라데이션 폴백' },
     { key: 'image2', label: '사진 URL ②', kind: 'input', hint: '있으면 2장 나란히' },
+  ],
+  P8: [
+    { key: 'lead', label: '핵심 한 줄', kind: 'textarea', hint: '사진 아래 · **강조** 1구절' },
+    { key: 'caption', label: '프레임 캡션', kind: 'input', hint: '폴라로이드 안 하단' },
+    { key: 'image', label: '사진 URL', kind: 'input' },
+  ],
+  P9: [
+    { key: 'eyebrow', label: '라벨', kind: 'input' },
+    { key: 'heading', label: '제목', kind: 'textarea', hint: '2~3줄 · 줄당 ≤9자' },
+    { key: 'hl', label: '형광펜 단어', kind: 'input' },
+    { key: 'body', label: '본문', kind: 'textarea', hint: '오른쪽 칼럼 문단' },
+    { key: 'image', label: '사진 URL', kind: 'input', hint: '왼쪽 세로 전체' },
+  ],
+  P10: [
+    { key: 'frameLabel', label: '창 라벨', kind: 'input', hint: 'URL/파일명 자리 · 기본 localhost:3000' },
+    { key: 'lead', label: '핵심 한 줄', kind: 'textarea' },
+    { key: 'caption', label: '부연', kind: 'input' },
+    { key: 'image', label: '스크린샷 URL', kind: 'input' },
+  ],
+  P11: [
+    { key: 'heading', label: '제목', kind: 'textarea', hint: '1~2줄 · 볼드 검정' },
+    { key: 'hl', label: '형광펜 단어', kind: 'input', hint: '옐로 형광펜 박스' },
+    { key: 'body', label: '본문', kind: 'textarea', hint: '**강조**는 볼드 검정' },
+    { key: 'credit', label: '사진 출처', kind: 'input', hint: '사진 좌상단 작은 표기' },
+    { key: 'image', label: '사진 URL', kind: 'input', hint: '상단 풀폭 720px' },
   ],
 };
 
@@ -513,6 +598,7 @@ export function CardPressManager({
   const [composeKind, setComposeKind] = useState<'content' | 'tool' | 'seed'>('content');
   const [composeEdge, setComposeEdge] = useState('');
   const [composeCta, setComposeCta] = useState<CardCtaType>('channel_intro');
+  const [composePack, setComposePack] = useState<StylePackId>('classic');
   const [composeKeyword, setComposeKeyword] = useState('프롬프트');
 
   // 씨앗 원문 재가공(source_url 대비 점검 → 적용) — 얇은 씨앗을 카드 생성 전에 원문으로 살찌우는 씬
@@ -580,6 +666,7 @@ export function CardPressManager({
           edge: composeEdge.trim() || undefined,
           ctaType: composeCta,
           ctaKeyword: composeCta === 'comment_dm' ? composeKeyword.trim() || undefined : undefined,
+          stylePack: composePack,
         }),
       });
       const data = await res.json();
@@ -652,6 +739,20 @@ export function CardPressManager({
                 onChange={(e) => setComposeEdge(e.target.value)}
                 placeholder={'예: "앤트로픽 현직 엔지니어가 직접 검증했다"는 신뢰가 이 글의 엣지 — 커버와 도입에서 이걸 세울 것'}
               />
+            </div>
+            <div className="flex items-center gap-2 flex-wrap">
+              <Label className="text-xs shrink-0">스타일 팩</Label>
+              {STYLE_PACKS.map((pk) => (
+                <button
+                  key={pk.id}
+                  onClick={() => setComposePack(pk.id)}
+                  title={pk.desc}
+                  className={`text-xs rounded-full px-2.5 py-1 ${composePack === pk.id ? 'bg-ink text-white' : 'bg-ink/5 text-ink/60 hover:bg-ink/10'}`}
+                >
+                  {pk.label}
+                </button>
+              ))}
+              <span className="text-[11px] text-ink/40">세트의 옷(커버·본문 템플릿 조합)을 통째로 바꿉니다</span>
             </div>
             <div className="flex items-center gap-2 flex-wrap">
               <Label className="text-xs shrink-0">CTA</Label>
@@ -1041,6 +1142,7 @@ function CardEditor({ card, sourceTitle }: { card: CardRow; sourceTitle?: string
   const [threadsCover, setThreadsCover] = useState(card.threads_cover ?? '');
   const [edge, setEdge] = useState(card.edge ?? '');
   const [ctaType, setCtaType] = useState<CardCtaType>(card.cta_type ?? 'channel_intro');
+  const [stylePack, setStylePack] = useState<StylePackId>('classic');
   const [ctaKeyword, setCtaKeyword] = useState(card.cta_keyword ?? '프롬프트');
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -1651,6 +1753,7 @@ function CardEditor({ card, sourceTitle }: { card: CardRow; sourceTitle?: string
         edge: edge.trim() || undefined,
         ctaType,
         ctaKeyword: ctaKeyword.trim() || undefined,
+        stylePack,
       }),
     });
     if (!res.ok) throw new Error((await res.json()).error ?? `HTTP ${res.status}`);
@@ -1752,6 +1855,20 @@ function CardEditor({ card, sourceTitle }: { card: CardRow; sourceTitle?: string
             </>
           )}
           <span className="text-[11px] text-ink/40 ml-auto hidden lg:block">수정 후 [AI 전체 재생성] = 이 방향·문법으로 재작성</span>
+        </div>
+        <div className="flex items-center gap-2 flex-wrap">
+          <Label className="text-xs shrink-0">스타일 팩</Label>
+          {STYLE_PACKS.map((pk) => (
+            <button
+              key={pk.id}
+              onClick={() => setStylePack(pk.id)}
+              title={pk.desc}
+              className={`text-xs rounded-full px-2.5 py-1 ${stylePack === pk.id ? 'bg-ink text-white' : 'bg-ink/5 text-ink/60 hover:bg-ink/10'}`}
+            >
+              {pk.label}
+            </button>
+          ))}
+          <span className="text-[11px] text-ink/40">[AI 전체 재생성] 시 이 팩의 템플릿 조합으로 다시 입힙니다</span>
         </div>
       </div>
 

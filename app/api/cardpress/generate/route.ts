@@ -44,6 +44,8 @@ export async function POST(req: NextRequest) {
     /** CTA 유형 (기본 comment_dm) + 댓글 키워드 */
     ctaType?: 'info_save' | 'comment_dm' | 'channel_intro';
     ctaKeyword?: string;
+    /** 스타일 팩 — 계획 기본 템플릿 로테이션 (classic|magazine|darkmag|prompt|graphic) */
+    stylePack?: 'classic' | 'magazine' | 'darkmag' | 'prompt' | 'graphic';
   };
   if (!body.sourceType || !['content', 'tool', 'seed'].includes(body.sourceType) || !body.sourceId)
     return NextResponse.json({ error: 'sourceType=content|tool|seed + sourceId 필요' }, { status: 400 });
@@ -113,6 +115,7 @@ export async function POST(req: NextRequest) {
       ctaType: body.ctaType,
       ctaKeyword: body.ctaKeyword?.trim() || undefined,
       takenKeywords,
+      stylePack: body.stylePack,
     });
 
     if (body.dryRun) return NextResponse.json({ dryRun: true, draft });

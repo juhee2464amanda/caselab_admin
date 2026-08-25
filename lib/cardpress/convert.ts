@@ -47,11 +47,15 @@ export const ART_TEXT_HINT: Record<string, string> = {
 
 export const TEMPLATE_LABEL: Record<CardTemplateId, string> = {
   C1: 'C1 사진커버', C2: 'C2 다크커버', C3: 'C3 툴커버', C4: 'C4 VS커버', C5: 'C5 빅넘버커버',
+  C6: 'C6 화이트커버', C7: 'C7 스플릿커버',
   B1: 'B1 타임라인', B2: 'B2 불릿', B3: 'B3 용어', B4: 'B4 선언',
   B5: 'B5 솔직후기', B6: 'B6 스텝', B7: 'B7 숫자', B8: 'B8 프롬프트',
   B9: 'B9 스크린샷', B10: 'B10 미니텍스트', B11: 'B11 그리드',
+  B12: 'B12 체크리스트', B13: 'B13 Q&A', B14: 'B14 비교2열', B15: 'B15 다크인용',
+  B16: 'B16 스탯타일', B17: 'B17 세로타임라인', B18: 'B18 다크미니텍스트',
   P1: 'P1 사진+목록', P2: 'P2 사진+문단', P3: 'P3 풀사진', P4: 'P4 사진인용',
   P5: 'P5 블랙목록', P6: 'P6 블랙빅넘버', P7: 'P7 사진그리드',
+  P8: 'P8 폴라로이드', P9: 'P9 매거진', P10: 'P10 브라우저프레임', P11: 'P11 화이트매거진',
 };
 
 /** 한 줄 설명 — 시각 피커에서 이름 밑에 깔린다 */
@@ -61,6 +65,8 @@ export const TEMPLATE_DESC: Record<CardTemplateId, string> = {
   C3: '로고 배지가 있는 도구 소개 커버',
   C4: 'A vs B 비교 커버',
   C5: '큰 숫자·단어로 여는 커버 (사진 선택)',
+  C6: '화이트 대여백 에디토리얼 커버 (사진 없이)',
+  C7: '좌 다크 타이포 / 우 세로 사진 반반',
   B1: '용어·단계를 이름+설명 줄로 나열',
   B2: '배너 + 불릿 3~5개 (사진 슬롯 있음)',
   B3: '용어 하나를 크게 정의',
@@ -72,6 +78,13 @@ export const TEMPLATE_DESC: Record<CardTemplateId, string> = {
   B9: '스크린샷 + 말풍선 (사진 필수)',
   B10: '작은 활자 2단 칼럼 · 긴 설명을 안 자르고',
   B11: '항목 3~4개를 2×2 카드 타일로',
+  B12: '✓박스 체크리스트 3~6개',
+  B13: '큰 질문 하나 + 답변 문단',
+  B14: 'A/B 두 열 비교 (본문용)',
+  B15: '검정 바탕 거대 따옴표 인용',
+  B16: '숫자 타일 2~3개 나란히',
+  B17: '점·선 레일 세로 타임라인',
+  B18: 'B10의 다크 버전 (작은 활자 2단)',
   P1: '사진 밴드 + 번호 목록 · 본문 기본값',
   P2: '사진 밴드 + 제목/부제/문단',
   P3: '풀사진 + 하단 헤드라인',
@@ -79,13 +92,17 @@ export const TEMPLATE_DESC: Record<CardTemplateId, string> = {
   P5: '사진을 텍스처로 눌러 깐 목록',
   P6: '사진을 텍스처로 눌러 깐 빅넘버',
   P7: '사진 2장 나란히 + 아래 리드 (1장이면 풀폭)',
+  P8: '크림 바탕 폴라로이드 프레임 사진',
+  P9: '좌 세로 사진 / 우 텍스트 칼럼 매거진',
+  P10: '스크린샷을 브라우저 창 프레임에',
+  P11: '흰 바탕 · 상단 풀폭 사진 + 좌정렬 제목/문단',
 };
 
 /** 계열 그룹 — 피커 섹션 구분 */
 export const TEMPLATE_GROUPS: Array<{ label: string; hint: string; items: CardTemplateId[] }> = [
-  { label: '커버', hint: '1번 슬라이드', items: ['C1', 'C2', 'C3', 'C4', 'C5'] },
-  { label: '사진 본문', hint: '사진이 주인공인 본문', items: ['P1', 'P2', 'P3', 'P4', 'P5', 'P6', 'P7'] },
-  { label: '텍스트 본문', hint: '정보량이 많은 본문', items: ['B1', 'B2', 'B3', 'B4', 'B5', 'B6', 'B7', 'B8', 'B9', 'B10', 'B11'] },
+  { label: '커버', hint: '1번 슬라이드', items: ['C1', 'C2', 'C3', 'C4', 'C5', 'C6', 'C7'] },
+  { label: '사진 본문', hint: '사진이 주인공인 본문', items: ['P1', 'P2', 'P3', 'P4', 'P5', 'P6', 'P7', 'P8', 'P9', 'P10', 'P11'] },
+  { label: '텍스트 본문', hint: '정보량이 많은 본문', items: ['B1', 'B2', 'B3', 'B4', 'B5', 'B6', 'B7', 'B8', 'B9', 'B10', 'B11', 'B12', 'B13', 'B14', 'B15', 'B16', 'B17', 'B18'] },
 ];
 
 /**
@@ -94,13 +111,15 @@ export const TEMPLATE_GROUPS: Array<{ label: string; hint: string; items: CardTe
  * "사진 자리 없음"으로 취급하고 PHOTO_ALT로 C1 전환을 태운다(조용한 무반응 제거).
  */
 export const IMAGE_KEY: Partial<Record<CardTemplateId, string>> = {
-  C1: 'coverImage', C5: 'coverImage', B4: 'coverImage', B2: 'media', B9: 'shot',
-  P1: 'image', P2: 'image', P3: 'image', P4: 'image', P5: 'image', P6: 'image', P7: 'image', B5: 'image',
+  C1: 'coverImage', C5: 'coverImage', C7: 'coverImage', B4: 'coverImage', B2: 'media', B9: 'shot',
+  P1: 'image', P2: 'image', P3: 'image', P4: 'image', P5: 'image', P6: 'image', P7: 'image',
+  P8: 'image', P9: 'image', P10: 'image', P11: 'image', B5: 'image',
 };
 
 /** 사진을 넣고 싶을 때 갈아탈 기본 후보 — 재료 손실이 가장 적은 짝 */
 export const PHOTO_ALT: Partial<Record<CardTemplateId, CardTemplateId>> = {
   B1: 'P1', B3: 'P2', B6: 'P1', B7: 'P6', B8: 'P5', B10: 'P2', B11: 'P1', C2: 'C1', C3: 'C1', C4: 'C1',
+  B12: 'P1', B13: 'P2', B14: 'P1', B15: 'P4', B16: 'P6', B17: 'P1', B18: 'P9', C6: 'C1',
 };
 
 export function hasImageSlot(t: CardTemplateId): boolean {
@@ -479,6 +498,125 @@ export function convertProps(
         callouts: undefined,
       };
       break;
+    case 'B12': {
+      const items = fitItems(bag, 3, 6);
+      props = {
+        ...S,
+        heading: need(headline, '제목'),
+        hl: keepHl(bag.hl, headline),
+        items: need(items.length >= 3 ? items : undefined, '항목 3개'),
+        footer: plain(bag.footer),
+      };
+      break;
+    }
+    case 'B13':
+      props = {
+        ...S,
+        question: need(headline, '질문'),
+        hl: keepHl(bag.hl, headline),
+        answer: need(bag.body ?? bag.items.join(' '), '답변'),
+        note: plain(bag.footer),
+      };
+      break;
+    case 'B14': {
+      const list = fitItems(bag, 2, 8);
+      const half = Math.ceil(list.length / 2);
+      props = {
+        ...S,
+        heading: plain(headline),
+        aTitle: 'A',
+        bTitle: 'B',
+        aItems: need(list.length >= 2 ? list.slice(0, half).slice(0, 4) : undefined, '왼쪽 항목'),
+        bItems: need(list.length >= 2 ? list.slice(half).slice(0, 4) : undefined, '오른쪽 항목'),
+      };
+      break;
+    }
+    case 'B15':
+      props = {
+        ...S,
+        quote: need(headline ?? bag.body, '인용문'),
+        hl: keepHl(bag.hl, headline),
+        attribution: plain(bag.footer),
+        context: bag.sub !== bag.body ? plain(bag.sub) : undefined,
+      };
+      break;
+    case 'B16':
+      props = {
+        ...S,
+        heading: plain(headline),
+        hl: keepHl(bag.hl, headline),
+        stats: need(
+          bag.big ? [{ big: plain(bag.big)!, unit: plain(bag.unit), label: plain(bag.sub ?? bag.body ?? '기준') ?? '기준' }] : undefined,
+          '숫자 2개 이상 (AI 재작성 권장)'
+        ),
+      };
+      break;
+    case 'B17': {
+      const steps = fitPairs(bag, 3, 5);
+      props = {
+        ...S,
+        heading: need(headline, '제목'),
+        hl: keepHl(bag.hl, headline),
+        steps: need(steps.length >= 3 ? steps.map((r) => clean({ title: plain(r.t), desc: r.d })) : undefined, '단계 3개'),
+      };
+      break;
+    }
+    case 'C6':
+      props = {
+        ...S,
+        kicker: plain(bag.kicker),
+        title: need(headline, '제목'),
+        hl: keepHl(bag.hl, headline),
+        sub: plain(bag.sub),
+        footer: plain(bag.footer),
+      };
+      break;
+    case 'C7':
+      props = {
+        ...S,
+        kicker: plain(bag.kicker),
+        title: need(headline, '제목'),
+        hl: keepHl(bag.hl, headline),
+        sub: plain(bag.sub),
+        coverImage: bag.image,
+      };
+      break;
+    case 'P8':
+      props = {
+        ...S,
+        lead: need(bag.body ?? headline, '핵심 한 줄'),
+        caption: plain(bag.sub ?? bag.footer),
+        image: bag.image,
+      };
+      break;
+    case 'P9':
+      props = {
+        ...S,
+        eyebrow: plain(bag.kicker),
+        heading: need(headline, '제목'),
+        hl: keepHl(bag.hl, headline),
+        body: need(bag.body && bag.body !== headline ? bag.body : bag.items.join('\n') || bag.sub, '본문'),
+        image: bag.image,
+      };
+      break;
+    case 'P10':
+      props = {
+        ...S,
+        lead: need(bag.body ?? headline, '핵심 한 줄'),
+        caption: bag.sub !== bag.body ? plain(bag.sub) : undefined,
+        image: bag.image,
+      };
+      break;
+    case 'P11':
+      props = {
+        ...S,
+        heading: need(headline, '제목'),
+        hl: keepHl(bag.hl, headline),
+        body: need(bag.body && bag.body !== headline ? bag.body : bag.items.join(' ') || bag.sub, '본문'),
+        image: bag.image,
+      };
+      break;
+    case 'B18':
     case 'B10':
       props = {
         ...S,
@@ -607,6 +745,15 @@ export const SAMPLE_PROPS: Record<CardTemplateId, Record<string, unknown>> = {
   B9: { lead: '화면에서 **여기**만 보면 됩니다' }, // shot은 호출부가 채운다(필수)
   B10: { eyebrow: 'DEEP DIVE', heading: '작은 활자로 길게\n싣는 제목', hl: '작은 활자', body: '첫 문단을 여기에. 다른 장보다 활자가 작아 긴 설명이 들어간다.\n\n둘째 문단부터는 오른쪽 칼럼으로 흐른다.', note: '· 하단 각주 한 줄' },
   B11: { heading: '네 가지로 정리', hl: '네 가지', cells: [{ title: '첫 항목', desc: '설명 한 줄' }, { title: '둘째 항목', desc: '설명 한 줄' }, { title: '셋째 항목', desc: '설명 한 줄' }, { title: '넷째 항목', desc: '설명 한 줄' }] },
+  B12: { heading: '시작 전 체크', hl: '체크', items: ['첫 번째 확인 항목', '두 번째 확인 항목', '세 번째 확인 항목'], footer: '· 각주 한 줄' },
+  B13: { question: '왜 이 방법이\n먹히는가?', hl: '이 방법', answer: '답변 문단을 여기에. 질문 하나에 답 하나만 담는다.', note: '· 근거 출처 한 줄' },
+  B14: { heading: '무엇이 다른가', aTitle: '이 방식', bTitle: '기존 방식', aItems: ['장점 하나', '장점 둘'], bItems: ['한계 하나', '한계 둘'] },
+  B15: { quote: '인용하고 싶은\n한 문장을 여기에', hl: '한 문장', attribution: '출처 이름', context: '아래 작은 부연 한 줄' },
+  B16: { heading: '숫자로 보면', hl: '숫자', stats: [{ big: '30', unit: '초', label: '확인 주기' }, { big: '7', unit: '번', label: '완성까지 커밋' }], footer: '· 측정 기준 한 줄' },
+  B17: { heading: '흐름은 이렇게', hl: '흐름', steps: [{ title: '첫 단계', desc: '설명 한 줄' }, { title: '둘째 단계', desc: '설명 한 줄' }, { title: '셋째 단계', desc: '설명 한 줄' }] },
+  B18: { eyebrow: 'DEEP DIVE', heading: '다크 배경에\n작은 활자로', hl: '작은 활자', body: '첫 문단을 여기에. B10의 다크 버전이다.\n\n둘째 문단은 오른쪽 칼럼으로.', note: '· 하단 각주 한 줄' },
+  C6: { kicker: 'CASE STUDY', title: '화이트 커버\n제목을 여기에', hl: '화이트 커버', sub: '아래 부연 한 줄', footer: '읽는 데 5분' },
+  C7: { kicker: 'CASE STUDY', title: '반은 타이포\n반은 사진', hl: '사진', sub: '아래 부연 한 줄' },
   P1: { eyebrow: '라벨', lead: '이 장의 **핵심** 한 줄', items: ['첫 번째 항목', '두 번째 항목'] },
   P2: { eyebrow: '라벨', heading: '가장 크게 설 제목', sub: '부제 한 줄', body: '작은 회색 문단.\n위계로 읽히는 본문을 여기에.' },
   P3: { label: '라벨', title: '풀사진 위\n헤드라인', items: ['뒷받침 한 줄'], footer: '@CONCEPT' },
@@ -614,6 +761,10 @@ export const SAMPLE_PROPS: Record<CardTemplateId, Record<string, unknown>> = {
   P5: { eyebrow: '라벨', lead: '이 장의 **핵심** 한 줄', items: ['첫 번째 항목', '두 번째 항목'], footer: '@CONCEPT' },
   P6: { kicker: '맥락 한 줄', big: '70%', resolve: '숫자가 말하는 **한 문장**' },
   P7: { eyebrow: '라벨', lead: '사진 두 장이 말하는 **한 줄**', caption: '사진 아래 회색 부연 한 줄' },
+  P8: { lead: '사진 아래 **핵심** 한 줄', caption: '프레임 안 손글씨 자리' },
+  P9: { eyebrow: '라벨', heading: '매거진처럼\n서는 제목', hl: '매거진', body: '오른쪽 칼럼 본문을 여기에.' },
+  P10: { frameLabel: 'caselab.kr', lead: '화면이 말하는 **핵심** 한 줄', caption: '아래 회색 부연 한 줄' },
+  P11: { heading: '사진 아래 서는 제목', hl: '제목', body: '왼쪽 정렬 본문 문단. **강조**는 볼드 검정으로 렌더된다.', credit: '출처: pinterest' },
 };
 
 /** 새 슬라이드용 props — 사진 자리가 있는 템플릿엔 트레이의 첫 이미지를 미리 꽂아 준다 */

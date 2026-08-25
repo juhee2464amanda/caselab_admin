@@ -8,10 +8,12 @@ import {
   type CardTemplateId,
 } from '@/types/cardpress';
 import {
+  applyStylePack,
   buildSeedSlidePlan,
   buildSlidePlan,
   buildToolSlidePlan,
   seedTitle,
+  type StylePackId,
   toolKindLabel,
   type ContentRowLite,
   type SeedRowLite,
@@ -433,6 +435,9 @@ function lintSlide(template: CardTemplateId, props: Record<string, unknown>): st
     lines?: string[];
     linesKo?: string[];
     cells?: { title: string; desc?: string }[];
+    stats?: { big: string; unit?: string; label: string }[];
+    aItems?: string[];
+    bItems?: string[];
     items?: string[];
   };
   const issues: string[] = [];
@@ -510,9 +515,68 @@ function lintSlide(template: CardTemplateId, props: Record<string, unknown>): st
       for (const l of p.linesKo ?? []) push(lintLen('lineKo', l, 32));
       break;
     case 'B10':
+    case 'B18':
       push(lintLines('heading', p.heading ?? '', 18, 2));
       push(lintLen('body', p.body, 400));
       push(lintLen('note', p.note, 42));
+      break;
+    case 'B12':
+      push(lintLines('heading', p.heading ?? '', 16, 2));
+      for (const it of p.items ?? []) push(lintLen('item', it, 36));
+      break;
+    case 'B13':
+      push(lintLines('question', p.question ?? '', 16, 2));
+      push(lintLen('answer', p.answer, 180));
+      break;
+    case 'B14':
+      push(lintLen('heading', p.heading, 20));
+      push(lintLen('aTitle', p.aTitle, 12));
+      push(lintLen('bTitle', p.bTitle, 12));
+      for (const it of [...(p.aItems ?? []), ...(p.bItems ?? [])]) push(lintLen('item', it, 28));
+      break;
+    case 'B15':
+      push(lintLines('quote', p.quote ?? '', 15, 3));
+      push(lintLen('attribution', p.attribution, 22));
+      push(lintLen('context', p.context, 52));
+      break;
+    case 'B16':
+      push(lintLen('heading', p.heading, 20));
+      for (const s of p.stats ?? []) {
+        push(lintLen('stat.big', s.big, 6));
+        push(lintLen('stat.label', s.label, 20));
+      }
+      break;
+    case 'B17':
+      push(lintLines('heading', p.heading ?? '', 16, 2));
+      for (const s of p.steps ?? []) {
+        push(lintLen('step.title', s.title, 16));
+        push(lintLen('step.desc', s.desc, 32));
+      }
+      break;
+    case 'C6':
+      push(lintLines('title', p.title ?? '', 11, 3));
+      push(lintLen('sub', p.sub, 46));
+      break;
+    case 'C7':
+      push(lintLines('title', p.title ?? '', 10, 3));
+      push(lintLen('sub', p.sub, 36));
+      break;
+    case 'P8':
+      push(lintLen('lead', p.lead, 32));
+      push(lintLen('caption', p.caption, 28));
+      break;
+    case 'P9':
+      push(lintLines('heading', p.heading ?? '', 10, 3));
+      push(lintLen('body', p.body, 170));
+      break;
+    case 'P10':
+      push(lintLen('lead', p.lead, 28));
+      push(lintLen('caption', p.caption, 46));
+      break;
+    case 'P11':
+      push(lintLines('heading', p.heading ?? '', 16, 2));
+      push(lintLen('body', p.body, 210));
+      push(lintLen('credit', p.credit, 20));
       break;
     case 'B11':
       push(lintLines('heading', p.heading ?? '', 18, 2));
@@ -573,6 +637,8 @@ const TEMPLATE_SPECS = `[템플릿별 props 규격 — 줄바꿈은 문자열 �
     ⚠️ artText·artIcons는 **재료가 실제로 있을 때만** 낼 것. 지어내면 없는 사실이 카드로 나간다. 안 내면 시스템이 재료 없는 아트로 자동 배정한다.
   · 형광펜 표현: v3에서는 규격에 잠겨 있다(어두우면 블루 박스·밝으면 라임 박스) — "hlStyle"을 내지 말 것.
 - C5 빅넘버 커버: {"kicker":"≤20자 맥락 1줄","big":"거대 숫자/단어 ≤6자 (예: 10배, 11, FOCUS)","resolve":"1~2줄, 줄당 ≤16자 해소 문장 (**강조** 1개)","footer":"@영문개념(선택)"} — 핵심이 숫자/단어 하나로 요약될 때. 사진 없어도 성립
+- C6 화이트 커버: {"kicker":"≤14자 영문 라벨(선택)","title":"2~3줄, 줄당 ≤10자","hl":"title 속 핵심 구","sub":"≤44자 부연(선택)","footer":"≤14자(선택)"} — 대여백 에디토리얼. 사진 없이 성립, 담백한 소재에
+- C7 스플릿 커버: {"kicker":"≤14자(선택)","title":"2~3줄, 줄당 ≤9자","hl":"핵심 구","sub":"≤34자(선택)"} — 좌 타이포/우 세로사진 반반. 세로로 긴 사진이 있을 때만
 - B1 타임라인: {"lead":"≤36자 도입(선택, **강조** 1개)","heading":"≤13자 한 줄","hl":"heading 속 핵심 구","rows":[{"term":"≤8자","desc":"≤14자"}] 2~5개}
 - B2 불릿/개요: {"banner":"≤14자(✓ 접두 가능)","lead":"≤32자 — 이 장에서 가장 중요한 사실 한 줄 (개요 역할 슬라이드는 필수)","bullets":["≤30자, **강조** 각 1개"] 2~4개}
   · lead를 넣으면 개요 모드로 렌더된다: lead가 큰 패널로 서고 bullets는 번호 목록(01·02·03)으로 뒷받침 — 이때 bullets는 3개 이하.
@@ -588,6 +654,13 @@ const TEMPLATE_SPECS = `[템플릿별 props 규격 — 줄바꿈은 문자열 �
 - B8 프롬프트 패턴: {"badge":"'패턴 03' 등 ≤8자(선택)","patternEn":"영어 패턴명 원문 그대로(재료에 있으면 필수 — 예: Blindspot Pass) ≤30자","patternName":"≤12자 한글 패턴명(patternEn 아래 부제로 렌더)","when":"≤22자 — 어떤 상황에서 쓰는지 (따옴표 없이)","lines":["≤44자/줄"] 3~5줄 — **원문 발췌 우선**: 재료에 실제 프롬프트 원문이 있으면 그 문장을 그대로 인용한다(새로 짓거나 [대괄호] 패턴으로 일반화하지 말 것). 길면 문장 단위로 잘라 핵심 문장만 고르되 표현은 원문 유지, 생략은 줄 끝 … 표기. 재료에 원문이 없을 때만 구조 요약([대괄호] 변수) 허용,"linesKo":["≤30자/줄"] lines가 영문일 때만, 같은 길이로 줄별 한글 번역(재료에 한국어 번역본이 있으면 그 표현을, 없으면 간결한 직역 — 의역·요약 금지). lines가 이미 한국어면 생략,"effect":"≤20자 기대 효과 — 재료에 있는 실측만, 없으면 생략"} — 인스타에선 복사 불가이므로 '복사' 언급 금지. 이 슬라이드의 목표는 "진짜 쓰인 프롬프트를 봤다"는 신뢰 — 원문의 질감(어투·구체 명사)이 곧 증거다. CTA(댓글 유도 등)는 캡션이 전담 — 슬라이드에 ctaLine 생성 금지
 - B10 미니 에디토리얼: {"eyebrow":"≤14자 영문 라벨(선택)","heading":"1~2줄, 줄당 ≤16자","hl":"핵심 구","body":"'\\n\\n' 문단 구분 2~3문단, 총 ≤380자 — 활자가 작아(24px) 긴 설명을 안 자르고 실을 수 있다. 배경·맥락·조건 서술에 최적","note":"≤40자 각주(선택)"} — 다른 장이 전부 큰 활자일 때 리듬 전환용으로 1~2장 섞으면 좋다
 - B11 텍스트 그리드: {"heading":"1~2줄, 줄당 ≤16자","hl":"핵심 구","cells":[{"title":"≤12자","desc":"≤44자"}] 3~4개} — 병렬 항목(기능 4개·조건 4개·유형 4개)을 2×2 타일로. B2 불릿과 같은 재료라도 항목이 대등하면 이쪽이 읽기 쉽다
+- B12 체크리스트: {"heading":"1~2줄, 줄당 ≤14자","hl":"핵심 구","items":["≤34자"] 3~6개,"footer":"≤40자(선택)"} — 준비물·조건·자가진단처럼 "해당되는지 짚어보는" 재료에
+- B13 Q&A: {"question":"1~2줄, 줄당 ≤14자 — 독자가 실제로 물을 법한 질문","hl":"핵심 구","answer":"≤170자 문단","note":"≤40자(선택)"} — 반박·오해 풀기 자리. 질문 하나에 답 하나만
+- B14 비교 2열: {"heading":"≤18자(선택)","aTitle":"≤10자","bTitle":"≤10자","aItems":["≤26자"] 1~4개,"bItems":["≤26자"] 1~4개} — 전/후·A도구/B도구·수동/자동 대비. 재료에 실제 대비가 있을 때만
+- B15 다크 인용: {"quote":"2~3줄, 줄당 ≤13자","hl":"핵심 구","attribution":"≤20자 출처(선택)","context":"≤50자 부연(선택)"} — 원문 인용·선언 한 방. B4(사진 위)와 달리 사진 없이 성립
+- B16 스탯 타일: {"heading":"≤18자(선택)","stats":[{"big":"≤5자","unit":"%·배 등(선택)","label":"≤18자"}] 2~3개,"footer":"≤40자(선택)"} — 재료에 실재하는 숫자 2개 이상일 때만. B7(한 방)과 달리 숫자를 나란히 비교
+- B17 세로 타임라인: {"heading":"1~2줄, 줄당 ≤14자","hl":"핵심 구","steps":[{"title":"≤14자","desc":"≤30자"}] 3~5개} — 순서 있는 흐름. B6(가로 번호)보다 단계가 많거나 설명이 길 때
+- B18 다크 미니 에디토리얼: B10과 동일 스키마 — 검정 바탕 버전. 다크 장(B8·B15) 사이에 끼울 때 톤이 이어진다
 
 [템플릿 선택 규칙 — 사진 우선]
 - 계획 줄에 **📷사진 있음** = 본문에서 추출한 실제 이미지가 이미 있는 장. **P 계열을 우선 선택**한다
@@ -608,10 +681,16 @@ const TEMPLATE_SPECS = `[템플릿별 props 규격 — 줄바꿈은 문자열 �
 - P5 블랙+번호목록: {"index":"'02' 같은 진행표시(선택)","eyebrow":"≤14자","lead":"≤28자","items":["≤30자"] 2~4개,"footer":"@영문개념(선택)"} — 사진이 없거나 프롬프트·코드 소재의 폴백. 타이포가 주인공
 - P6 블랙+빅넘버: {"kicker":"≤18자 맥락","big":"≤6자 거대 숫자/단어","resolve":"1~2줄, 줄당 ≤18자 해소","footer":"(선택)"} — 본문 중간에 숫자 한 방. 재료에 실재하는 숫자만
 - P7 사진그리드: {"eyebrow":"≤14자(선택)","lead":"≤26자 핵심 한 줄","caption":"≤50자 회색 부연(선택)"} — 재료 이미지가 2장 이상일 때(전/후, 화면 2종 비교 등). image·image2는 시스템이 채운다
+- P8 폴라로이드: {"lead":"≤30자 핵심 한 줄","caption":"≤26자 프레임 안 캡션(선택)"} — 제작기·비하인드처럼 감성이 맞는 사진 1장에. 크림 바탕이라 다크 세트엔 안 어울림
+- P9 매거진: {"eyebrow":"≤14자(선택)","heading":"2~3줄, 줄당 ≤9자","hl":"핵심 구","body":"≤160자 칼럼 문단"} — 세로로 긴 사진 + 긴 설명이 같이 있을 때. 본문판 C7
+- P10 브라우저프레임: {"frameLabel":"창 상단 URL/파일명 ≤24자(선택)","lead":"≤26자","caption":"≤44자(선택)"} — 스크린샷 소재 전용. 화면임을 프레임으로 명시해 신뢰를 만든다
+- P11 화이트매거진: {"heading":"1~2줄, 줄당 ≤14자","hl":"핵심 구(옐로 형광펜)","body":"≤200자 문단 — **강조**는 볼드 검정","credit":"'출처: ...' ≤18자(선택, 사진 출처가 재료에 있을 때만)"} — 흰 바탕 잡지 문법(상단 사진+좌정렬 문단). 감성 사진 + 서술형 재료에. P2(다크)와 같은 자리의 밝은 버전
 
 [템플릿 다양성 규칙]
 - 한 세트에서 같은 본문 템플릿을 3번 이상 연속으로 쓰지 말 것 (B8 프롬프트 연속은 예외)
-- 텍스트 위주 세트라면 큰 활자 장 사이에 B10(작은 활자)·B11(그리드)을 섞어 리듬을 만들 것`;
+- 같은 템플릿을 한 세트에 2번 넘게 쓰지 말 것 — 계획 줄의 대안(alternatives)에서 다른 모양을 골라 리듬을 만든다
+- 텍스트 위주 세트라면 큰 활자 장 사이에 B10(작은 활자)·B11(그리드)·B12(체크리스트)를 섞을 것
+- 사진 있는 서술 장은 P2만 반복하지 말고 P11(화이트 매거진)과 번갈아 쓸 것 — 재료가 맞으면(비교→B14, 숫자 2개↑→B16, 순서→B17, 질문→B13) 전용 템플릿이 항상 범용보다 낫다`;
 
 const SYSTEM = `당신은 케이스랩(caselab)의 SNS 콘텐츠 에디터입니다. 발행된 웹 콘텐츠를 인스타그램 캐러셀 슬라이드 규격으로 압축 재작성합니다.
 
@@ -1180,7 +1259,7 @@ function finalizeSlides(
   ctaKeyword: string
 ): CardSlide[] {
   const total = slides.length;
-  const PAGED: CardTemplateId[] = ['B1', 'B2', 'B3', 'B5', 'B6', 'B7', 'B8', 'B9', 'B10', 'B11'];
+  const PAGED: CardTemplateId[] = ['B1', 'B2', 'B3', 'B5', 'B6', 'B7', 'B8', 'B9', 'B10', 'B11', 'B12', 'B13', 'B14', 'B15', 'B16', 'B17', 'B18'];
   return slides.map(({ planIndex, ...s }, i) => {
     const props = { ...s.props };
     if (PAGED.includes(s.template)) props.page = `${i + 1} / ${total}`;
@@ -1194,7 +1273,7 @@ function finalizeSlides(
     const planned = plan.slides[planIndex];
     if (planned?.image) {
       // C2·C3는 사진 없는 다크 커버 — coverImage는 사진형(C1·B4)에만
-      if ((s.template === 'C1' || s.template === 'B4') && !props.coverImage)
+      if ((s.template === 'C1' || s.template === 'C7' || s.template === 'B4') && !props.coverImage)
         props.coverImage = planned.image;
       if (s.template === 'B2' && !props.media) props.media = planned.image;
       if (s.template === 'B9' && !props.shot) props.shot = planned.image;
@@ -1357,10 +1436,11 @@ ${opts.instruction ? `\n[운영자 수정 방향 — 최우선] ${opts.instructi
 
 export async function generateCardSet(
   source: CardSource,
-  opts?: { edge?: string; ctaType?: CardCtaType; ctaKeyword?: string; takenKeywords?: string[] }
+  opts?: { edge?: string; ctaType?: CardCtaType; ctaKeyword?: string; takenKeywords?: string[]; stylePack?: StylePackId }
 ): Promise<CardSetDraft> {
   const ctaType: CardCtaType = opts?.ctaType ?? 'channel_intro';
-  const plan = sourcePlan(source);
+  // 스타일 팩 — 계획 기본 템플릿을 통째로 갈아입힌다 (재료·스파인은 그대로)
+  const plan = applyStylePack(sourcePlan(source), opts?.stylePack);
   const taken = (opts?.takenKeywords ?? []).slice(0, KEYWORD_LOOKBACK);
   const userPrompt = planPrompt(source, plan, opts?.edge, ctaType, taken);
 

@@ -412,6 +412,15 @@ export const P10PropsSchema = z.object({
   caption: z.string().optional(),
 });
 
+/** P11 화이트 매거진 — 상단 풀폭 사진 + 흰 바탕 왼쪽 정렬 제목/문단 (biscit 스타일) */
+export const P11PropsSchema = z.object({
+  ...PhotoFields,
+  heading: z.string().min(1),           // '\n' 줄바꿈 — 볼드 검정
+  hl: z.string().optional(),
+  body: z.string().min(1),              // '\n' 줄바꿈 · **강조**는 볼드 검정
+  credit: z.string().optional(),        // 사진 좌상단 "출처: ..." 작은 표기
+});
+
 /** P7 사진 그리드 — 사진 2장을 나란히(1장이면 풀폭 폴백) + 아래 리드 */
 export const P7PropsSchema = z.object({
   ...PhotoFields,                                    // image = 첫 번째 사진
@@ -423,8 +432,21 @@ export const P7PropsSchema = z.object({
 
 export const RenderSlideSchema = z.discriminatedUnion('template', [
   z.object({ template: z.literal('P7'), accent: CardAccentSchema, props: P7PropsSchema }),
+  z.object({ template: z.literal('P8'), accent: CardAccentSchema, props: P8PropsSchema }),
+  z.object({ template: z.literal('P9'), accent: CardAccentSchema, props: P9PropsSchema }),
+  z.object({ template: z.literal('P10'), accent: CardAccentSchema, props: P10PropsSchema }),
+  z.object({ template: z.literal('P11'), accent: CardAccentSchema, props: P11PropsSchema }),
   z.object({ template: z.literal('B10'), accent: CardAccentSchema, props: B10PropsSchema }),
   z.object({ template: z.literal('B11'), accent: CardAccentSchema, props: B11PropsSchema }),
+  z.object({ template: z.literal('B12'), accent: CardAccentSchema, props: B12PropsSchema }),
+  z.object({ template: z.literal('B13'), accent: CardAccentSchema, props: B13PropsSchema }),
+  z.object({ template: z.literal('B14'), accent: CardAccentSchema, props: B14PropsSchema }),
+  z.object({ template: z.literal('B15'), accent: CardAccentSchema, props: B15PropsSchema }),
+  z.object({ template: z.literal('B16'), accent: CardAccentSchema, props: B16PropsSchema }),
+  z.object({ template: z.literal('B17'), accent: CardAccentSchema, props: B17PropsSchema }),
+  z.object({ template: z.literal('B18'), accent: CardAccentSchema, props: B18PropsSchema }),
+  z.object({ template: z.literal('C6'), accent: CardAccentSchema, props: C6PropsSchema }),
+  z.object({ template: z.literal('C7'), accent: CardAccentSchema, props: C7PropsSchema }),
   z.object({ template: z.literal('P1'), accent: CardAccentSchema, props: P1PropsSchema }),
   z.object({ template: z.literal('P2'), accent: CardAccentSchema, props: P2PropsSchema }),
   z.object({ template: z.literal('P3'), accent: CardAccentSchema, props: P3PropsSchema }),

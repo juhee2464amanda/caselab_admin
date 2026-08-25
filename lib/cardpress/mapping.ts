@@ -210,7 +210,7 @@ function planCase(row: ContentRowLite, body: CaseBody, images: string[]): SlideP
     template: 'C1',
     sourceSection: 'title+summary',
     material: coverMaterial(row),
-    alternatives: ['C2', 'C5'],
+    alternatives: ['C2', 'C5', 'C6', 'C7'],
     image: images[0],
   });
 
@@ -220,7 +220,7 @@ function planCase(row: ContentRowLite, body: CaseBody, images: string[]): SlideP
       template: 'B4',
       sourceSection: 'caseIntro',
       material: intro,
-      alternatives: ['P4', 'P2'],
+      alternatives: ['P4', 'P2', 'P11', 'B15'],
       image: images[1],
     });
 
@@ -231,7 +231,7 @@ function planCase(row: ContentRowLite, body: CaseBody, images: string[]): SlideP
       material: `${OVERVIEW_ROLE}\n(이 장의 lead: 가장 뼈아픈 문제 하나. 나머지는 그 문제를 뒷받침하는 증상)\n${body.painPoints
         .map((p) => `${p.num}. ${p.title} — 증상: ${p.symptom} / 근본 원인: ${p.rootCause}`)
         .join('\n')}`,
-      alternatives: ['P1', 'B7'],
+      alternatives: ['P1', 'B7', 'B11', 'B16'],
     });
   }
 
@@ -255,7 +255,7 @@ function planCase(row: ContentRowLite, body: CaseBody, images: string[]): SlideP
             `${s.num}. ${s.label}${s.description ? ` — ${s.description}` : ''} (사람: ${s.human} / AI: ${s.ai})${s.goodResult ? `\n  좋았던 결과: ${s.goodResult}` : ''}${s.badResult ? `\n  아쉬운 결과: ${s.badResult}` : ''}`
         )
         .join('\n'),
-      alternatives: ['B2', 'P1'],
+      alternatives: ['B2', 'P1', 'B17', 'B12'],
       image: images[2] ?? images[1],
     });
   }
@@ -292,7 +292,7 @@ function planCase(row: ContentRowLite, body: CaseBody, images: string[]): SlideP
             .join('\n')
         : coverMaterial(row)
     }`,
-    alternatives: ['P6', 'B2'],
+    alternatives: ['P6', 'B2', 'B16', 'B12'],
   });
 
   distributeImages(slides, images);
@@ -306,7 +306,7 @@ function planTrend(row: ContentRowLite, body: TrendBody, images: string[]): Slid
     template: 'C2',
     sourceSection: 'title+summary',
     material: coverMaterial(row),
-    alternatives: ['C1', 'C5'],
+    alternatives: ['C1', 'C5', 'C6'],
     image: images[0],
   });
 
@@ -320,7 +320,7 @@ function planTrend(row: ContentRowLite, body: TrendBody, images: string[]): Slid
       template: 'B2',
       sourceSection: 'keyPoints',
       material: `${OVERVIEW_ROLE}\n${body.keyPoints.map((k) => `- ${k}`).join('\n')}`,
-      alternatives: ['P1', 'B7'],
+      alternatives: ['P1', 'B7', 'B11', 'B16'],
       image: images[1],
       required: '개요 — 스토리의 지도 (커버 다음으로 이탈이 갈리는 자리)',
     });
@@ -328,7 +328,7 @@ function planTrend(row: ContentRowLite, body: TrendBody, images: string[]): Slid
 
   const why = blocksToText(body.why);
   if (why)
-    slides.push({ template: 'B4', sourceSection: 'why', material: why, alternatives: ['P4', 'P3'], image: images[2] });
+    slides.push({ template: 'B4', sourceSection: 'why', material: why, alternatives: ['P4', 'P3', 'B15', 'P11'], image: images[2] });
 
   if (items.length >= 3) {
     // 리스트형(모음) 콘텐츠 — 항목당 슬라이드 후보. 프롬프트 있으면 B8(실물), 없으면 B2.
@@ -358,7 +358,7 @@ function planTrend(row: ContentRowLite, body: TrendBody, images: string[]): Slid
     template: 'P5',
     sourceSection: 'soWhat',
     material: `(역할: 마무리 정리 — lead는 So What 한 줄, items는 뒷받침 2~3개)\n${soWhat || coverMaterial(row)}`,
-    alternatives: ['P6', 'B2'],
+    alternatives: ['P6', 'B2', 'B16', 'B12'],
   });
 
   distributeImages(slides, images);
@@ -449,7 +449,7 @@ export function buildSeedSlidePlan(seed: SeedRowLite): SlidePlan {
         template: 'B2',
         sourceSection: `seed:seg#${String(i + 1).padStart(2, '0')}`,
         material: seg,
-        alternatives: ['B7', 'B4', 'B3', 'P5'],
+        alternatives: ['B7', 'B4', 'B3', 'P5', 'B16', 'B13'],
         optional,
       });
     });
@@ -460,7 +460,7 @@ export function buildSeedSlidePlan(seed: SeedRowLite): SlidePlan {
     template: 'P5',
     sourceSection: 'seed:outro',
     material: `(역할: 마무리 정리 — lead는 이 소식의 So What 한 줄, items는 뒷받침 2~3개)\n${[angle ? `핵심 각도: ${angle}` : '', `제목: ${title}`, segments.at(-1) ?? ''].filter(Boolean).join('\n')}`,
-    alternatives: ['P6', 'B2'],
+    alternatives: ['P6', 'B2', 'B16', 'B12'],
   });
 
   const optCount = slides.filter((s) => s.optional).length;
@@ -643,7 +643,7 @@ export function buildToolSlidePlan(row: ToolRowLite): SlidePlan {
     .join('\n');
 
   const slides: SlidePlanItem[] = [
-    { template: 'C2', sourceSection: 'tool:cover', material: coverMat, alternatives: ['C1', 'C5'], image: images[0] },
+    { template: 'C2', sourceSection: 'tool:cover', material: coverMat, alternatives: ['C1', 'C5', 'C6'], image: images[0] },
   ];
 
   // 커버 다음은 개요 — 씨앗·트렌드·케이스와 같은 규칙. 자료실은 chunk를 순서대로 깔기만 해서
@@ -651,7 +651,7 @@ export function buildToolSlidePlan(row: ToolRowLite): SlidePlan {
   slides.push({
     template: 'B2',
     sourceSection: 'tool:overview',
-    alternatives: ['P1'],
+    alternatives: ['P1', 'B11', 'P11'],
     image: images[1],
     material: [
       OVERVIEW_ROLE,
@@ -717,7 +717,7 @@ export function buildToolSlidePlan(row: ToolRowLite): SlidePlan {
       material: `(역할: 핵심 기능 — lead는 이 도구가 해주는 일 한 줄, items는 대표 기능 2~3개. 기능명은 짧게)\n${featureChunks
         .map((c) => `${c.heading}: ${c.text}`)
         .join('\n')}`,
-      alternatives: ['B2', 'B6', 'P5'],
+      alternatives: ['B2', 'B6', 'P5', 'B17', 'B12'],
       required: '주요 기능 — 무엇을 해주는 도구인지',
     });
   }
@@ -757,7 +757,7 @@ export function buildToolSlidePlan(row: ToolRowLite): SlidePlan {
       template: 'B2',
       sourceSection: c.section,
       material: `${c.heading}\n${c.text}`,
-      alternatives: ['P2', 'B4', 'B3', 'P5'],
+      alternatives: ['P2', 'B4', 'B3', 'P5', 'P11', 'B13'],
       optional,
     });
   });
@@ -767,7 +767,7 @@ export function buildToolSlidePlan(row: ToolRowLite): SlidePlan {
     template: 'P5',
     sourceSection: 'tool:outro',
     material: `(역할: 마무리 정리 — lead는 이 자료를 쓰면 달라지는 것 한 줄, items는 시작 방법 2~3개)\n${[`${kind}: ${row.name}`, desc, chunks.at(-1)?.text ?? ''].filter(Boolean).join('\n')}`,
-    alternatives: ['P6', 'B2'],
+    alternatives: ['P6', 'B2', 'B16', 'B12'],
   });
 
   distributeImages(slides, images);
@@ -806,4 +806,89 @@ export function buildSlidePlan(row: ContentRowLite): SlidePlan {
 export function contentUrl(row: Pick<ContentRowLite, 'track' | 'slug'>): string {
   const base = (process.env.NEXT_PUBLIC_MAIN_SITE_URL ?? 'https://caselab.kr').replace(/\/$/, '');
   return `${base}/${row.track === 'case' ? 'cases' : 'trends'}/${row.slug}`;
+}
+
+// ── 스타일 팩 — 계획 단계 기본 템플릿 로테이션 ──────────────────────────
+// 같은 재료라도 세트의 "옷"을 통째로 갈아입힌다. 재료·서사(스파인)는 그대로 두고
+// 계획의 template만 팩 규칙으로 치환 — AI는 바뀐 템플릿 규격에 맞춰 글을 새로 압축한다.
+// B8(프롬프트)은 정체성이라 어떤 팩에서도 치환하지 않는다.
+
+export type StylePackId = 'classic' | 'magazine' | 'darkmag' | 'prompt' | 'graphic';
+
+export const STYLE_PACKS: Array<{
+  id: StylePackId;
+  label: string;
+  desc: string;
+  /** 커버(1장) 전용 치환표 */
+  coverSwap: Partial<Record<CardTemplateId, CardTemplateId>>;
+  /** 본문 통일 템플릿 — 있으면 커버·B8·B5 제외 전 장을 이걸로 갈아입힌다 (pkg 통일) */
+  uniform?: CardTemplateId;
+  /** uniform 없이 부분 치환만 할 때의 본문 치환표 */
+  swap: Partial<Record<CardTemplateId, CardTemplateId>>;
+}> = [
+  { id: 'classic', label: '클래식', desc: '기존 기본 조합 그대로', coverSwap: {}, swap: {} },
+  {
+    id: 'magazine',
+    label: '화이트 매거진',
+    desc: '커버 외 본문 전체를 P11(위 사진·아래 텍스트, 화이트)로 통일',
+    coverSwap: { C2: 'C6', C5: 'C6' },
+    uniform: 'P11',
+    swap: {},
+  },
+  {
+    id: 'darkmag',
+    label: '블랙 매거진',
+    desc: '본문 전체를 P9(좌 세로 사진·우 텍스트, 블랙)로 통일',
+    coverSwap: { C1: 'C7', C5: 'C2', C6: 'C2' },
+    uniform: 'P9',
+    swap: {},
+  },
+  {
+    id: 'prompt',
+    label: '프롬프트형',
+    desc: '다크 타이포 미니멀 — B8 프롬프트가 주인공, 나머지는 P5로 받친다',
+    coverSwap: { C1: 'C2', C5: 'C2', C6: 'C2' },
+    uniform: 'P5',
+    swap: {},
+  },
+  {
+    id: 'graphic',
+    label: '그래픽 위주',
+    desc: '전 장 사진·그래픽 우선 — P 계열로 최대 전환',
+    coverSwap: { C2: 'C1' },
+    swap: {
+      B1: 'P1', B2: 'P1', B3: 'P2', B4: 'P4', B6: 'P1', B7: 'P6',
+      B10: 'P11', B13: 'P2', B12: 'P1', B17: 'P1',
+    },
+  },
+];
+
+/** 팩이 손대지 않는 본문 템플릿 — B8(프롬프트 원문)·B5(솔직후기)는 정체성 가드레일 */
+const PACK_KEEP = new Set<CardTemplateId>(['B8', 'B5']);
+
+/** 팩 규칙으로 계획의 기본 템플릿을 치환한다. 원래 템플릿은 대안 맨 앞으로 보존. */
+export function applyStylePack(plan: SlidePlan, pack: StylePackId | undefined): SlidePlan {
+  const rule = STYLE_PACKS.find((p) => p.id === pack);
+  if (!rule || pack === 'classic') return plan;
+  return {
+    ...plan,
+    slides: plan.slides.map((s, i) => {
+      const isCover = i === 0;
+      const to = isCover
+        ? rule.coverSwap[s.template]
+        : PACK_KEEP.has(s.template)
+          ? undefined
+          : rule.uniform ?? rule.swap[s.template];
+      if (!to || to === s.template) return s;
+      return {
+        ...s,
+        template: to,
+        // uniform 팩은 대안을 비워 AI가 되돌리지 못하게 한다 — pkg 통일감이 목적이므로.
+        // (검수 UI의 지름길 버튼은 ALT_MAP 기반이라 사람은 여전히 바꿀 수 있다)
+        alternatives: !isCover && rule.uniform
+          ? []
+          : [s.template, ...(s.alternatives ?? []).filter((t) => t !== to)],
+      };
+    }),
+  };
 }

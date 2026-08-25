@@ -3168,10 +3168,22 @@ function RuleList({
   );
 }
 
-// ---------- B10 · 미니 에디토리얼 — 작은 활자 밀도형 ----------
-// 다른 B가 "크게 한 방"이면 B10은 잡지 칼럼: 긴 설명을 안 자르고 작은 활자 2단으로 싣는다.
-function B10({ accent, props }: Extract<RenderSlideInput, { template: 'B10' }>) {
+// ---------- B10/B18 · 미니 에디토리얼 — 작은 활자 밀도형 (B18 = 다크 트윈) ----------
+// 다른 B가 "크게 한 방"이면 이쪽은 잡지 칼럼: 긴 설명을 안 자르고 작은 활자 2단으로 싣는다.
+function EditorialMini({
+  accent,
+  props,
+  dark,
+}: {
+  accent: CardAccent;
+  props: Extract<RenderSlideInput, { template: 'B10' }>['props'];
+  dark?: boolean;
+}) {
   const color = accentOf(accent, props);
+  const ink = dark ? '#F4F6FB' : INK;
+  const bodyCol = dark ? 'rgba(244,246,251,0.72)' : BODY_TEXT;
+  const ruleCol = dark ? 'rgba(255,255,255,0.14)' : 'rgba(20,22,28,0.12)';
+  const muted = dark ? 'rgba(244,246,251,0.4)' : MUTED;
   const paras = props.body.split(/\n{2,}/).map((p) => p.trim()).filter(Boolean);
   const twoCol = paras.length >= 2;
   const half = Math.ceil(paras.length / 2);
@@ -3182,13 +3194,23 @@ function B10({ accent, props }: Extract<RenderSlideInput, { template: 'B10' }>) 
     gap: 26,
   };
   const para = (t: string, i: number) => (
-    <div key={i} style={{ display: 'flex', flexWrap: 'wrap', fontSize: twoCol ? 24 : 27, lineHeight: 1.8, color: BODY_TEXT }}>
+    <div key={i} style={{ display: 'flex', flexWrap: 'wrap', fontSize: twoCol ? 24 : 27, lineHeight: 1.8, color: bodyCol }}>
       {em(t, color)}
     </div>
   );
   return (
-    <div style={{ ...cardBase, background: '#fff', color: INK, padding: '80px 72px' }}>
-      <Topbar color={INK} right={props.page} />
+    <div
+      style={{
+        ...cardBase,
+        background: dark ? '#050505' : '#fff',
+        ...(dark
+          ? { backgroundImage: `radial-gradient(circle at 88% 6%, ${hexA(color, 0.14)} 0%, rgba(5,5,5,0) 55%)` }
+          : {}),
+        color: ink,
+        padding: '80px 72px',
+      }}
+    >
+      <Topbar color={ink} right={props.page} />
       {props.eyebrow ? (
         <div style={{ display: 'flex', marginTop: 56, fontSize: 22, fontWeight: 700, letterSpacing: '0.2em', color }}>
           {props.eyebrow}
@@ -3202,13 +3224,474 @@ function B10({ accent, props }: Extract<RenderSlideInput, { template: 'B10' }>) 
           { whiteSpace: 'pre', color }
         )}
       </div>
-      <div style={{ display: 'flex', marginTop: 36, height: 1, width: '100%', background: 'rgba(20,22,28,0.12)' }} />
+      <div style={{ display: 'flex', marginTop: 36, height: 1, width: '100%', background: ruleCol }} />
       <div style={{ display: 'flex', gap: 48, marginTop: 36 }}>
         <div style={colStyle}>{(twoCol ? paras.slice(0, half) : paras).map(para)}</div>
         {twoCol ? <div style={colStyle}>{paras.slice(half).map(para)}</div> : null}
       </div>
       {props.note ? (
-        <div style={{ display: 'flex', marginTop: 'auto', fontSize: 22, color: MUTED }}>{props.note}</div>
+        <div style={{ display: 'flex', marginTop: 'auto', fontSize: 22, color: muted }}>{props.note}</div>
+      ) : null}
+    </div>
+  );
+}
+
+function B10(input: Extract<RenderSlideInput, { template: 'B10' }>) {
+  return <EditorialMini accent={input.accent} props={input.props} />;
+}
+function B18(input: Extract<RenderSlideInput, { template: 'B18' }>) {
+  return <EditorialMini accent={input.accent} props={input.props} dark />;
+}
+
+// ---------- B12 · 체크리스트 — CSS 체크박스(글리프는 twemoji 치환 위험) ----------
+function B12({ accent, props }: Extract<RenderSlideInput, { template: 'B12' }>) {
+  const color = accentOf(accent, props);
+  return (
+    <div style={{ ...cardBase, background: '#fff', color: INK, padding: '80px 72px' }}>
+      <Topbar color={INK} right={props.page} />
+      <div style={{ display: 'flex', flexDirection: 'column', marginTop: 56, letterSpacing: '-0.02em' }}>
+        {highlightLines(
+          props.heading,
+          props.hl,
+          { fontSize: 52, fontWeight: 800, lineHeight: 1.25 },
+          { whiteSpace: 'pre', color }
+        )}
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', marginTop: 48, gap: 30 }}>
+        {props.items.map((t, i) => (
+          <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 24 }}>
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                width: 40,
+                height: 40,
+                borderRadius: 12,
+                background: hexA(color, 0.12),
+                border: `2px solid ${hexA(color, 0.5)}`,
+                flexShrink: 0,
+                marginTop: 4,
+              }}
+            >
+              {/* 체크 표시 — 회전 바 2개 (✓ 글리프는 twemoji가 이미지로 치환해 깨진다) */}
+              <div
+                style={{
+                  display: 'flex',
+                  width: 17,
+                  height: 9,
+                  borderLeft: `4px solid ${color}`,
+                  borderBottom: `4px solid ${color}`,
+                  transform: 'rotate(-45deg) translateY(-2px)',
+                }}
+              />
+            </div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', fontSize: 31, lineHeight: 1.55, color: BODY_TEXT }}>
+              {em(t, color)}
+            </div>
+          </div>
+        ))}
+      </div>
+      {props.footer ? (
+        <div style={{ display: 'flex', marginTop: 'auto', fontSize: 24, color: MUTED }}>{props.footer}</div>
+      ) : null}
+    </div>
+  );
+}
+
+// ---------- B13 · Q&A — 큰 질문 하나 + 답변 문단 ----------
+function B13({ accent, props }: Extract<RenderSlideInput, { template: 'B13' }>) {
+  const color = accentOf(accent, props);
+  return (
+    <div style={{ ...cardBase, background: '#fff', color: INK, padding: '80px 72px' }}>
+      <Topbar color={INK} right={props.page} />
+      <div style={{ display: 'flex', marginTop: 64, fontSize: 88, fontWeight: 800, color, lineHeight: 1 }}>Q.</div>
+      <div style={{ display: 'flex', flexDirection: 'column', marginTop: 24, letterSpacing: '-0.02em' }}>
+        {highlightLines(
+          props.question,
+          props.hl,
+          { fontSize: 52, fontWeight: 800, lineHeight: 1.3 },
+          { whiteSpace: 'pre', color }
+        )}
+      </div>
+      <div style={{ display: 'flex', marginTop: 48, height: 1, width: '100%', background: 'rgba(20,22,28,0.12)' }} />
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 26, marginTop: 48 }}>
+        <div style={{ display: 'flex', fontSize: 44, fontWeight: 800, color: 'rgba(20,22,28,0.35)', lineHeight: 1 }}>A.</div>
+        <div style={{ display: 'flex', flexWrap: 'wrap', width: 850, fontSize: 30, lineHeight: 1.7, color: BODY_TEXT }}>
+          {em(props.answer, color)}
+        </div>
+      </div>
+      {props.note ? (
+        <div style={{ display: 'flex', marginTop: 'auto', fontSize: 24, color: MUTED }}>{props.note}</div>
+      ) : null}
+    </div>
+  );
+}
+
+// ---------- B14 · 비교 2열 — C4 VS커버의 본문 버전 ----------
+function B14({ accent, props }: Extract<RenderSlideInput, { template: 'B14' }>) {
+  const color = accentOf(accent, props);
+  const col = (title: string, items: string[], tinted: boolean) => (
+    <div
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        width: 456,
+        background: tinted ? hexA(color, 0.08) : '#F4F5F8',
+        border: tinted ? `1px solid ${hexA(color, 0.35)}` : '1px solid rgba(20,22,28,0.06)',
+        borderRadius: 26,
+        padding: '38px 40px',
+      }}
+    >
+      <div style={{ display: 'flex', fontSize: 34, fontWeight: 800, color: tinted ? color : INK }}>{title}</div>
+      <div style={{ display: 'flex', flexDirection: 'column', marginTop: 26, gap: 20 }}>
+        {items.map((t, i) => (
+          <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 14 }}>
+            <div style={{ display: 'flex', width: 8, height: 8, borderRadius: 999, background: tinted ? color : '#9AA1AD', marginTop: 15, flexShrink: 0 }} />
+            <div style={{ display: 'flex', flexWrap: 'wrap', fontSize: 26, lineHeight: 1.6, color: BODY_TEXT }}>{t}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+  return (
+    <div style={{ ...cardBase, background: '#fff', color: INK, padding: '80px 72px' }}>
+      <Topbar color={INK} right={props.page} />
+      {props.heading ? (
+        <div style={{ display: 'flex', flexWrap: 'wrap', marginTop: 56, fontSize: 48, fontWeight: 800, letterSpacing: '-0.02em', lineHeight: 1.25 }}>
+          {props.heading}
+        </div>
+      ) : null}
+      <div style={{ display: 'flex', gap: 24, marginTop: props.heading ? 44 : 64 }}>
+        {col(props.aTitle, props.aItems, true)}
+        {col(props.bTitle, props.bItems, false)}
+      </div>
+    </div>
+  );
+}
+
+// ---------- B15 · 다크 인용 — 사진 없이 타이포로 한 문장을 세운다 ----------
+function B15({ accent, props }: Extract<RenderSlideInput, { template: 'B15' }>) {
+  const color = accentOf(accent, props);
+  return (
+    <div
+      style={{
+        ...cardBase,
+        background: '#050505',
+        backgroundImage: `radial-gradient(circle at 12% 90%, ${hexA(color, 0.14)} 0%, rgba(5,5,5,0) 55%)`,
+        color: '#F4F6FB',
+        padding: '80px 72px',
+      }}
+    >
+      <Topbar color="#F4F6FB" right={props.page} rightStyle={{ color: 'rgba(244,246,251,0.45)' }} />
+      <div style={{ display: 'flex', marginTop: 'auto', fontSize: 160, fontWeight: 800, color: hexA(color, 0.85), lineHeight: 0.6 }}>
+        {'"'}
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', marginTop: 44, letterSpacing: '-0.02em' }}>
+        {highlightLines(
+          props.quote,
+          props.hl,
+          { fontSize: 58, fontWeight: 800, lineHeight: 1.35 },
+          { whiteSpace: 'pre', color }
+        )}
+      </div>
+      {props.attribution ? (
+        <div style={{ display: 'flex', marginTop: 40, fontSize: 29, fontWeight: 600, color: 'rgba(244,246,251,0.55)' }}>
+          {`— ${props.attribution}`}
+        </div>
+      ) : null}
+      {props.context ? (
+        <div style={{ display: 'flex', flexWrap: 'wrap', marginTop: 20, fontSize: 25, lineHeight: 1.6, color: 'rgba(244,246,251,0.4)', marginBottom: 'auto' }}>
+          {props.context}
+        </div>
+      ) : (
+        <div style={{ display: 'flex', marginBottom: 'auto' }} />
+      )}
+    </div>
+  );
+}
+
+// ---------- B16 · 스탯 타일 — 숫자 2~3개 나란히 ----------
+function B16({ accent, props }: Extract<RenderSlideInput, { template: 'B16' }>) {
+  const color = accentOf(accent, props);
+  const n = props.stats.length;
+  const w = n === 2 ? 456 : 296;
+  return (
+    <div style={{ ...cardBase, background: '#fff', color: INK, padding: '80px 72px' }}>
+      <Topbar color={INK} right={props.page} />
+      {props.heading ? (
+        <div style={{ display: 'flex', flexDirection: 'column', marginTop: 56, letterSpacing: '-0.02em' }}>
+          {highlightLines(
+            props.heading,
+            props.hl,
+            { fontSize: 48, fontWeight: 800, lineHeight: 1.25 },
+            { whiteSpace: 'pre', color }
+          )}
+        </div>
+      ) : null}
+      <div style={{ display: 'flex', gap: 24, marginTop: props.heading ? 48 : 80 }}>
+        {props.stats.map((s, i) => (
+          <div
+            key={i}
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              width: w,
+              minHeight: 280,
+              background: i === 0 ? hexA(color, 0.08) : '#F4F5F8',
+              border: i === 0 ? `1px solid ${hexA(color, 0.35)}` : '1px solid rgba(20,22,28,0.06)',
+              borderRadius: 26,
+              padding: '40px 36px',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'flex-end' }}>
+              <span style={{ fontSize: n === 2 ? 96 : 76, fontWeight: 800, letterSpacing: '-0.03em', color: i === 0 ? color : INK, lineHeight: 1 }}>
+                {s.big}
+              </span>
+              {s.unit ? (
+                <span style={{ fontSize: 34, fontWeight: 700, color: MUTED, marginLeft: 6, marginBottom: 8 }}>{s.unit}</span>
+              ) : null}
+            </div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', marginTop: 'auto', fontSize: 25, lineHeight: 1.5, color: BODY_TEXT }}>
+              {s.label}
+            </div>
+          </div>
+        ))}
+      </div>
+      {props.footer ? (
+        <div style={{ display: 'flex', marginTop: 'auto', fontSize: 24, color: MUTED }}>{props.footer}</div>
+      ) : null}
+    </div>
+  );
+}
+
+// ---------- B17 · 세로 타임라인 — 점·선 레일 ----------
+function B17({ accent, props }: Extract<RenderSlideInput, { template: 'B17' }>) {
+  const color = accentOf(accent, props);
+  const last = props.steps.length - 1;
+  return (
+    <div style={{ ...cardBase, background: '#fff', color: INK, padding: '80px 72px' }}>
+      <Topbar color={INK} right={props.page} />
+      <div style={{ display: 'flex', flexDirection: 'column', marginTop: 56, letterSpacing: '-0.02em' }}>
+        {highlightLines(
+          props.heading,
+          props.hl,
+          { fontSize: 50, fontWeight: 800, lineHeight: 1.25 },
+          { whiteSpace: 'pre', color }
+        )}
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', marginTop: 52 }}>
+        {props.steps.map((s, i) => (
+          <div key={i} style={{ display: 'flex', alignItems: 'stretch', gap: 30 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: 24 }}>
+              <div style={{ display: 'flex', width: 20, height: 20, borderRadius: 999, background: color, marginTop: 8, flexShrink: 0 }} />
+              {i !== last ? (
+                <div style={{ display: 'flex', width: 3, flex: 1, background: hexA(color, 0.25), borderRadius: 2, marginTop: 6, marginBottom: 6 }} />
+              ) : null}
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', paddingBottom: i !== last ? 40 : 0 }}>
+              <div style={{ display: 'flex', flexWrap: 'wrap', fontSize: 33, fontWeight: 800 }}>{s.title}</div>
+              {s.desc ? (
+                <div style={{ display: 'flex', flexWrap: 'wrap', marginTop: 10, fontSize: 26, lineHeight: 1.6, color: BODY_TEXT }}>{s.desc}</div>
+              ) : null}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ---------- C6 · 에디토리얼 커버 — 화이트 대여백 ----------
+function C6({ accent, props }: Extract<RenderSlideInput, { template: 'C6' }>) {
+  const color = accentOf(accent, props);
+  const rule = <div style={{ display: 'flex', height: 1, width: '100%', background: 'rgba(20,22,28,0.14)' }} />;
+  return (
+    <div style={{ ...cardBase, background: '#FDFCFA', color: INK, padding: '88px 80px' }}>
+      <Topbar color={INK} />
+      <div style={{ display: 'flex', flexDirection: 'column', marginTop: 'auto', gap: 34 }}>
+        {rule}
+        {props.kicker ? (
+          <div style={{ display: 'flex', fontSize: 24, fontWeight: 700, letterSpacing: '0.22em', color }}>{props.kicker}</div>
+        ) : null}
+        <div style={{ display: 'flex', flexDirection: 'column', letterSpacing: '-0.03em' }}>
+          {highlightLines(
+            props.title,
+            props.hl,
+            { fontSize: 84, fontWeight: 800, lineHeight: 1.18 },
+            { whiteSpace: 'pre', color }
+          )}
+        </div>
+        {props.sub ? (
+          <div style={{ display: 'flex', flexWrap: 'wrap', fontSize: 31, lineHeight: 1.55, color: BODY_TEXT }}>{props.sub}</div>
+        ) : null}
+        {rule}
+      </div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 'auto' }}>
+        <span style={{ fontSize: 24, fontWeight: 600, color: MUTED }}>{props.footer ?? ''}</span>
+        <span style={{ fontSize: 24, fontWeight: 700, color }}>caselab.kr</span>
+      </div>
+    </div>
+  );
+}
+
+// ---------- C7 · 스플릿 커버 — 좌 다크 타이포 / 우 세로 사진 ----------
+function C7({ accent, props }: Extract<RenderSlideInput, { template: 'C7' }>) {
+  const color = accentOf(accent, props);
+  return (
+    <div style={{ ...cardBase, flexDirection: 'row', background: '#050505' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', width: props.coverImage ? 620 : CARD_W, padding: '80px 56px 72px 64px', color: '#F4F6FB' }}>
+        <span style={{ fontSize: 28, fontWeight: 700, letterSpacing: '-0.01em' }}>caselab</span>
+        <div style={{ display: 'flex', flexDirection: 'column', marginTop: 'auto', marginBottom: 'auto', gap: 28 }}>
+          {props.kicker ? (
+            <div style={{ display: 'flex', fontSize: 24, fontWeight: 700, letterSpacing: '0.18em', color }}>{props.kicker}</div>
+          ) : null}
+          <div style={{ display: 'flex', flexDirection: 'column', letterSpacing: '-0.02em' }}>
+            {highlightLines(
+              props.title,
+              props.hl,
+              { fontSize: 62, fontWeight: 800, lineHeight: 1.22 },
+              { whiteSpace: 'pre', color }
+            )}
+          </div>
+          {props.sub ? (
+            <div style={{ display: 'flex', flexWrap: 'wrap', fontSize: 27, lineHeight: 1.6, color: 'rgba(244,246,251,0.6)' }}>{props.sub}</div>
+          ) : null}
+        </div>
+      </div>
+      {props.coverImage ? (
+        // ⚠️ 배경 CSS cover는 Satori가 타일링 — 반드시 <img>+objectFit
+        <img
+          src={props.coverImage}
+          width={CARD_W - 620}
+          height={CARD_H}
+          style={{ objectFit: 'cover', width: CARD_W - 620, height: CARD_H }}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+// ---------- P8 · 폴라로이드 — 크림 바탕 + 흰 프레임 사진 기울임 ----------
+function P8({ accent, props }: Extract<RenderSlideInput, { template: 'P8' }>) {
+  const ac = photoAccent(props);
+  return (
+    <div style={{ ...cardBase, background: '#FAF7F0', color: INK, padding: '80px 72px', alignItems: 'center' }}>
+      <Topbar color={INK} right={props.page} />
+      <div
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          marginTop: 'auto',
+          background: '#fff',
+          padding: '26px 26px 30px',
+          borderRadius: 8,
+          boxShadow: '0 24px 60px rgba(30,25,15,0.18)',
+          transform: 'rotate(-2deg)',
+        }}
+      >
+        {props.image ? (
+          <img src={props.image} width={780} height={760} style={{ objectFit: 'cover', width: 780, height: 760, borderRadius: 4 }} />
+        ) : (
+          <div style={{ display: 'flex', width: 780, height: 760, borderRadius: 4, backgroundImage: 'linear-gradient(135deg, #E8E2D6 0%, #D6CFC0 100%)' }} />
+        )}
+        {props.caption ? (
+          <div style={{ display: 'flex', justifyContent: 'center', marginTop: 24, fontSize: 27, color: '#6B6357' }}>{props.caption}</div>
+        ) : null}
+      </div>
+      <div
+        style={{
+          display: 'flex',
+          flexWrap: 'wrap',
+          justifyContent: 'center',
+          marginTop: 64,
+          marginBottom: 'auto',
+          letterSpacing: '-0.02em',
+          maxWidth: 860,
+        }}
+      >
+        {em(props.lead, ac, { fontSize: 46, fontWeight: 800, lineHeight: 1.35 })}
+      </div>
+    </div>
+  );
+}
+
+// ---------- P9 · 매거진 스플릿 — 좌 세로 사진 / 우 텍스트 칼럼 ----------
+function P9({ accent, props }: Extract<RenderSlideInput, { template: 'P9' }>) {
+  const ac = photoAccent(props);
+  const photoW = 470;
+  return (
+    <div style={{ ...cardBase, flexDirection: 'row', background: '#0B0D12' }}>
+      {props.image ? (
+        <img src={props.image} width={photoW} height={CARD_H} style={{ objectFit: 'cover', width: photoW, height: CARD_H }} />
+      ) : (
+        <div style={{ display: 'flex', width: photoW, height: CARD_H, backgroundImage: 'linear-gradient(180deg, #1A1E28 0%, #05060A 100%)' }} />
+      )}
+      <div style={{ display: 'flex', flexDirection: 'column', flex: 1, padding: '76px 58px 72px', color: '#F4F6FB' }}>
+        <span style={{ fontSize: 26, fontWeight: 700 }}>caselab</span>
+        <div style={{ display: 'flex', flexDirection: 'column', marginTop: 'auto', marginBottom: 'auto' }}>
+          {props.eyebrow ? (
+            <div style={{ display: 'flex', fontSize: 22, fontWeight: 700, letterSpacing: '0.2em', color: ac, marginBottom: 24 }}>
+              {props.eyebrow}
+            </div>
+          ) : null}
+          <div style={{ display: 'flex', flexDirection: 'column', letterSpacing: '-0.02em' }}>
+            {highlightLines(
+              props.heading,
+              props.hl,
+              { fontSize: 50, fontWeight: 800, lineHeight: 1.28 },
+              { whiteSpace: 'pre', color: ac }
+            )}
+          </div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', marginTop: 30, fontSize: 26, lineHeight: 1.75, color: 'rgba(244,246,251,0.66)' }}>
+            {em(props.body, ac)}
+          </div>
+        </div>
+        <span style={{ fontSize: 24, fontWeight: 600, color: 'rgba(244,246,251,0.35)' }}>{props.page ?? ''}</span>
+      </div>
+    </div>
+  );
+}
+
+// ---------- P10 · 디바이스 프레임 — 스크린샷을 브라우저 창에 앉히고 아래 리드 ----------
+function P10({ accent, props }: Extract<RenderSlideInput, { template: 'P10' }>) {
+  const ac = photoAccent(props);
+  return (
+    <div style={{ ...cardBase, backgroundColor: '#000', padding: '72px 64px', alignItems: 'center' }}>
+      <Topbar color="#F4F6FB" right={props.page} rightStyle={{ color: 'rgba(244,246,251,0.45)' }} />
+      <div
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          marginTop: 56,
+          width: 952,
+          background: 'rgba(255,255,255,0.06)',
+          border: '1px solid rgba(255,255,255,0.14)',
+          borderRadius: 26,
+          padding: 6,
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: 11, padding: '16px 24px 12px' }}>
+          {['#FF5F57', '#FEBC2E', '#28C840'].map((c) => (
+            <div key={c} style={{ display: 'flex', width: 16, height: 16, borderRadius: 999, background: c }} />
+          ))}
+          <span style={{ fontSize: 22, fontWeight: 600, color: 'rgba(244,246,251,0.4)', marginLeft: 8 }}>
+            {props.frameLabel ?? 'localhost:3000'}
+          </span>
+        </div>
+        {props.image ? (
+          <img src={props.image} width={940} height={680} style={{ objectFit: 'cover', width: 940, height: 680, borderRadius: 18 }} />
+        ) : (
+          <div style={{ display: 'flex', width: 940, height: 680, borderRadius: 18, backgroundImage: 'linear-gradient(135deg, #171B24 0%, #05060A 100%)' }} />
+        )}
+      </div>
+      <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', marginTop: 58, maxWidth: 900, letterSpacing: '-0.02em' }}>
+        {em(props.lead, ac, { fontSize: 46, fontWeight: 800, color: P_TEXT, lineHeight: 1.32 })}
+      </div>
+      {props.caption ? (
+        <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', marginTop: 22, fontSize: 26, lineHeight: 1.6, color: P_TEXT_3 }}>
+          {props.caption}
+        </div>
       ) : null}
     </div>
   );
@@ -3335,6 +3818,56 @@ function P7({ accent, props }: Extract<RenderSlideInput, { template: 'P7' }>) {
             {props.caption}
           </div>
         ) : null}
+      </div>
+    </div>
+  );
+}
+
+// ---------- P11 · 화이트 매거진 — 상단 풀폭 사진 + 흰 바탕 좌정렬 제목/문단 ----------
+// 레퍼런스: biscit.co.kr 캐러셀. 강조는 accent색이 아니라 볼드 검정 — 잡지 문법 유지.
+function P11({ props }: Extract<RenderSlideInput, { template: 'P11' }>) {
+  const photoH = 720;
+  return (
+    <div style={{ ...cardBase, background: '#fff', color: INK }}>
+      <div style={{ display: 'flex', position: 'relative', height: photoH, overflow: 'hidden' }}>
+        {props.image ? (
+          // ⚠️ 배경 CSS cover는 Satori가 타일링 — 반드시 <img>+objectFit
+          <img src={props.image} width={CARD_W} height={photoH} style={{ objectFit: 'cover', width: CARD_W, height: photoH }} />
+        ) : (
+          <div style={{ display: 'flex', width: CARD_W, height: photoH, backgroundImage: 'linear-gradient(135deg, #ECEEF2 0%, #D9DDE4 100%)' }} />
+        )}
+        {props.credit ? (
+          <span
+            style={{
+              position: 'absolute',
+              top: 28,
+              left: 32,
+              fontSize: 20,
+              color: 'rgba(255,255,255,0.75)',
+            }}
+          >
+            {props.credit}
+          </span>
+        ) : null}
+      </div>
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', padding: '56px 64px 60px' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', letterSpacing: '-0.02em' }}>
+          {highlightLines(
+            props.heading,
+            props.hl,
+            { fontSize: 44, fontWeight: 800, lineHeight: 1.3 },
+            /* text-decoration은 Satori 지원이 불안정 — 형광펜은 옅은 옐로 박스로 */
+            { whiteSpace: 'pre', background: '#FFF3B0', padding: '0 6px', borderRadius: 6 }
+          )}
+        </div>
+        <div style={{ display: 'flex', flexWrap: 'wrap', marginTop: 30, fontSize: 30, lineHeight: 1.72, color: BODY_TEXT }}>
+          {/* **강조**는 볼드 검정(INK) — accent색을 쓰면 레퍼런스의 잡지 톤이 깨진다 */}
+          {em(props.body, INK)}
+        </div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 'auto' }}>
+          <span style={{ fontSize: 22, fontWeight: 700, color: 'rgba(20,22,28,0.4)' }}>caselab</span>
+          <span style={{ fontSize: 22, fontWeight: 600, color: 'rgba(20,22,28,0.35)' }}>{props.page ?? ''}</span>
+        </div>
       </div>
     </div>
   );
@@ -3897,8 +4430,34 @@ export function renderSlide(input: RenderSlideInput): ReactNode {
       return <B10 {...input} />;
     case 'B11':
       return <B11 {...input} />;
+    case 'B12':
+      return <B12 {...input} />;
+    case 'B13':
+      return <B13 {...input} />;
+    case 'B14':
+      return <B14 {...input} />;
+    case 'B15':
+      return <B15 {...input} />;
+    case 'B16':
+      return <B16 {...input} />;
+    case 'B17':
+      return <B17 {...input} />;
+    case 'B18':
+      return <B18 {...input} />;
+    case 'C6':
+      return <C6 {...input} />;
+    case 'C7':
+      return <C7 {...input} />;
     case 'P7':
       return <P7 {...input} />;
+    case 'P8':
+      return <P8 {...input} />;
+    case 'P9':
+      return <P9 {...input} />;
+    case 'P10':
+      return <P10 {...input} />;
+    case 'P11':
+      return <P11 {...input} />;
   }
 }
 
