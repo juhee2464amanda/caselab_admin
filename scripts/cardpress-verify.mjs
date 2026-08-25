@@ -88,6 +88,8 @@ const SAMPLES = [
   ['P4', { quote: '지시가 아니라 제약을 준다', attribution: '3개월 운영 기록', image: PHOTO_BRIGHT }],
   ['P5', { index: '02', eyebrow: '한눈에', lead: '검수 시간이 **70% 줄었다**', items: ['초안 작성이 40분 → 6분', '반려율은 그대로 12%', '툴 비용은 월 2만원'], footer: '@REVIEW LOOP', image: PHOTO_DARK }],
   ['P6', { kicker: '3개월 실측', big: '70%', resolve: '검수 시간이 **줄었다**\n반려율은 그대로였다', footer: '@REVIEW LOOP', image: PHOTO_DARK }],
+  // DM형 엔딩 파생 규격(lib/cardpress/endings.ts) — 키워드 bigMax=150 + 커버 재사용 배경 + 밝은 사진 대비
+  ['P6', { big: '프롬프트', bigMax: 150, resolve: '댓글에 이 단어만 남기면 **DM**으로 보내드려요', accentColor: '#0E9F6E', image: PHOTO_BRIGHT, overlay: 0.62 }, { suffix: '-ending-dm' }],
 ];
 
 /** sRGB → WCAG 상대휘도 */

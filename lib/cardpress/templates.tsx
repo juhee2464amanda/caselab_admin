@@ -10,7 +10,8 @@ import type { CardAccent, RenderSlideInput } from '@/types/cardpress';
 export const CARD_W = 1080;
 export const CARD_H = 1350;
 
-const ACCENTS: Record<CardAccent, string> = {
+// export: 엔딩 카드(lib/cardpress/endings.ts)가 카테고리색을 기본 포인트색으로 쓴다
+export const ACCENTS: Record<CardAccent, string> = {
   'cat-case': '#2F6BFF', // 실전 케이스 = 블루
   'cat-trend': '#7C3AED', // AI 트렌드 = 바이올렛
   'cat-tool': '#0E9F6E', // AI 도구 = 에메랄드
@@ -4295,7 +4296,8 @@ function P6({ accent, props }: Extract<RenderSlideInput, { template: 'P6' }>) {
   const big = fitBlock([props.big], {
     width: P_W,
     height: 320,
-    max: 230,
+    // 본문 빅넘버는 230까지 허용하지만, 엔딩 카드는 bigMax로 낮춰 쓴다(230은 키워드에 너무 컸다)
+    max: Math.min(230, props.bigMax ?? 230),
     min: 90,
     lineHeight: 1.02,
     gapRatio: 0,

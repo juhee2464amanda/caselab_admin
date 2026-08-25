@@ -3,9 +3,9 @@ import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { createSupabaseAdminClient } from '@/lib/supabase/admin';
 import { renderEnabledSlides, renderEndingSlide, uploadSlides } from '@/lib/cardpress/publish';
 import { signCard, lanOrigin } from '@/lib/cardpress/handoff';
-import { endingFor } from '@/lib/cardpress/endings';
+import { coverImageOf, endingFor } from '@/lib/cardpress/endings';
 import type { CardCtaType } from '@/lib/cardpress/cta-endings';
-import type { CardAccent, CardSlide } from '@/types/cardpress';
+import type { CardAccent, CardSlide, EndingProps } from '@/types/cardpress';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -37,7 +37,7 @@ export async function POST(req: NextRequest) {
   const admin = createSupabaseAdminClient();
   const { data: card, error } = await admin
     .from('content_cards')
-    .select('id, accent, slides, cta_type, cta_keyword')
+    .select('id, accent, slides, cta_type, cta_keyword, ending_props')
     .eq('id', body.cardId)
     .maybeSingle();
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
@@ -55,6 +55,9 @@ export async function POST(req: NextRequest) {
     // 엔딩 카드 — 발행·zip과 같은 규칙으로 맨 뒤. 영상 엔딩은 버킷의 고정 자산이라 그대로 쓴다.
     const ending = endingFor((card.cta_type as CardCtaType) ?? 'channel_intro', {
       ctaKeyword: card.cta_keyword as string | null,
+      accent: card.accent as CardAccent | null,
+      coverImage: coverImageOf(card.slides as CardSlide[]),
+      overrides: card.ending_props as EndingProps | null,
     });
     if (ending.kind === 'slide') {
       const endSlide = await renderEndingSlide(

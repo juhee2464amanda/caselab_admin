@@ -361,9 +361,19 @@ export const P6PropsSchema = z.object({
   ...PhotoFields,
   kicker: z.string().optional(),
   big: z.string().min(1),                            // "70%", "10배", "FOCUS"
+  bigMax: z.number().min(60).max(230).optional(),    // big 최대 폰트(px) 상한 — 엔딩 카드가 낮춰 쓴다
   resolve: z.string().min(1),
   footer: z.string().optional(),
 });
+
+/** 엔딩 카드(comment_dm) 카드별 오버라이드 — content_cards.ending_props (migration 1032).
+ *  전부 optional: 비어 있으면 파생 기본값(포인트색=카테고리색, 배경=커버 이미지)을 쓴다. */
+export const EndingPropsSchema = z.object({
+  accentColor: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
+  image: z.string().url().optional(),
+  overlay: z.number().min(0).max(0.9).optional(),
+});
+export type EndingProps = z.infer<typeof EndingPropsSchema>;
 
 /** B18 다크 미니 에디토리얼 — B10의 다크 트윈 (작은 활자 2단, OLED 블랙) */
 export const B18PropsSchema = B10PropsSchema;

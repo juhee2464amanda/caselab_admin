@@ -10,8 +10,9 @@
 
 import { INSTAGRAM_HANDLE } from '@/lib/constants';
 import { userTokens } from '@/lib/tokens';
+import { ACCENTS } from './templates';
 import type { CardCtaType } from './cta-endings';
-import type { CardTemplateId } from '@/types/cardpress';
+import type { CardAccent, CardSlide, CardTemplateId, EndingProps } from '@/types/cardpress';
 
 const BASE = `${process.env.NEXT_PUBLIC_SUPABASE_URL ?? ''}/storage/v1/object/public/cardpress/endings`;
 
@@ -32,10 +33,10 @@ export const ENDING_ASSETS = {
 /** 인스타 핸들 — lib/constants.ts 단일 정의(@ai_caselab). 카드에 잘못 박히면 유입이 끊긴다 */
 const IG_HANDLE = INSTAGRAM_HANDLE;
 
-/** 포인트색은 카테고리색(cat-case/trend/tool)이 아니라 **브랜드 컬러**로 고정한다.
- *  엔딩은 소재가 아니라 채널의 카드라, 소재 카테고리에 따라 색이 바뀌면 채널 인상이 흔들린다. */
-// accent(#3182F6)보다 한 단계 진한 accentHover(#1B64DA) — 카드가 사진·다크 배경 위에 놓여
-// 밝은 파랑은 뜬 느낌이 난다. 디자인 시스템에 이미 있는 값이라 새 색을 만들지 않는다.
+/** DM형 포인트색 기본값 — 카드의 **카테고리색**을 따라간다 (2026-08-25 변경).
+ *  전에는 브랜드 파랑(#1B64DA) 고정이었는데, 본문 슬라이드와 톤이 갈라지고
+ *  카드별로 색을 못 바꾸는 게 문제였다. 이제 ending_props.accentColor로 카드별 오버라이드 가능. */
+// accent를 모르는 호출자(구버전 경로)를 위한 최후 폴백 — 기존 브랜드 파랑 유지
 const BRAND = userTokens.accentHover; // #1B64DA
 
 export type EndingCard =
@@ -53,9 +54,31 @@ export type EndingCard =
 /** 댓글 키워드가 비어 있을 때의 기본값 — generate.ts와 같은 값 */
 const FALLBACK_KEYWORD = '프롬프트';
 
+/** 카드 슬라이드에서 엔딩 배경으로 쓸 커버 이미지를 찾는다 — 켜진 장 중 앞에서부터.
+ *  커버(C계열)는 coverImage, 본문(P/B계열)은 image 키를 쓴다. 없으면 undefined(민짜 다크 폴백). */
+export function coverImageOf(slides: CardSlide[] | null | undefined): string | undefined {
+  for (const s of slides ?? []) {
+    if (!s.enabled) continue;
+    const p = s.props as Record<string, unknown>;
+    const url = p.coverImage ?? p.image;
+    if (typeof url === 'string' && /^https?:\/\//.test(url)) return url;
+  }
+  return undefined;
+}
+
+const HEX = /^#[0-9a-fA-F]{6}$/;
+
 export function endingFor(
   ctaType: CardCtaType,
-  opts?: { ctaKeyword?: string | null }
+  opts?: {
+    ctaKeyword?: string | null;
+    /** 카드 카테고리 — DM형 포인트색 기본값(카테고리색). 없으면 브랜드 파랑 폴백 */
+    accent?: CardAccent | null;
+    /** 카드 커버 이미지 — DM형 배경 기본값. 없으면 민짜 다크 */
+    coverImage?: string | null;
+    /** content_cards.ending_props — 카드별 오버라이드(색·배경·오버레이) */
+    overrides?: EndingProps | null;
+  }
 ): EndingCard {
   const keyword = opts?.ctaKeyword?.trim() || FALLBACK_KEYWORD;
 
@@ -73,7 +96,14 @@ export function endingFor(
 
   // 댓글 참여형 — 댓글에 적을 단어를 화면에서 제일 큰 요소로(P6 빅넘버 자리에 키워드).
   // 캡션을 펼치지 않는 사람에게도 트리거가 보여야 자동화가 돈다.
-  if (ctaType === 'comment_dm')
+  if (ctaType === 'comment_dm') {
+    const ov = opts?.overrides ?? {};
+    // 포인트색: 카드별 오버라이드 > 카테고리색 > 브랜드 파랑(구버전 폴백)
+    const accentColor =
+      (ov.accentColor && HEX.test(ov.accentColor) && ov.accentColor) ||
+      (opts?.accent ? ACCENTS[opts.accent] : BRAND);
+    // 배경: 오버라이드 > 카드 커버 재사용(캐러셀 톤이 이어지고 엣지가 생긴다) > 민짜 다크
+    const image = ov.image || opts?.coverImage || undefined;
     return {
       kind: 'slide',
       label: '댓글 참여 안내',
@@ -82,10 +112,20 @@ export function endingFor(
       props: {
         // kicker·footer 같은 잔글씨는 두지 않는다 — 키워드 하나만 남기는 게 이 카드의 일
         big: keyword,
+        // 230px 풀사이즈는 키워드에 너무 컸다 — 한 방은 유지하되 카드가 글자에 먹히지 않게
+        bigMax: 150,
         resolve: '댓글에 이 단어만 남기면 **DM**으로 보내드려요',
-        accentColor: BRAND,
+        accentColor,
+        ...(image
+          ? {
+              image,
+              // P6 기본 0.82는 배경이 거의 안 보인다 — 사진 위 텍스트 대비를 지키는 선에서 낮춘다
+              overlay: ov.overlay ?? 0.62,
+            }
+          : {}),
       },
     };
+  }
 
   return {
     kind: 'video',

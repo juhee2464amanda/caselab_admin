@@ -10,7 +10,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { createSupabaseBrowserClient } from '@/lib/supabase/client';
 import { CARD_H, CARD_W, renderSlide } from '@/lib/cardpress/templates';
 import { RenderSlideSchema } from '@/types/cardpress';
-import type { CardSlide, CardTemplateId, CardAccent } from '@/types/cardpress';
+import type { CardSlide, CardTemplateId, CardAccent, EndingProps } from '@/types/cardpress';
 import { CardTemplatePicker, type PickResult } from '@/components/admin/CardTemplatePicker';
 import { STYLE_PACKS, type StylePackId } from '@/lib/cardpress/mapping';
 import {
@@ -31,7 +31,7 @@ import {
   CTA_TYPE_LABELS,
   type CardCtaType,
 } from '@/lib/cardpress/cta-endings';
-import { endingFor } from '@/lib/cardpress/endings';
+import { coverImageOf, endingFor } from '@/lib/cardpress/endings';
 import {
   creditBlock,
   hasCreditBlock,
@@ -67,6 +67,8 @@ export type CardRow = {
   edge?: string | null;
   cta_type?: CardCtaType;
   cta_keyword?: string | null;
+  /** DM형 엔딩 카드별 오버라이드(색·배경·오버레이) — migration 1032 */
+  ending_props?: EndingProps | null;
   cover_candidates?: Array<{ thumb: string; full: string; credit: string; creditLink: string }>;
   /** 사진 출처 표기 — 실제로 쓰인 사진만 캡션에 넣는다 (migration 1027) */
   photo_credits?: PhotoCredit[];
@@ -1144,6 +1146,7 @@ function CardEditor({ card, sourceTitle }: { card: CardRow; sourceTitle?: string
   const [ctaType, setCtaType] = useState<CardCtaType>(card.cta_type ?? 'channel_intro');
   const [stylePack, setStylePack] = useState<StylePackId>('classic');
   const [ctaKeyword, setCtaKeyword] = useState(card.cta_keyword ?? '프롬프트');
+  const [endingProps, setEndingProps] = useState<EndingProps>(card.ending_props ?? {});
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
   const [selIdx, setSelIdx] = useState(0);
@@ -1223,6 +1226,7 @@ function CardEditor({ card, sourceTitle }: { card: CardRow; sourceTitle?: string
   function patchStyle(
     key:
       | 'accentColor'
+      | 'hlColor'
       | 'overlay'
       | 'coverPos'
       | 'titleAnchor'
@@ -1572,22 +1576,48 @@ function CardEditor({ card, sourceTitle }: { card: CardRow; sourceTitle?: string
 
   // 스타일 툴바 — 선택 슬라이드(selIdx)의 색·효과·텍스트 위치 (단일/전체 모드 공용)
   function renderStyleToolbar(s: CardSlide) {
+    // v3 커버는 잠금 팔레트 — accentColor를 무시하고 형광펜은 hlColor ?? V3_BLUE/LIME만 쓴다
+    // (templates.tsx C1V3). 여기서 포인트색 스와치를 그대로 보여주면 렌더와 어긋난 거짓 색이 된다.
+    const isV3 = s.template === 'C1' && (s.props.coverLayout as string) === 'v3';
+    const v3Light =
+      ((s.props.tone as string) ?? (['studio', 'data'].includes((s.props.coverArt as string) ?? '') ? 'light' : 'dark')) === 'light';
     return (
       <div className="flex items-center gap-3 mb-2 text-[11px] flex-wrap text-ink/60">
         <span className="font-semibold text-ink/70">{selIdx + 1}번 스타일</span>
-        <label className="flex items-center gap-1">
-          포인트색
-          <input
-            type="color"
-            value={(s.props.accentColor as string) ?? ACCENT_HEX[card.accent]}
-            onChange={(e) => patchStyle('accentColor', e.target.value)}
-            className="h-5 w-7 cursor-pointer rounded border border-border p-0"
-          />
-        </label>
-        {typeof s.props.accentColor === 'string' && (
-          <button onClick={() => patchStyle('accentColor', undefined)} className="rounded px-1.5 py-0.5 bg-ink/5 hover:bg-ink/10">
-            기본색
-          </button>
+        {isV3 ? (
+          <>
+            <label className="flex items-center gap-1" title="v3 커버는 포인트색 대신 이 형광펜색만 씁니다">
+              형광펜색
+              <input
+                type="color"
+                value={(s.props.hlColor as string) ?? (v3Light ? '#C6F24E' : '#2F4BF0')}
+                onChange={(e) => patchStyle('hlColor', e.target.value)}
+                className="h-5 w-7 cursor-pointer rounded border border-border p-0"
+              />
+            </label>
+            {typeof s.props.hlColor === 'string' && (
+              <button onClick={() => patchStyle('hlColor', undefined)} className="rounded px-1.5 py-0.5 bg-ink/5 hover:bg-ink/10">
+                기본색
+              </button>
+            )}
+          </>
+        ) : (
+          <>
+            <label className="flex items-center gap-1">
+              포인트색
+              <input
+                type="color"
+                value={(s.props.accentColor as string) ?? ACCENT_HEX[card.accent]}
+                onChange={(e) => patchStyle('accentColor', e.target.value)}
+                className="h-5 w-7 cursor-pointer rounded border border-border p-0"
+              />
+            </label>
+            {typeof s.props.accentColor === 'string' && (
+              <button onClick={() => patchStyle('accentColor', undefined)} className="rounded px-1.5 py-0.5 bg-ink/5 hover:bg-ink/10">
+                기본색
+              </button>
+            )}
+          </>
         )}
         {['C1', 'B4', 'C5'].includes(s.template) && typeof s.props.coverImage === 'string' && (
           <label className="flex items-center gap-1">
@@ -1727,6 +1757,7 @@ function CardEditor({ card, sourceTitle }: { card: CardRow; sourceTitle?: string
       edge: edge || null,
       cta_type: ctaType,
       cta_keyword: ctaKeyword || null,
+      ending_props: Object.keys(endingProps).length ? endingProps : null,
       // 실제로 쓰인 사진의 출처만 남긴다 — 갈아끼운 사진의 표기가 유령으로 남지 않게
       photo_credits: activeCredits,
       ...(nextStatus ? { status: nextStatus } : {}),
@@ -1735,6 +1766,11 @@ function CardEditor({ card, sourceTitle }: { card: CardRow; sourceTitle?: string
     // 1027 미적용 DB 호환 — 컬럼이 없으면 그것만 빼고 재시도(저장 자체가 막히면 안 된다)
     if (error?.message.includes('photo_credits')) {
       delete row.photo_credits;
+      ({ error } = await supabase.from('content_cards').update(row).eq('id', card.id));
+    }
+    // 1032 미적용 DB 호환 — 같은 이유
+    if (error?.message.includes('ending_props')) {
+      delete row.ending_props;
       ({ error } = await supabase.from('content_cards').update(row).eq('id', card.id));
     }
     setSaving(false);
@@ -1962,9 +1998,12 @@ function CardEditor({ card, sourceTitle }: { card: CardRow; sourceTitle?: string
             ctaType={ctaType}
             ctaKeyword={ctaKeyword}
             accent={card.accent}
+            coverImage={coverImageOf(slides)}
+            endingProps={endingProps}
             slideCount={slides.filter((s) => s.enabled).length}
             onChangeCtaType={(v) => { setCtaType(v); setDirty(true); }}
             onChangeCtaKeyword={(v) => { setCtaKeyword(v); setDirty(true); }}
+            onChangeEndingProps={(v) => { setEndingProps(v); setDirty(true); }}
           />
 
           <ImageTray
@@ -2143,19 +2182,52 @@ function EndingCardPreview({
   ctaType,
   ctaKeyword,
   accent,
+  coverImage,
+  endingProps,
   slideCount,
   onChangeCtaType,
   onChangeCtaKeyword,
+  onChangeEndingProps,
 }: {
   ctaType: CardCtaType;
   ctaKeyword: string;
   accent: CardAccent;
+  /** 카드 커버 이미지 — DM형 배경 기본값(없으면 민짜 다크) */
+  coverImage?: string;
+  /** 카드별 오버라이드(ending_props) — 저장은 부모의 save()가 한다 */
+  endingProps?: EndingProps;
   /** 활성 슬라이드 수 — 엔딩까지 더해 캐러셀 10칸을 넘는지 여기서 알려준다 */
   slideCount?: number;
   onChangeCtaType?: (v: CardCtaType) => void;
   onChangeCtaKeyword?: (v: string) => void;
+  onChangeEndingProps?: (v: EndingProps) => void;
 }) {
-  const ending = useMemo(() => endingFor(ctaType, { ctaKeyword }), [ctaType, ctaKeyword]);
+  const ending = useMemo(
+    () => endingFor(ctaType, { ctaKeyword, accent, coverImage, overrides: endingProps }),
+    [ctaType, ctaKeyword, accent, coverImage, endingProps]
+  );
+  // 배경 검색 — 커버와 같은 Unsplash 경로(/api/cardpress/unsplash, 4:5 크롭 URL 반환).
+  // AI 생성(OPENAI_API_KEY 종량 과금)이 아니라 이미 세팅된 UNSPLASH_ACCESS_KEY를 쓴다.
+  const [bgQuery, setBgQuery] = useState('');
+  const [bgBusy, setBgBusy] = useState(false);
+  const [bgErr, setBgErr] = useState<string | null>(null);
+  const [bgResults, setBgResults] = useState<Array<{ id: string; thumb: string; full: string }>>([]);
+  async function searchBackground() {
+    if (!bgQuery.trim() || bgBusy) return;
+    setBgBusy(true);
+    setBgErr(null);
+    try {
+      const res = await fetch(`/api/cardpress/unsplash?query=${encodeURIComponent(bgQuery.trim())}`);
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error ?? `HTTP ${res.status}`);
+      if (json.notice) setBgErr(json.notice as string);
+      setBgResults((json.results ?? []).slice(0, 6));
+    } catch (e) {
+      setBgErr((e as Error).message);
+    } finally {
+      setBgBusy(false);
+    }
+  }
   const [png, setPng] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const urlRef = useRef<string | null>(null);
@@ -2264,6 +2336,98 @@ function EndingCardPreview({
               <span className="text-[11px] text-ink/40">
                 이 단어가 카드에 제일 크게 들어갑니다 (4자 이내 권장)
               </span>
+            </div>
+          )}
+          {ctaType === 'comment_dm' && onChangeEndingProps && (
+            <div className="mt-2 flex items-center gap-2 flex-wrap">
+              <span className="text-[11px] font-medium text-ink/60">포인트색</span>
+              <input
+                type="color"
+                value={endingProps?.accentColor ?? ACCENT_HEX[accent]}
+                onChange={(e) => onChangeEndingProps({ ...endingProps, accentColor: e.target.value })}
+                className="h-6 w-8 cursor-pointer rounded border border-border p-0"
+                title="키워드·강조 색 (기본: 카테고리색)"
+              />
+              {endingProps?.accentColor && (
+                <button
+                  onClick={() => {
+                    const { accentColor: _drop, ...rest } = endingProps;
+                    onChangeEndingProps(rest);
+                  }}
+                  className="text-[11px] text-accent hover:underline"
+                >
+                  기본색으로
+                </button>
+              )}
+              {coverImage || endingProps?.image ? (
+                <>
+                  <span className="text-[11px] font-medium text-ink/60 ml-2">배경 어둡기</span>
+                  <input
+                    type="range"
+                    min={0.3}
+                    max={0.9}
+                    step={0.02}
+                    value={endingProps?.overlay ?? 0.62}
+                    onChange={(e) => onChangeEndingProps({ ...endingProps, overlay: Number(e.target.value) })}
+                    className="w-24"
+                    title="배경(커버 이미지) 위 오버레이 — 낮출수록 사진이 드러남"
+                  />
+                </>
+              ) : (
+                <span className="text-[11px] text-ink/40 ml-2">커버 이미지가 없어 다크 단색 배경이에요</span>
+              )}
+            </div>
+          )}
+          {ctaType === 'comment_dm' && onChangeEndingProps && (
+            <div className="mt-2 space-y-1.5">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-[11px] font-medium text-ink/60">배경 검색</span>
+                <Input
+                  value={bgQuery}
+                  onChange={(e) => setBgQuery(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && searchBackground()}
+                  placeholder="Unsplash 검색어 (예: dark desk moody)"
+                  className="text-sm w-60"
+                  disabled={bgBusy}
+                />
+                <button
+                  onClick={searchBackground}
+                  disabled={bgBusy || !bgQuery.trim()}
+                  className="text-xs rounded-full px-2.5 py-1 bg-accent text-white disabled:opacity-40"
+                  title="커버와 같은 Unsplash 검색 — 4:5 크롭으로 배경 적용"
+                >
+                  {bgBusy ? '검색 중…' : '검색'}
+                </button>
+                {endingProps?.image && (
+                  <button
+                    onClick={() => {
+                      const { image: _drop, ...rest } = endingProps;
+                      onChangeEndingProps(rest);
+                    }}
+                    className="text-[11px] text-accent hover:underline"
+                  >
+                    검색 배경 지우기 (커버로)
+                  </button>
+                )}
+              </div>
+              {bgResults.length > 0 && (
+                <div className="flex gap-1.5 flex-wrap">
+                  {bgResults.map((r) => (
+                    <button
+                      key={r.id}
+                      onClick={() => onChangeEndingProps({ ...endingProps, image: r.full })}
+                      className={`overflow-hidden rounded border ${
+                        endingProps?.image === r.full ? 'border-accent ring-1 ring-accent' : 'border-ink/10 hover:border-ink/30'
+                      }`}
+                      style={{ width: 44, aspectRatio: '1080 / 1350' }}
+                      title="클릭하면 엔딩 배경으로 적용"
+                    >
+                      <img src={r.thumb} alt="배경 후보" className="h-full w-full object-cover" />
+                    </button>
+                  ))}
+                </div>
+              )}
+              {bgErr && <p className="text-[11px] text-red-600">{bgErr}</p>}
             </div>
           )}
           <p className="mt-1.5">{ending.note}</p>

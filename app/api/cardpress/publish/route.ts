@@ -9,9 +9,9 @@ import {
   publishThreads,
   type CarouselItem,
 } from '@/lib/cardpress/publish';
-import { endingFor } from '@/lib/cardpress/endings';
+import { coverImageOf, endingFor } from '@/lib/cardpress/endings';
 import type { CardCtaType } from '@/lib/cardpress/cta-endings';
-import type { CardAccent, CardSlide } from '@/types/cardpress';
+import type { CardAccent, CardSlide, EndingProps } from '@/types/cardpress';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -70,6 +70,9 @@ export async function POST(req: NextRequest) {
     //      채널 안내형은 영상, 나머지는 Satori 렌더 PNG. 영상은 이미 버킷에 있는 고정 자산.
     const ending = endingFor((card.cta_type as CardCtaType) ?? 'channel_intro', {
       ctaKeyword: card.cta_keyword,
+      accent: card.accent as CardAccent | null,
+      coverImage: coverImageOf(card.slides as CardSlide[]),
+      overrides: card.ending_props as EndingProps | null,
     });
     let endingUrl: string;
     if (ending.kind === 'video') {
