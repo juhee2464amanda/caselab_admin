@@ -114,7 +114,8 @@ export function endingFor(
         big: keyword,
         // 230px 풀사이즈는 키워드에 너무 컸다 — 한 방은 유지하되 카드가 글자에 먹히지 않게
         bigMax: 150,
-        resolve: '댓글에 이 단어만 남기면 **DM**으로 보내드려요',
+        // 안내문 오버라이드 — 빈 문자열은 "줄 삭제"인데 P6 스키마가 min(1)이라 공백 하나로 눕힌다
+        resolve: (ov.resolve ?? '댓글에 이 단어만 남기면 **DM**으로 보내드려요') || ' ',
         accentColor,
         ...(image
           ? {

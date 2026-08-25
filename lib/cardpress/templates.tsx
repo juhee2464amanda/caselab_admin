@@ -55,9 +55,9 @@ const TOPBAR_H = 44; // caselab 로고 줄 높이
 
 const CJK_RE = /[ᄀ-ᇿ⺀-鿿가-힣豈-﫿＀-｠]/;
 
-/** **강조** 마커는 렌더에서 사라지므로 측정에서도 뺀다 */
+/** **강조**·==골드== 마커는 렌더에서 사라지므로 측정에서도 뺀다 */
 function stripMarks(text: string): string {
-  return text.replace(/\*\*/g, '');
+  return text.replace(/\*\*/g, '').replace(/==/g, '');
 }
 
 /** 텍스트의 em 폭 — 한글·한자·전각은 1em, 라틴·숫자·공백은 0.55em (Pretendard 실측 근사) */
@@ -139,15 +139,19 @@ function hlSpan(
         paddingBottom: 2,
         textShadow: 'none',
       };
-    default:
+    default: {
+      // 밝은 형광펜(골드·라임·옐로) 박스 위 흰 글자는 죽는다 — YIQ 명도로 글자색을 뒤집는다
+      const n = parseInt(base.slice(1), 16);
+      const yiq = (((n >> 16) & 255) * 299 + ((n >> 8) & 255) * 587 + (n & 255) * 114) / 1000;
       return {
         whiteSpace: 'pre',
         background: base,
-        color: '#fff',
+        color: yiq > 150 ? INK : '#fff',
         padding: '2px 16px',
         borderRadius: 8,
         textShadow: 'none',
       };
+    }
   }
 }
 
@@ -174,13 +178,20 @@ function em(text: string, accent: string, base: CSSProperties = {}): ReactNode[]
     // 줄 끝·줄 앞 공백은 여기서 털어낸다 — 남기면 줄바꿈 자리에 빈칸으로 찍힌다.
     const line = rawLine.trim();
     if (!line) return;
-    line.split(/\*\*(.+?)\*\*/g).forEach((seg, i) => {
+    // **강조**=포인트색 · ==강조===골드(#E8B857, P계열 벤치마크 강조색과 동일).
+    // 골드는 포인트색과 별개의 둘째 강조 축 — 썸네일 문법을 본문에서도 쓰게 해달라는 운영자 요청(2026-08-25).
+    line.split(/(\*\*.+?\*\*|==.+?==)/g).forEach((seg, i) => {
       if (!seg) return;
-      const style: CSSProperties =
-        i % 2 === 1
-          ? { ...base, whiteSpace: 'pre-wrap', color: accent, fontWeight: 700 }
-          : { ...base, whiteSpace: 'pre-wrap' };
-      for (const word of seg.match(/\S+\s*|\s+/g) ?? [seg])
+      let content = seg;
+      let style: CSSProperties = { ...base, whiteSpace: 'pre-wrap' };
+      if (/^\*\*.+\*\*$/.test(seg)) {
+        content = seg.slice(2, -2);
+        style = { ...base, whiteSpace: 'pre-wrap', color: accent, fontWeight: 700 };
+      } else if (/^==.+==$/.test(seg)) {
+        content = seg.slice(2, -2);
+        style = { ...base, whiteSpace: 'pre-wrap', color: PHOTO_ACCENT, fontWeight: 700 };
+      }
+      for (const word of content.match(/\S+\s*|\s+/g) ?? [content])
         nodes.push(
           <span key={`${li}-${i}-${nodes.length}`} style={style}>
             {word}
@@ -2958,7 +2969,10 @@ function B9({ accent, props }: Extract<RenderSlideInput, { template: 'B9' }>) {
 // scripts/cardpress-verify.mjs가 렌더 PNG의 글자/배경 대비를 실측해 4.5:1 미만이면 실패시킨다.
 // ============================================================
 
-const PHOTO_ACCENT = '#E8B857'; // 골드 — 벤치마크 기본 강조색(카드당 1구절). accentColor로 오버라이드
+// 골드 — 벤치마크 기본 강조색(카드당 1구절). P계열 **강조** 글자색은 포인트색(전체)과
+// 무관하게 항상 이 골드로 고정(운영자 요청 2026-08-25 — 전파가 본문 강조까지 물들이던 문제).
+// 숫자·괘선·빅넘버 등 구조 요소만 photoAccent(accentColor 오버라이드 허용)를 따른다.
+const PHOTO_ACCENT = '#E8B857';
 const P_TEXT = '#FFFFFF';
 const P_TEXT_2 = 'rgba(255,255,255,0.90)'; // 부본문 — 0.7대로 내리면 사진 위에서 대비가 무너진다
 const P_TEXT_3 = 'rgba(255,255,255,0.66)'; // eyebrow 전용(작고 짧은 텍스트만)
@@ -3611,7 +3625,7 @@ function P8({ accent, props }: Extract<RenderSlideInput, { template: 'P8' }>) {
           maxWidth: 860,
         }}
       >
-        {em(props.lead, ac, { fontSize: 46, fontWeight: 800, lineHeight: 1.35 })}
+        {em(props.lead, PHOTO_ACCENT, { fontSize: 46, fontWeight: 800, lineHeight: 1.35 })}
       </div>
     </div>
   );
@@ -3645,7 +3659,7 @@ function P9({ accent, props }: Extract<RenderSlideInput, { template: 'P9' }>) {
             )}
           </div>
           <div style={{ display: 'flex', flexWrap: 'wrap', marginTop: 30, fontSize: 26, lineHeight: 1.75, color: 'rgba(244,246,251,0.66)' }}>
-            {em(props.body, ac)}
+            {em(props.body, PHOTO_ACCENT)}
           </div>
         </div>
         <span style={{ fontSize: 24, fontWeight: 600, color: 'rgba(244,246,251,0.35)' }}>{props.page ?? ''}</span>
@@ -3687,7 +3701,7 @@ function P10({ accent, props }: Extract<RenderSlideInput, { template: 'P10' }>) 
         )}
       </div>
       <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', marginTop: 58, maxWidth: 900, letterSpacing: '-0.02em' }}>
-        {em(props.lead, ac, { fontSize: 46, fontWeight: 800, color: P_TEXT, lineHeight: 1.32 })}
+        {em(props.lead, PHOTO_ACCENT, { fontSize: 46, fontWeight: 800, color: P_TEXT, lineHeight: 1.32 })}
       </div>
       {props.caption ? (
         <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', marginTop: 22, fontSize: 26, lineHeight: 1.6, color: P_TEXT_3 }}>
@@ -3802,7 +3816,7 @@ function P7({ accent, props }: Extract<RenderSlideInput, { template: 'P7' }>) {
             letterSpacing: '-0.02em',
           }}
         >
-          {em(props.lead, ac, { fontSize: 52, fontWeight: 800, color: P_TEXT, lineHeight: 1.3 })}
+          {em(props.lead, PHOTO_ACCENT, { fontSize: 52, fontWeight: 800, color: P_TEXT, lineHeight: 1.3 })}
         </div>
         {props.caption ? (
           <div
@@ -3927,7 +3941,7 @@ function P1({ accent, props }: Extract<RenderSlideInput, { template: 'P1' }>) {
             letterSpacing: '-0.02em',
           }}
         >
-          {em(props.lead, ac, {
+          {em(props.lead, PHOTO_ACCENT, {
             fontSize: lead.size,
             fontWeight: 800,
             color: P_TEXT,
@@ -3994,7 +4008,7 @@ function P2({ accent, props }: Extract<RenderSlideInput, { template: 'P2' }>) {
             letterSpacing: '-0.02em',
           }}
         >
-          {em(props.heading, ac, {
+          {em(props.heading, PHOTO_ACCENT, {
             fontSize: heading.size,
             fontWeight: 800,
             color: P_TEXT,
@@ -4010,7 +4024,7 @@ function P2({ accent, props }: Extract<RenderSlideInput, { template: 'P2' }>) {
               marginTop: 26,
             }}
           >
-            {em(props.sub, ac, {
+            {em(props.sub, PHOTO_ACCENT, {
               fontSize: Math.round(heading.size * 0.62),
               fontWeight: 700,
               color: P_TEXT_2,
@@ -4027,7 +4041,7 @@ function P2({ accent, props }: Extract<RenderSlideInput, { template: 'P2' }>) {
             textAlign: 'center',
           }}
         >
-          {em(props.body, ac, {
+          {em(props.body, PHOTO_ACCENT, {
             fontSize: body.size,
             fontWeight: 500,
             color: P_TEXT_2,
@@ -4090,7 +4104,7 @@ function P3({ accent, props }: Extract<RenderSlideInput, { template: 'P3' }>) {
           <Eyebrow text={props.label ?? DEFAULT_TAGS[accent]} />
         </div>
         <div style={{ display: 'flex', flexWrap: 'wrap', letterSpacing: '-0.02em' }}>
-          {em(props.title, ac, {
+          {em(props.title, PHOTO_ACCENT, {
             fontSize: title.size,
             fontWeight: 800,
             color: P_TEXT,
@@ -4112,7 +4126,7 @@ function P3({ accent, props }: Extract<RenderSlideInput, { template: 'P3' }>) {
             <div style={{ display: 'flex', flexDirection: 'column', gap: item.gap }}>
               {items.map((t, i) => (
                 <div key={i} style={{ display: 'flex', flexWrap: 'wrap' }}>
-                  {em(t, ac, {
+                  {em(t, PHOTO_ACCENT, {
                     fontSize: item.size,
                     fontWeight: 500,
                     color: P_TEXT_2,
@@ -4187,7 +4201,7 @@ function P4({ props }: Extract<RenderSlideInput, { template: 'P4' }>) {
           “
         </div>
         <div style={{ display: 'flex', flexWrap: 'wrap', letterSpacing: '-0.02em' }}>
-          {em(props.quote, ac, {
+          {em(props.quote, PHOTO_ACCENT, {
             fontSize: quote.size,
             fontWeight: 800,
             color: P_TEXT,
@@ -4265,7 +4279,7 @@ function P5({ accent, props }: Extract<RenderSlideInput, { template: 'P5' }>) {
           <Eyebrow text={props.eyebrow ?? DEFAULT_TAGS[accent]} />
         </div>
         <div style={{ display: 'flex', flexWrap: 'wrap', letterSpacing: '-0.025em', marginBottom: 48 }}>
-          {em(props.lead, ac, { fontSize: lead.size, fontWeight: 800, color: P_TEXT, lineHeight: 1.2 })}
+          {em(props.lead, PHOTO_ACCENT, { fontSize: lead.size, fontWeight: 800, color: P_TEXT, lineHeight: 1.2 })}
         </div>
         <RuleList items={props.items} size={item.size} gap={item.gap} accent={ac} />
       </div>
@@ -4358,7 +4372,7 @@ function P6({ accent, props }: Extract<RenderSlideInput, { template: 'P6' }>) {
             textAlign: 'center',
           }}
         >
-          {em(props.resolve, ac, {
+          {em(props.resolve, PHOTO_ACCENT, {
             fontSize: resolve.size,
             fontWeight: 600,
             color: P_TEXT_2,

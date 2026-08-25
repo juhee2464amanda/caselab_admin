@@ -372,6 +372,7 @@ export const EndingPropsSchema = z.object({
   accentColor: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
   image: z.string().url().optional(),
   overlay: z.number().min(0).max(0.9).optional(),
+  resolve: z.string().optional(), // 키워드 아래 안내문 오버라이드 — ''이면 그 줄을 지운다
 });
 export type EndingProps = z.infer<typeof EndingPropsSchema>;
 

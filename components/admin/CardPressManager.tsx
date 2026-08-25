@@ -10,6 +10,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { createSupabaseBrowserClient } from '@/lib/supabase/client';
 import { CARD_H, CARD_W, renderSlide } from '@/lib/cardpress/templates';
 import { RenderSlideSchema } from '@/types/cardpress';
+import type { RenderSlideInput } from '@/types/cardpress';
 import type { CardSlide, CardTemplateId, CardAccent, EndingProps } from '@/types/cardpress';
 import { CardTemplatePicker, type PickResult } from '@/components/admin/CardTemplatePicker';
 import { STYLE_PACKS, type StylePackId } from '@/lib/cardpress/mapping';
@@ -31,7 +32,7 @@ import {
   CTA_TYPE_LABELS,
   type CardCtaType,
 } from '@/lib/cardpress/cta-endings';
-import { coverImageOf, endingFor } from '@/lib/cardpress/endings';
+import { coverImageOf, endingFor, type EndingCard } from '@/lib/cardpress/endings';
 import {
   creditBlock,
   hasCreditBlock,
@@ -156,7 +157,10 @@ const HL_PALETTE: Array<{ hex: string; name: string }> = [
   { hex: '#7C3AED', name: '바이올렛' },
   { hex: '#0E9F6E', name: '에메랄드' },
   { hex: '#E11D48', name: '레드' },
-  { hex: '#D9A414', name: '골드' },
+  // P계열 기본 강조색과 같은 값 — 팔레트 골드(#D9A414)가 실제 렌더 골드와 달라 헷갈렸다
+  { hex: '#E8B857', name: '골드' },
+  // v3 밝은 톤의 형광펜과 같은 라임 — 밝은 배경 박스는 hlSpan이 글자를 잉크색으로 뒤집는다
+  { hex: '#C6F24E', name: '라임' },
 ];
 
 // 형광펜(hl = 배경 포인트색 필)이 가리키는 대상 필드 — 드래그 선택 → 형광펜 지정에 사용
@@ -1147,6 +1151,21 @@ function CardEditor({ card, sourceTitle }: { card: CardRow; sourceTitle?: string
   const [stylePack, setStylePack] = useState<StylePackId>('classic');
   const [ctaKeyword, setCtaKeyword] = useState(card.cta_keyword ?? '프롬프트');
   const [endingProps, setEndingProps] = useState<EndingProps>(card.ending_props ?? {});
+  /** 엔딩이 프리뷰 패널에 "선택"된 상태 — slides 인덱스 밖의 가상 마지막 칸 */
+  const [endingSel, setEndingSel] = useState(false);
+  /** 스타일 팩 적용 직전 슬라이드 스냅샷 — [클래식] 클릭 = 여기로 복원 (세션 한정) */
+  const packBaseline = useRef<CardSlide[] | null>(null);
+  /** 엔딩 캔버스 인라인 편집 — big=댓글 키워드, resolve=안내문(ending_props.resolve) */
+  const [endingEdit, setEndingEdit] = useState<{
+    key: 'big' | 'resolve';
+    rect: { x: number; y: number; w: number; h: number };
+    value: string;
+  } | null>(null);
+  // 엔딩 파생본 — EndingCardPreview와 같은 규칙. 프리뷰 패널·전체 편집 나열에 일반 카드처럼 얹는다
+  const endingCard = useMemo(
+    () => endingFor(ctaType, { ctaKeyword, accent: card.accent, coverImage: coverImageOf(slides), overrides: endingProps }),
+    [ctaType, ctaKeyword, card.accent, slides, endingProps]
+  );
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
   const [selIdx, setSelIdx] = useState(0);
@@ -1173,8 +1192,17 @@ function CardEditor({ card, sourceTitle }: { card: CardRow; sourceTitle?: string
   // 슬라이드 이동(리스트·화살표) 시 열린 오버레이 정리 — 캔버스 내 상호작용은 건드리지 않음
   function selectSlide(i: number) {
     setSelIdx(i);
+    setEndingSel(false);
     setLiveEdit(null);
     setSelPopup(null);
+  }
+
+  // 엔딩을 일반 카드처럼 "선택"한다 — slides엔 없지만 프리뷰·나열에선 마지막 칸으로 취급
+  function selectEnding() {
+    setEndingSel(true);
+    setLiveEdit(null);
+    setSelPopup(null);
+    setQuickEdit(false);
   }
 
   // 저장 안 된 수정이 있으면 새로고침/이탈 시 브라우저 경고 (수정 유실 방지)
@@ -1238,6 +1266,32 @@ function CardEditor({ card, sourceTitle }: { card: CardRow; sourceTitle?: string
       | 'tone',
     value: unknown
   ) {
+    // 포인트색은 카드 전체의 색 — 한 장만 바꾸면 뒤 장들과 갈라진다(운영자 요청 2026-08-25).
+    // 전 장에 함께 적용하고 엔딩 오버라이드도 맞춘다. 기본색 리셋(undefined)도 전 장을 함께 되돌린다.
+    if (key === 'accentColor') {
+      patch((prev) =>
+        prev.map((s) => {
+          const p = { ...s.props } as Record<string, unknown>;
+          if (value === undefined || value === '') delete p.accentColor;
+          else p.accentColor = value;
+          // 형광펜 기본색은 hlColor ?? 포인트색 — hlColor가 박혀 있으면(팔레트 사용·v3에서
+          // 레이아웃 전환 시 STYLE_KEYS로 따라옴) 포인트색을 바꿔도 형광펜이 안 따라온다.
+          // 전체 색 변경의 의도는 "다 따라와라"이므로 v3(잠금 팔레트) 밖에서는 hlColor를 걷어낸다.
+          const v3 = s.template === 'C1' && p.coverLayout === 'v3';
+          if (!v3) delete p.hlColor;
+          return { ...s, props: p };
+        })
+      );
+      setEndingProps((prev) => {
+        if (value === undefined || value === '') {
+          const { accentColor: _drop, ...rest } = prev;
+          return rest;
+        }
+        return { ...prev, accentColor: value as string };
+      });
+      setDirty(true);
+      return;
+    }
     patchPropsAt(selIdx, { [key]: value });
   }
   /**
@@ -1276,6 +1330,60 @@ function CardEditor({ card, sourceTitle }: { card: CardRow; sourceTitle?: string
       prev.map((x, k) => (k === idx ? { ...x, template: alt, props: { ...props, [imageKey]: url } } : x))
     );
     setSelIdx(idx);
+  }
+
+  /** 스타일 팩 즉시 적용 — 지금 장들의 글을 유지한 채 팩 규칙대로 템플릿만 로컬 변환.
+   *  (AI 없음 · 프리뷰 즉시 반영. "제대로 다시 쓰기"는 팩 선택 후 [AI 전체 재생성]) */
+  function applyPackLocally(packId: StylePackId) {
+    setStylePack(packId);
+    // 클래식은 치환표가 빈 팩이라 아무것도 안 바꿨다 — 그래서 다른 팩에 다녀오면 돌아올 길이 없었다.
+    // 첫 팩 적용 직전 스냅샷을 잡아두고, 클래식 클릭 = 그 시점으로 복원.
+    if (packId === 'classic') {
+      if (!packBaseline.current) {
+        alert('되돌릴 기준이 없어요 — 이 세션에서 팩을 바꾼 적이 없거나 이미 클래식 상태입니다.');
+        return;
+      }
+      if (
+        !confirm(
+          '팩을 적용하기 전 상태로 되돌릴까요?\n(팩 적용 후 고친 글·사진도 그 시점으로 돌아갑니다)'
+        )
+      )
+        return;
+      patch(() => packBaseline.current!);
+      packBaseline.current = null;
+      return;
+    }
+    const rule = STYLE_PACKS.find((p) => p.id === packId);
+    if (!rule) return;
+    const skipped: string[] = [];
+    let changed = 0;
+    const next = slides.map((s, i) => {
+      const keep = s.template === 'B8' || s.template === 'B5';
+      const to = i === 0
+        ? rule.coverSwap[s.template]
+        : keep
+          ? undefined
+          : rule.uniform ?? rule.swap[s.template];
+      if (!to || to === s.template) return s;
+      const { props, missing } = convertProps(s.template, to, s.props as Record<string, unknown>);
+      if (missing.length) {
+        skipped.push(`${i + 1}장 ${TEMPLATE_LABEL[s.template]} (재료 부족: ${missing.join('·')})`);
+        return s;
+      }
+      changed += 1;
+      return { ...s, template: to, props };
+    });
+    if (!changed && !skipped.length) return alert('이 팩으로 바꿀 장이 없어요 — 이미 같은 모양입니다.');
+    if (
+      !confirm(
+        `${rule.label} 팩으로 ${changed}장을 즉시 갈아입힐까요?\n(글은 그대로 옮겨집니다 · AI 호출 없음)` +
+          (skipped.length ? `\n\n건너뜀:\n${skipped.join('\n')}` : '') +
+          `\n\n문장까지 팩 규격으로 다시 쓰려면 취소 후 [AI 전체 재생성]을 쓰세요.`
+      )
+    )
+      return;
+    if (!packBaseline.current) packBaseline.current = slides; // 클래식 복원용 — 첫 팩 적용 직전 상태
+    patch(() => next);
   }
 
   /** 시각 피커에서 고른 템플릿으로 즉시 변환 (AI 없이 글만 옮김) */
@@ -1500,6 +1608,7 @@ function CardEditor({ card, sourceTitle }: { card: CardRow; sourceTitle?: string
           const canEm = EM_FIELDS.has(popup.key) && raw.includes(popup.text);
           const isHl = s.props.hl === popup.text;
           const emApplied = raw.includes(`**${popup.text}**`);
+          const goldApplied = raw.includes(`==${popup.text}==`);
           if (!canHl && !canEm) return null;
           const btn = 'text-[11px] rounded px-2 py-1 whitespace-nowrap';
           return (
@@ -1532,18 +1641,34 @@ function CardEditor({ card, sourceTitle }: { card: CardRow; sourceTitle?: string
                   )}
                 </>
               )}
-              {canEm && !emApplied && (
-                <button
-                  className={`${btn} bg-accent/10 text-accent font-bold`}
-                  onClick={() => { patchPropTextAt(i, popup.key, raw.replace(popup.text, `**${popup.text}**`)); setSelPopup(null); }}
-                >
-                  A 포인트색
-                </button>
+              {canEm && !emApplied && !goldApplied && (
+                <>
+                  <button
+                    className={`${btn} bg-accent/10 text-accent font-bold`}
+                    onClick={() => { patchPropTextAt(i, popup.key, raw.replace(popup.text, `**${popup.text}**`)); setSelPopup(null); }}
+                  >
+                    A 포인트색
+                  </button>
+                  {/* ==마커== = 골드 글자색(#E8B857) — 썸네일에서 쓰던 노란 강조를 본문에도 */}
+                  <button
+                    className={`${btn} font-bold`}
+                    style={{ background: 'rgba(232,184,87,0.18)', color: '#B98A2E' }}
+                    onClick={() => { patchPropTextAt(i, popup.key, raw.replace(popup.text, `==${popup.text}==`)); setSelPopup(null); }}
+                  >
+                    A 골드
+                  </button>
+                </>
               )}
-              {canEm && emApplied && (
+              {canEm && (emApplied || goldApplied) && (
                 <button
                   className={`${btn} bg-ink/10`}
-                  onClick={() => { patchPropTextAt(i, popup.key, raw.replace(`**${popup.text}**`, popup.text)); setSelPopup(null); }}
+                  onClick={() => {
+                    const next = emApplied
+                      ? raw.replace(`**${popup.text}**`, popup.text)
+                      : raw.replace(`==${popup.text}==`, popup.text);
+                    patchPropTextAt(i, popup.key, next);
+                    setSelPopup(null);
+                  }}
                 >
                   강조 해제
                 </button>
@@ -1566,6 +1691,67 @@ function CardEditor({ card, sourceTitle }: { card: CardRow; sourceTitle?: string
             onBlur={(e) => { patchPropTextAt(i, editing.key, e.target.value); setLiveEdit(null); }}
             onKeyDown={(e) => {
               if (e.key === 'Escape') setLiveEdit(null);
+              if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) (e.target as HTMLTextAreaElement).blur();
+            }}
+          />
+        )}
+      </div>
+    );
+  }
+
+  // 엔딩 캔버스 — 슬라이드형(DM)은 LiveSlide를 그대로 얹어 일반 카드처럼 클릭 편집.
+  // big(키워드)→cta_keyword, resolve(안내문)→ending_props.resolve로 흘려보낸다. 비우면 줄 삭제.
+  function renderEndingCanvas() {
+    if (endingCard.kind !== 'slide') return <EndingCanvas ending={endingCard} accent={card.accent} />;
+    const pseudo = {
+      template: endingCard.template,
+      props: endingCard.props,
+      order: slides.length + 1,
+      enabled: true,
+    } as CardSlide;
+    return (
+      <div className="relative">
+        <LiveSlide
+          slide={pseudo}
+          accent={card.accent}
+          onEditProp={(key, rect) => {
+            if (key !== 'big' && key !== 'resolve') return; // 엔딩은 이 두 칸만 쓴다
+            setEndingEdit({
+              key,
+              rect,
+              value:
+                key === 'big'
+                  ? ctaKeyword
+                  : (endingProps.resolve ?? '댓글에 이 단어만 남기면 **DM**으로 보내드려요'),
+            });
+          }}
+          onSelectText={() => {}}
+          onDropImage={(url) => { setEndingProps((p) => ({ ...p, image: url })); setDirty(true); }}
+          onPan={() => {}}
+        />
+        {endingEdit && (
+          <textarea
+            autoFocus
+            className="absolute z-10 rounded-md border-2 border-accent bg-white text-ink shadow-lg p-2 text-sm leading-snug"
+            style={{
+              left: Math.max(0, endingEdit.rect.x),
+              top: endingEdit.rect.y,
+              width: Math.max(220, endingEdit.rect.w + 24),
+              minHeight: Math.max(52, endingEdit.rect.h + 16),
+            }}
+            defaultValue={endingEdit.value}
+            onBlur={(e) => {
+              const v = e.target.value.trim();
+              if (endingEdit.key === 'big') {
+                if (v) setCtaKeyword(v); // 키워드는 비울 수 없다 — 리틀리 트리거가 사라진다
+              } else {
+                setEndingProps((p) => ({ ...p, resolve: v })); // ''이면 안내문 줄 삭제
+              }
+              setDirty(true);
+              setEndingEdit(null);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Escape') setEndingEdit(null);
               if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) (e.target as HTMLTextAreaElement).blur();
             }}
           />
@@ -1603,8 +1789,8 @@ function CardEditor({ card, sourceTitle }: { card: CardRow; sourceTitle?: string
           </>
         ) : (
           <>
-            <label className="flex items-center gap-1">
-              포인트색
+            <label className="flex items-center gap-1" title="모든 장 + 엔딩의 포인트색에 함께 적용됩니다">
+              포인트색(전체)
               <input
                 type="color"
                 value={(s.props.accentColor as string) ?? ACCENT_HEX[card.accent]}
@@ -1897,14 +2083,14 @@ function CardEditor({ card, sourceTitle }: { card: CardRow; sourceTitle?: string
           {STYLE_PACKS.map((pk) => (
             <button
               key={pk.id}
-              onClick={() => setStylePack(pk.id)}
+              onClick={() => applyPackLocally(pk.id)}
               title={pk.desc}
               className={`text-xs rounded-full px-2.5 py-1 ${stylePack === pk.id ? 'bg-ink text-white' : 'bg-ink/5 text-ink/60 hover:bg-ink/10'}`}
             >
               {pk.label}
             </button>
           ))}
-          <span className="text-[11px] text-ink/40">[AI 전체 재생성] 시 이 팩의 템플릿 조합으로 다시 입힙니다</span>
+          <span className="text-[11px] text-ink/40">누르면 지금 장들이 즉시 갈아입혀집니다(글 유지) · [AI 전체 재생성]은 문장까지 팩 규격으로 재작성</span>
         </div>
       </div>
 
@@ -2004,6 +2190,8 @@ function CardEditor({ card, sourceTitle }: { card: CardRow; sourceTitle?: string
             onChangeCtaType={(v) => { setCtaType(v); setDirty(true); }}
             onChangeCtaKeyword={(v) => { setCtaKeyword(v); setDirty(true); }}
             onChangeEndingProps={(v) => { setEndingProps(v); setDirty(true); }}
+            selected={endingSel}
+            onSelect={selectEnding}
           />
 
           <ImageTray
@@ -2057,7 +2245,7 @@ function CardEditor({ card, sourceTitle }: { card: CardRow; sourceTitle?: string
         <div className="card p-4 lg:sticky lg:top-4">
           <div className="flex items-center justify-between mb-2">
             <span className="text-sm font-semibold flex items-center gap-2">
-              프리뷰 {viewMode === 'single' && sel ? `${selIdx + 1} / ${slides.length}` : ''}
+              프리뷰 {viewMode === 'single' ? (endingSel ? `엔딩 · ${slides.length + 1}칸째` : sel ? `${selIdx + 1} / ${slides.length}` : '') : ''}
               {dirty && (
                 <button
                   onClick={() => save()}
@@ -2093,14 +2281,32 @@ function CardEditor({ card, sourceTitle }: { card: CardRow; sourceTitle?: string
                   >
                     폼
                   </button>
-                  <button onClick={() => selectSlide(Math.max(0, selIdx - 1))} className="px-2 py-0.5 rounded border border-border text-xs hover:bg-ink/5">←</button>
-                  <button onClick={() => selectSlide(Math.min(slides.length - 1, selIdx + 1))} className="px-2 py-0.5 rounded border border-border text-xs hover:bg-ink/5">→</button>
+                  <button
+                    onClick={() => (endingSel ? selectSlide(slides.length - 1) : selectSlide(Math.max(0, selIdx - 1)))}
+                    className="px-2 py-0.5 rounded border border-border text-xs hover:bg-ink/5"
+                  >←</button>
+                  <button
+                    onClick={() => {
+                      // 마지막 슬라이드에서 →는 엔딩(가상 마지막 칸)으로 넘어간다
+                      if (endingSel) return;
+                      if (selIdx >= slides.length - 1) selectEnding();
+                      else selectSlide(selIdx + 1);
+                    }}
+                    className="px-2 py-0.5 rounded border border-border text-xs hover:bg-ink/5"
+                  >→</button>
                 </>
               )}
             </div>
           </div>
-          {sel && (viewMode === 'grid' || previewMode === 'live') && renderStyleToolbar(sel)}
-          {viewMode === 'single' ? (
+          {sel && (viewMode === 'grid' || (previewMode === 'live' && !endingSel)) && renderStyleToolbar(sel)}
+          {viewMode === 'single' && endingSel ? (
+            <>
+              {renderEndingCanvas()}
+              <p className="text-xs text-ink/40 mt-2">
+                키워드·안내문은 텍스트 클릭으로 바로 수정(안내문은 비우면 삭제) · 포인트색·배경은 왼쪽 [엔딩 · 자동] 패널.
+              </p>
+            </>
+          ) : viewMode === 'single' ? (
             <>
               {previewMode === 'live' && sel ? (
                 renderEditableCanvas(selIdx)
@@ -2149,6 +2355,19 @@ function CardEditor({ card, sourceTitle }: { card: CardRow; sourceTitle?: string
                   {renderEditableCanvas(i)}
                 </div>
               ))}
+              {/* 엔딩 — slides엔 없지만 발행 캐러셀의 실제 마지막 칸이라 나열에도 붙인다 */}
+              <div>
+                <div className="flex items-center justify-between text-[11px] text-ink/40 mb-1">
+                  <span>
+                    {slides.length + 1}. 엔딩 — {endingCard.label} (자동)
+                    {endingSel && <span className="text-accent ml-1">◂ 선택됨</span>}
+                  </span>
+                  <button onClick={() => { selectEnding(); setViewMode('single'); }} className="text-accent hover:underline">
+                    단일 보기
+                  </button>
+                </div>
+                {renderEndingCanvas()}
+              </div>
             </div>
           )}
         </div>
@@ -2174,6 +2393,46 @@ function CardEditor({ card, sourceTitle }: { card: CardRow; sourceTitle?: string
   );
 }
 
+// ── 엔딩 큰 캔버스 — 일반 카드처럼 실비율(4:5)로 프리뷰·나열에 얹는다 ──
+// 파생 카드라 읽기 전용: 수정은 엔딩 패널(키워드·색·배경)에서 하고 여기는 그 결과만 크게 비춘다.
+function EndingCanvas({ ending, accent }: { ending: EndingCard; accent: CardAccent }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [w, setW] = useState(0);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => setW(el.clientWidth));
+    ro.observe(el);
+    setW(el.clientWidth);
+    return () => ro.disconnect();
+  }, []);
+  return (
+    <div
+      ref={ref}
+      className="relative w-full overflow-hidden rounded-lg border border-border bg-ink/5"
+      style={{ aspectRatio: '4 / 5' }}
+    >
+      {ending.kind === 'video' ? (
+        <video src={ending.videoUrl} poster={ending.posterUrl} autoPlay loop muted playsInline className="h-full w-full object-cover" />
+      ) : ending.kind === 'image' ? (
+        <img src={ending.imageUrl} alt="엔딩 카드" className="h-full w-full object-cover" />
+      ) : w > 0 ? (
+        <div
+          style={{
+            width: CARD_W,
+            height: CARD_H,
+            transform: `scale(${w / CARD_W})`,
+            transformOrigin: 'top left',
+            pointerEvents: 'none',
+          }}
+        >
+          {renderSlide({ template: ending.template, accent, props: ending.props } as RenderSlideInput)}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 // ── 엔딩 카드(마지막 장) 미리보기 ─────────────────────────────
 // 엔딩은 slides에 저장하지 않고 cta_type에서 파생한다(lib/cardpress/endings.ts).
 // 채널의 것이라 매번 같은데 slides에 복사해두면 문구 한 줄 고칠 때 과거 카드와 갈라지기 때문.
@@ -2188,6 +2447,8 @@ function EndingCardPreview({
   onChangeCtaType,
   onChangeCtaKeyword,
   onChangeEndingProps,
+  selected,
+  onSelect,
 }: {
   ctaType: CardCtaType;
   ctaKeyword: string;
@@ -2201,6 +2462,9 @@ function EndingCardPreview({
   onChangeCtaType?: (v: CardCtaType) => void;
   onChangeCtaKeyword?: (v: string) => void;
   onChangeEndingProps?: (v: EndingProps) => void;
+  /** 썸네일 클릭 → 프리뷰 패널에 일반 카드처럼 크게 (부모의 endingSel) */
+  selected?: boolean;
+  onSelect?: () => void;
 }) {
   const ending = useMemo(
     () => endingFor(ctaType, { ctaKeyword, accent, coverImage, overrides: endingProps }),
@@ -2282,9 +2546,14 @@ function EndingCardPreview({
       </div>
 
       <div className="mt-2.5 flex gap-3">
-        <div
-          className="w-[104px] shrink-0 overflow-hidden rounded border border-ink/10 bg-ink/5"
+        <button
+          onClick={onSelect}
+          disabled={!onSelect}
+          className={`w-[104px] shrink-0 overflow-hidden rounded border bg-ink/5 text-left ${
+            selected ? 'border-accent ring-2 ring-accent' : 'border-ink/10'
+          } ${onSelect ? 'cursor-pointer hover:border-ink/30' : ''}`}
           style={{ aspectRatio: '1080 / 1350' }}
+          title="클릭하면 프리뷰 패널에 일반 카드처럼 크게 보여요"
         >
           {ending.kind === 'video' ? (
             <video
@@ -2305,7 +2574,7 @@ function EndingCardPreview({
               {err ? '렌더 실패' : '렌더 중…'}
             </div>
           )}
-        </div>
+        </button>
 
         <div className="min-w-0 text-[11px] leading-relaxed text-ink/50">
           {onChangeCtaType && (
@@ -2722,10 +2991,35 @@ function LiveSlide({
     for (const d of defs) {
       const v = fieldToText((slide.props as Record<string, unknown>)[d.key], d)
         .replace(/\*\*/g, '')
+        .replace(/==/g, '')
         .replace(/\s+/g, ' ');
       if (v && v.includes(text) && v.length > bestLen) {
         best = d;
         bestLen = v.length;
+      }
+    }
+    return best;
+  }
+
+  // 클릭 지점 근처의 텍스트 리프 탐색 — Satori 규격 박스(고정 lineHeight·자간)와 브라우저 글리프가
+  // 어긋나서 "글자 바로 위" 클릭이 컨테이너에 떨어지던 문제(운영자: 옆·위로 옮겨야 편집이 열림).
+  // 정확히 맞은 게 없으면 반경 안에서 가장 가까운 텍스트 조각을 대신 잡는다.
+  function nearestTextEl(x: number, y: number): HTMLElement | null {
+    const root = ref.current;
+    if (!root) return null;
+    let best: HTMLElement | null = null;
+    let bestDist = 28; // 화면 px 허용 반경
+    for (const el of root.querySelectorAll<HTMLElement>('div,span')) {
+      if (el.childElementCount > 0) continue; // 리프만 — 컨테이너는 여러 필드를 합쳐 역추적이 안 된다
+      const txt = (el.textContent ?? '').trim();
+      if (!txt) continue;
+      const r = el.getBoundingClientRect();
+      const dx = x < r.left ? r.left - x : x > r.right ? x - r.right : 0;
+      const dy = y < r.top ? r.top - y : y > r.bottom ? y - r.bottom : 0;
+      const d = Math.hypot(dx, dy);
+      if (d < bestDist) {
+        bestDist = d;
+        best = el;
       }
     }
     return best;
@@ -2779,12 +3073,18 @@ function LiveSlide({
     if (downPos.current && Math.hypot(e.clientX - downPos.current.x, e.clientY - downPos.current.y) > 4) return;
     const selObj = window.getSelection();
     if (selObj && !selObj.isCollapsed) return;
-    const t = e.target as HTMLElement;
-    if (t.closest('[data-bg]') && !(t.textContent ?? '').trim()) return;
-    const text = (t.textContent ?? '').trim().replace(/\s+/g, ' ');
-    if (!text) return;
-    const best = findOwnerField(text);
-    if (!best) return;
+    let t = e.target as HTMLElement;
+    let text = (t.textContent ?? '').trim().replace(/\s+/g, ' ');
+    let best = text ? findOwnerField(text) : null;
+    // 직격이 아니면 근접 텍스트로 폴백 — 배경(data-bg) 위여도 글자 근처면 편집을 연다
+    if (!best) {
+      const near = nearestTextEl(e.clientX, e.clientY);
+      if (!near) return;
+      t = near;
+      text = (t.textContent ?? '').trim().replace(/\s+/g, ' ');
+      best = text ? findOwnerField(text) : null;
+      if (!best) return;
+    }
     const cr = ref.current!.getBoundingClientRect();
     const tr = t.getBoundingClientRect();
     const rect = { x: tr.left - cr.left, y: tr.top - cr.top, w: tr.width, h: tr.height };

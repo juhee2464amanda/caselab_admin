@@ -171,7 +171,7 @@ const pairArr = (v: unknown, a: string, b: string): Pair[] =>
     : [];
 
 /** **강조** 마커를 지원하지 않는 필드(용어·배너·빅넘버 등)로 옮길 때 사용 */
-const plain = (s?: string) => s?.replace(/\*\*/g, '');
+const plain = (s?: string) => s?.replace(/\*\*/g, '').replace(/==/g, '');
 const firstLine = (s?: string) => s?.split('\n')[0]?.trim() || undefined;
 
 /** 문단을 목록 후보로 쪼갠다 — 줄바꿈 → 문장 → 중점(·) 순 */
@@ -203,12 +203,29 @@ export function harvest(template: CardTemplateId, raw: Record<string, unknown>):
   const style: Record<string, unknown> = {};
   for (const k of STYLE_KEYS) if (p[k] !== undefined) style[k] = p[k];
 
-  const pairs = [...pairArr(p.rows, 'term', 'desc'), ...pairArr(p.steps, 'title', 'desc')];
+  // cells(B11 그리드)·stats(B16 스탯타일)도 pairs로 눕힌다 — 신규 템플릿이 수확에 빠져서
+  // 스타일 팩 갈아입히기가 "재료 부족"으로 건너뛰던 원인(2026-08-25)
+  const stats = Array.isArray(p.stats)
+    ? (p.stats as Array<Record<string, unknown>>)
+        .map((s) => ({ t: `${str(s.big) ?? ''}${str(s.unit) ?? ''}`, d: str(s.label) }))
+        .filter((x) => x.t)
+    : [];
+  const pairs = [
+    ...pairArr(p.rows, 'term', 'desc'),
+    ...pairArr(p.steps, 'title', 'desc'),
+    ...pairArr(p.cells, 'title', 'desc'),
+    ...stats,
+  ];
   const vs = [p.vsA, p.vsB]
     .map((v) => str((v as Record<string, unknown> | undefined)?.name))
     .filter(Boolean) as string[];
 
-  const listed = [...strArr(p.bullets), ...strArr(p.items), ...strArr(p.lines)];
+  // B14 비교 2열 — 열 제목을 접두어로 붙여 한 목록으로 눕힌다
+  const abItems = [
+    ...strArr(p.aItems).map((x) => (str(p.aTitle) ? `${p.aTitle}: ${x}` : x)),
+    ...strArr(p.bItems).map((x) => (str(p.bTitle) ? `${p.bTitle}: ${x}` : x)),
+  ];
+  const listed = [...strArr(p.bullets), ...strArr(p.items), ...strArr(p.lines), ...abItems];
   const goodBad = [...strArr(p.good), ...strArr(p.bad)];
   const callouts = pairArr(p.callouts, 'text', 'pos').map((c) => c.t);
   const items = listed.length
@@ -231,6 +248,7 @@ export function harvest(template: CardTemplateId, raw: Record<string, unknown>):
     str(p.patternName) ??
     str(p.patternEn) ??
     str(p.quote) ??
+    str(p.question) ??
     banner ??
     (vs.length === 2 ? `${vs[0]} vs ${vs[1]}` : undefined);
 
@@ -246,7 +264,7 @@ export function harvest(template: CardTemplateId, raw: Record<string, unknown>):
 
   // lead·resolve·cap은 템플릿마다 "한 줄 요지" 자리 — body가 따로 있으면 부연(sub)으로 내린다
   const leadLike = str(p.lead) ?? str(p.resolve) ?? str(p.cap);
-  const body = str(p.body) ?? leadLike;
+  const body = str(p.body) ?? str(p.answer) ?? str(p.context) ?? leadLike;
   const sub =
     str(p.sub) ??
     str(p.termEn) ??
@@ -269,7 +287,7 @@ export function harvest(template: CardTemplateId, raw: Record<string, unknown>):
     body,
     items,
     pairs,
-    big: str(p.big),
+    big: str(p.big) ?? stats[0]?.t, // 스탯타일(B16)의 첫 숫자를 빅넘버로
     unit: str(p.unit),
     footer: str(p.footer) ?? str(p.attribution),
     hl: str(p.hl),
@@ -299,7 +317,7 @@ function clean(o: Record<string, unknown>): Record<string, unknown> {
 /** hl은 대상 문자열의 부분 문자열일 때만 유효 — 아니면 형광펜이 조용히 사라진다 */
 function keepHl(hl: string | undefined, target: string | undefined): string | undefined {
   if (!hl || !target) return undefined;
-  return target.replace(/\*\*/g, '').includes(hl) ? hl : undefined;
+  return target.replace(/\*\*/g, '').replace(/==/g, '').includes(hl) ? hl : undefined;
 }
 
 /** 목록을 min~max로 맞춘다. 부족하면 문단을 쪼개 채우고, 그래도 모자라면 빈 배열 */
@@ -309,6 +327,10 @@ function fitItems(bag: Bag, min: number, max: number): string[] {
     const from = splitToItems(bag.body ?? bag.sub);
     if (from.length >= min) list = from;
     else if (list.length + from.length >= min) list = [...list, ...from];
+  }
+  // pairs(타임라인·스텝·그리드)만 있는 장 — "이름 — 설명" 줄로 눕혀 목록형 변환을 성사시킨다
+  if (list.length < min && bag.pairs.length >= min) {
+    list = bag.pairs.map((p) => (p.d ? `${p.t} — ${p.d}` : p.t));
   }
   return list.length >= min ? list.slice(0, max) : [];
 }
@@ -347,8 +369,18 @@ export function convertProps(
   };
 
   const S = bag.style;
-  const headline = bag.title ?? firstLine(bag.body) ?? bag.sub;
-  const paragraph = bag.body ?? bag.sub ?? bag.items.join('\n') ?? undefined;
+  // 폴백을 넓게 — 재료가 조금이라도 있으면 변환을 성사시킨다. 제목이 없어서 "재료 부족"으로
+  // 스타일 팩 갈아입히기가 장을 건너뛰던 원인(빅넘버·pairs·목록만 있는 장들, 2026-08-25).
+  const pairLines = bag.pairs.map((p) => (p.d ? `${p.t} — ${p.d}` : p.t)).join('\n') || undefined;
+  // 빅넘버(B7 등)는 big이 제목이다 — firstLine(body)보다 먼저 둬야 유일한 문장이 본문으로 남는다
+  const headline =
+    bag.title ??
+    (bag.big ? `${bag.big}${bag.unit ?? ''}` : undefined) ??
+    firstLine(bag.body) ??
+    bag.sub ??
+    bag.pairs[0]?.t ??
+    bag.items[0];
+  const paragraph = bag.body ?? bag.sub ?? (bag.items.join('\n') || undefined) ?? pairLines;
 
   let props: Record<string, unknown>;
 
@@ -595,7 +627,7 @@ export function convertProps(
         eyebrow: plain(bag.kicker),
         heading: need(headline, '제목'),
         hl: keepHl(bag.hl, headline),
-        body: need(bag.body && bag.body !== headline ? bag.body : bag.items.join('\n') || bag.sub, '본문'),
+        body: need(bag.body && bag.body !== headline ? bag.body : bag.items.join('\n') || bag.sub || pairLines, '본문'),
         image: bag.image,
       };
       break;
@@ -612,7 +644,7 @@ export function convertProps(
         ...S,
         heading: need(headline, '제목'),
         hl: keepHl(bag.hl, headline),
-        body: need(bag.body && bag.body !== headline ? bag.body : bag.items.join(' ') || bag.sub, '본문'),
+        body: need(bag.body && bag.body !== headline ? bag.body : bag.items.join(' ') || bag.sub || pairLines, '본문'),
         image: bag.image,
       };
       break;
