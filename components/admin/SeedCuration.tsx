@@ -729,6 +729,8 @@ function SeedCuratedCard({
   const [open, setOpen] = useState(false);
   const [pending, setPending] = useState(false);
   const [reanalyzing, setReanalyzing] = useState(false);
+  const [enriching, setEnriching] = useState(false);
+  const [enrichMsg, setEnrichMsg] = useState<string | null>(null);
 
   const hide = async () => {
     setPending(true);
@@ -758,6 +760,41 @@ function SeedCuratedCard({
       router.refresh();
     } finally {
       setReanalyzing(false);
+    }
+  };
+
+  // 원문 보강 — 씨앗이 얇을 때 source_url 원문을 AI로 재가공해 raw_text를 살찌운다.
+  // apply 모드는 서버에서 '재가공 권장'일 때만 실제 갱신하므로 버튼 하나로 안전.
+  // 갱신되면 재채점까지 이어서 헤드라인·핵심 요약도 새 원문 기준으로 맞춘다.
+  const enrich = async () => {
+    setEnriching(true);
+    setEnrichMsg(null);
+    try {
+      const res = await fetch('/api/seeds/enrich', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ seedId: seed.id, mode: 'apply' }),
+      });
+      const data = (await res.json()) as { applied?: boolean; recommend?: boolean; reason?: string; error?: string };
+      if (!res.ok || data.error) {
+        setEnrichMsg(`보강 실패: ${data.error ?? `HTTP ${res.status}`}`);
+        return;
+      }
+      if (data.applied) {
+        await fetch('/api/seeds/score', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ seedIds: [seed.id] }),
+        });
+        setEnrichMsg(`보강 완료 — ${data.reason ?? ''}`);
+        router.refresh();
+      } else {
+        setEnrichMsg(`현재 씨앗으로 충분 — ${data.reason ?? ''}`);
+      }
+    } catch (e) {
+      setEnrichMsg(`보강 실패: ${(e as Error).message}`);
+    } finally {
+      setEnriching(false);
     }
   };
 
@@ -831,8 +868,13 @@ function SeedCuratedCard({
               </a>
             ) : <span />}
             <div className="flex items-center gap-1">
+              {LOCAL_AI && seed.source_url && (
+                <Button size="sm" variant="ghost" disabled={enriching || reanalyzing} onClick={enrich} title="출처 원문을 가져와 씨앗 본문을 AI로 재가공 (~3분)">
+                  {enriching ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />} 원문 보강
+                </Button>
+              )}
               {LOCAL_AI && (
-                <Button size="sm" variant="ghost" disabled={reanalyzing} onClick={reanalyze}>
+                <Button size="sm" variant="ghost" disabled={reanalyzing || enriching} onClick={reanalyze}>
                   {reanalyzing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />} 재분석
                 </Button>
               )}
@@ -846,6 +888,12 @@ function SeedCuratedCard({
               </Button>
             </div>
           </div>
+          {enriching && <p className="text-[11px] text-ink/50">원문에서 재가공 중… (~3분)</p>}
+          {enrichMsg && !enriching && (
+            <p className={cn('text-[11px]', enrichMsg.startsWith('보강 완료') ? 'text-green-700' : enrichMsg.startsWith('보강 실패') ? 'text-red-600' : 'text-ink/50')}>
+              {enrichMsg}
+            </p>
+          )}
         </div>
       )}
     </div>
