@@ -42,8 +42,10 @@ export async function POST(req: NextRequest) {
   }
 
   if (body.ad) {
-    const { status, spend, budget, reach, views, profile_visits, follows, link_clicks, started_on, ended_on, memo } =
-      body.ad;
+    const {
+      status, spend, budget, reach, views, profile_visits, follows, link_clicks,
+      total_likes, total_comments, total_shares, total_saves, started_on, ended_on, memo,
+    } = body.ad;
     const row = {
       ig_media_id: igMediaId,
       status: status === 'ended' ? 'ended' : 'running',
@@ -54,6 +56,10 @@ export async function POST(req: NextRequest) {
       profile_visits: Number(profile_visits) || 0,
       follows: Number(follows) || 0,
       link_clicks: Number(link_clicks) || 0,
+      total_likes: Number(total_likes) || 0,
+      total_comments: Number(total_comments) || 0,
+      total_shares: Number(total_shares) || 0,
+      total_saves: Number(total_saves) || 0,
       started_on: started_on || null,
       ended_on: ended_on || null,
       memo: memo || null,

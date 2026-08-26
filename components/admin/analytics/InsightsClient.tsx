@@ -19,6 +19,10 @@ export type AdRow = {
   reach: number;
   views: number;
   profile_visits: number;
+  total_likes: number;
+  total_comments: number;
+  total_shares: number;
+  total_saves: number;
   follows: number;
   link_clicks: number;
   started_on: string | null;
@@ -55,16 +59,36 @@ function daysSince(dateStr: string): number {
 }
 
 function netComments(p: InsightPost): number {
-  return Math.max(0, p.comments - p.ownComments);
+  return Math.max(0, effRawComments(p) - p.ownComments);
 }
 
 function engagement(p: InsightPost): number {
-  return p.likes + netComments(p) + p.saves + p.shares + p.reposts;
+  return effLikes(p) + netComments(p) + effSaves(p) + effShares(p) + p.reposts;
 }
 
-/** 참여·클릭 카운트는 광고 노출분까지 합산되므로 분모도 오가닉+광고 도달로 맞춘다 */
+/** API insights는 도달·참여 모두 오가닉만 반환한다(실측: 광고 게시물 저장 1 vs 앱 합계 15).
+ *  광고 게시물은 앱 광고 인사이트의 합계(수기)를 분자·분모 양쪽에 쓴다. */
 function effectiveReach(p: InsightPost): number {
   return p.reach + (p.ad?.reach ?? 0);
+}
+
+/** 수기 합계가 있으면 합계(광고 포함), 없으면 API 오가닉 값 */
+function effLikes(p: InsightPost): number {
+  return p.ad && p.ad.total_likes > 0 ? p.ad.total_likes : p.likes;
+}
+function effRawComments(p: InsightPost): number {
+  return p.ad && p.ad.total_comments > 0 ? p.ad.total_comments : p.comments;
+}
+function effSaves(p: InsightPost): number {
+  return p.ad && p.ad.total_saves > 0 ? p.ad.total_saves : p.saves;
+}
+function effShares(p: InsightPost): number {
+  return p.ad && p.ad.total_shares > 0 ? p.ad.total_shares : p.shares;
+}
+function adInputMissing(p: InsightPost): boolean {
+  if (!p.ad) return false;
+  const noTotals = p.ad.total_likes + p.ad.total_comments + p.ad.total_shares + p.ad.total_saves === 0;
+  return !p.ad.reach || noTotals;
 }
 
 function engagementRate(p: InsightPost): number {
@@ -97,7 +121,12 @@ const COLUMNS = [
     num: true,
     tip: '조회 ÷ 도달. 1보다 클수록 같은 사람이 여러 번 본 소재 — 붙잡는 힘.',
   },
-  { key: 'likes', label: '좋아요', num: true },
+  {
+    key: 'likes',
+    label: '좋아요',
+    num: true,
+    tip: '광고 게시물은 앱 광고 인사이트 합계(수기 입력, 광고 포함), 그 외는 API 오가닉 값. 저장·공유도 동일.',
+  },
   {
     key: 'comments',
     label: '댓글',
@@ -134,6 +163,12 @@ function sortValue(p: InsightPost, key: SortKey): number | string {
       return conversionRate(p) ?? -1;
     case 'viewsPerDay':
       return viewsPerDay(p);
+    case 'likes':
+      return effLikes(p);
+    case 'saves':
+      return effSaves(p);
+    case 'shares':
+      return effShares(p);
     case 'comments':
       return netComments(p);
     case 'postedAt':
@@ -172,10 +207,10 @@ export function InsightsClient({ posts: input }: { posts: InsightPost[] }) {
     const views = sum((p) => p.views);
     const eng = sum(engagement);
     const factors = [
-      { label: '좋아요', value: sum((p) => p.likes) },
+      { label: '좋아요', value: sum(effLikes) },
       { label: '댓글(순)', value: sum(netComments) },
-      { label: '저장', value: sum((p) => p.saves) },
-      { label: '공유', value: sum((p) => p.shares) },
+      { label: '저장', value: sum(effSaves) },
+      { label: '공유', value: sum(effShares) },
       { label: '리포스트', value: sum((p) => p.reposts) },
     ];
     const follows = sum((p) => p.ad?.follows ?? 0);
@@ -483,18 +518,21 @@ function PostRows({
         <td className="px-3 py-3 text-right tabular-nums text-ink/70">
           {p.reach > 0 ? `${(p.views / p.reach).toFixed(2)}배` : '—'}
         </td>
-        <Num v={p.likes} />
+        <Num v={effLikes(p)} />
         <td className="px-3 py-3 text-right tabular-nums text-ink/70 whitespace-nowrap">
           {nf.format(netComments(p))}
           {p.ownComments > 0 && <span className="text-ink/35 text-xs"> (내 {p.ownComments})</span>}
         </td>
-        <Num v={p.saves} />
-        <Num v={p.shares} />
+        <Num v={effSaves(p)} />
+        <Num v={effShares(p)} />
         <Num v={p.reposts} />
         <td className="px-3 py-3 text-right tabular-nums font-medium whitespace-nowrap">
           {(engagementRate(p) * 100).toFixed(1)}%
-          {p.ad && !p.ad.reach && (
-            <span className="text-amber-500" title="광고 도달 미입력 — 오가닉 도달만으로 나눠 과대평가됨. [편집]에서 광고 도달을 넣어주세요">
+          {adInputMissing(p) && (
+            <span
+              className="text-amber-500"
+              title="광고 도달·참여 합계 미입력 — 광고 인사이트 값을 [편집]에 넣기 전까지 이 비율은 부정확함"
+            >
               ※
             </span>
           )}
@@ -583,6 +621,10 @@ function RowEditor({ post: p, onSaved }: { post: InsightPost; onSaved: () => voi
     spend: p.ad?.spend ?? 0,
     budget: p.ad?.budget ?? 0,
     reach: p.ad?.reach ?? 0,
+    total_likes: p.ad?.total_likes ?? 0,
+    total_comments: p.ad?.total_comments ?? 0,
+    total_shares: p.ad?.total_shares ?? 0,
+    total_saves: p.ad?.total_saves ?? 0,
     views: p.ad?.views ?? 0,
     profile_visits: p.ad?.profile_visits ?? 0,
     follows: p.ad?.follows ?? 0,
@@ -645,7 +687,7 @@ function RowEditor({ post: p, onSaved }: { post: InsightPost; onSaved: () => voi
       </div>
       <label className="flex items-center gap-2 text-xs text-ink/60">
         <input type="checkbox" checked={hasAd} onChange={(e) => setHasAd(e.target.checked)} />
-        광고 성과 기록 (프로페셔널 대시보드 값을 수기 입력)
+        광고 성과 기록 — 앱 광고 인사이트 값을 수기 입력 (합계 4종은 상단 아이콘 값, 광고 포함 총계)
       </label>
       {hasAd && (
         <div className="grid grid-cols-4 sm:grid-cols-7 gap-2">
@@ -664,6 +706,10 @@ function RowEditor({ post: p, onSaved }: { post: InsightPost; onSaved: () => voi
               ['profile_visits', '프로필 방문'],
               ['follows', '팔로우'],
               ['link_clicks', '외부 링크'],
+              ['total_likes', '합계 좋아요'],
+              ['total_comments', '합계 댓글'],
+              ['total_shares', '합계 공유'],
+              ['total_saves', '합계 저장'],
             ] as const
           ).map(([k, label]) => (
             <Field key={k} label={label}>
