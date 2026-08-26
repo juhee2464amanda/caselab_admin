@@ -16,6 +16,7 @@ export type AdRow = {
   status: string;
   spend: number;
   budget: number;
+  reach: number;
   views: number;
   profile_visits: number;
   follows: number;
@@ -61,12 +62,20 @@ function engagement(p: InsightPost): number {
   return p.likes + netComments(p) + p.saves + p.shares + p.reposts;
 }
 
+/** 참여·클릭 카운트는 광고 노출분까지 합산되므로 분모도 오가닉+광고 도달로 맞춘다 */
+function effectiveReach(p: InsightPost): number {
+  return p.reach + (p.ad?.reach ?? 0);
+}
+
 function engagementRate(p: InsightPost): number {
-  return p.reach > 0 ? engagement(p) / p.reach : 0;
+  const r = effectiveReach(p);
+  return r > 0 ? engagement(p) / r : 0;
 }
 
 function conversionRate(p: InsightPost): number | null {
-  return p.siteClicks === null ? null : p.reach > 0 ? p.siteClicks / p.reach : 0;
+  if (p.siteClicks === null) return null;
+  const r = effectiveReach(p);
+  return r > 0 ? p.siteClicks / r : 0;
 }
 
 function viewsPerDay(p: InsightPost): number {
@@ -102,13 +111,13 @@ const COLUMNS = [
     key: 'engRate',
     label: '참여율',
     num: true,
-    tip: '(좋아요+댓글+저장+공유) ÷ 도달. 참여는 사람의 행동이라 횟수(조회)가 아닌 사람 수(도달) 기준. "콘텐츠가 좋았나"의 지표.',
+    tip: '(좋아요+순댓글+저장+공유+리포스트) ÷ (오가닉 도달+광고 도달). 참여 카운트는 광고를 보고 누른 것도 합산되므로 분모에도 광고 도달(수기)을 더해 과대평가를 막는다. 광고 도달 미입력이면 오가닉 도달만으로 나눠 높게 보인다(※ 표시).',
   },
   {
     key: 'convRate',
     label: '사이트 전환율',
     num: true,
-    tip: '사이트 도착(utm_code 숏링크 인간 클릭) ÷ 도달. 채널 목표인 사이트 유입 기준 — "장사가 됐나"의 지표. utm_code 태깅이 없으면 — 표시.',
+    tip: '사이트 도착(utm_code 숏링크 인간 클릭) ÷ (오가닉 도달+광고 도달). 채널 목표인 사이트 유입 기준 — "장사가 됐나"의 지표. utm_code 태깅이 없으면 — 표시.',
   },
   { key: 'viewsPerDay', label: '조회/일', num: true, tip: '조회 ÷ 경과일. 오래된 게시물과 새 게시물을 공정하게 비교.' },
 ] as const;
@@ -159,6 +168,7 @@ export function InsightsClient({ posts: input }: { posts: InsightPost[] }) {
   const totals = useMemo(() => {
     const sum = (f: (p: InsightPost) => number) => input.reduce((s, p) => s + f(p), 0);
     const reach = sum((p) => p.reach);
+    const effReach = sum(effectiveReach);
     const views = sum((p) => p.views);
     const eng = sum(engagement);
     const factors = [
@@ -172,7 +182,7 @@ export function InsightsClient({ posts: input }: { posts: InsightPost[] }) {
     const spend = sum((p) => p.ad?.spend ?? 0);
     const visits = sum((p) => p.ad?.profile_visits ?? 0);
     const adCount = input.filter((p) => p.ad).length;
-    return { reach, views, eng, factors, follows, spend, visits, adCount };
+    return { reach, effReach, views, eng, factors, follows, spend, visits, adCount };
   }, [input]);
 
   const traitGroups = useMemo(() => {
@@ -283,8 +293,8 @@ export function InsightsClient({ posts: input }: { posts: InsightPost[] }) {
                 />
                 <Stat
                   label="참여 · 참여율"
-                  value={`${nf.format(totals.eng)} · ${totals.reach > 0 ? ((totals.eng / totals.reach) * 100).toFixed(1) : 0}%`}
-                  sub="참여 합계 ÷ 도달"
+                  value={`${nf.format(totals.eng)} · ${totals.effReach > 0 ? ((totals.eng / totals.effReach) * 100).toFixed(1) : 0}%`}
+                  sub="참여 합계 ÷ (오가닉+광고 도달)"
                 />
               </div>
               <div className="border-t border-border pt-3">
@@ -481,7 +491,14 @@ function PostRows({
         <Num v={p.saves} />
         <Num v={p.shares} />
         <Num v={p.reposts} />
-        <td className="px-3 py-3 text-right tabular-nums font-medium">{(engagementRate(p) * 100).toFixed(1)}%</td>
+        <td className="px-3 py-3 text-right tabular-nums font-medium whitespace-nowrap">
+          {(engagementRate(p) * 100).toFixed(1)}%
+          {p.ad && !p.ad.reach && (
+            <span className="text-amber-500" title="광고 도달 미입력 — 오가닉 도달만으로 나눠 과대평가됨. [편집]에서 광고 도달을 넣어주세요">
+              ※
+            </span>
+          )}
+        </td>
         <td className="px-3 py-3 text-right tabular-nums whitespace-nowrap">
           {conv === null ? (
             <span className="text-ink/30" title="utm_code 태깅 후 집계">
@@ -524,6 +541,7 @@ function PostRows({
                 {p.ad.ended_on ? ` · ~${p.ad.ended_on}` : ''})
               </span>
               <AdStat label="지출" value={`₩${nf.format(p.ad.spend)}${p.ad.budget ? ` / ₩${nf.format(p.ad.budget)}` : ''}`} />
+              <AdStat label="도달" value={p.ad.reach ? nf.format(p.ad.reach) : '미입력'} />
               <AdStat label="조회" value={nf.format(p.ad.views)} />
               <AdStat label="프로필 방문" value={String(p.ad.profile_visits)} />
               <AdStat
@@ -564,6 +582,7 @@ function RowEditor({ post: p, onSaved }: { post: InsightPost; onSaved: () => voi
     status: p.ad?.status ?? 'running',
     spend: p.ad?.spend ?? 0,
     budget: p.ad?.budget ?? 0,
+    reach: p.ad?.reach ?? 0,
     views: p.ad?.views ?? 0,
     profile_visits: p.ad?.profile_visits ?? 0,
     follows: p.ad?.follows ?? 0,
@@ -640,6 +659,7 @@ function RowEditor({ post: p, onSaved }: { post: InsightPost; onSaved: () => voi
             [
               ['spend', '지출 ₩'],
               ['budget', '예산 ₩'],
+              ['reach', '도달'],
               ['views', '조회'],
               ['profile_visits', '프로필 방문'],
               ['follows', '팔로우'],

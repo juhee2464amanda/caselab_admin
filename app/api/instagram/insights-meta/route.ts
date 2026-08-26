@@ -42,12 +42,14 @@ export async function POST(req: NextRequest) {
   }
 
   if (body.ad) {
-    const { status, spend, budget, views, profile_visits, follows, link_clicks, started_on, ended_on, memo } = body.ad;
+    const { status, spend, budget, reach, views, profile_visits, follows, link_clicks, started_on, ended_on, memo } =
+      body.ad;
     const row = {
       ig_media_id: igMediaId,
       status: status === 'ended' ? 'ended' : 'running',
       spend: Number(spend) || 0,
       budget: Number(budget) || 0,
+      reach: Number(reach) || 0,
       views: Number(views) || 0,
       profile_visits: Number(profile_visits) || 0,
       follows: Number(follows) || 0,
