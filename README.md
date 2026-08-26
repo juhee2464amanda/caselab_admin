@@ -6,16 +6,16 @@
 
 ## 📍 현재 단계
 
-**Day 1 (Supabase 셋업) 진행 중** — `docs/05_launch_runbook.md` 참고.
+**Day 1 (Supabase 셋업) 진행 중** — `docs/runbooks/05_launch_runbook.md` 참고.
 
 ## 🗂 문서 우선순위 (다른 세션 진입 시 이 순서로 읽기)
 
 | 우선순위 | 파일 | 내용 |
 |---|---|---|
-| 1️⃣ | [`docs/07_handoff_prompt.md`](docs/07_handoff_prompt.md) | **다른 세션 인계 프롬프트 (가장 먼저)** |
-| 2️⃣ | [`docs/04_dev_plan.md` §18](docs/04_dev_plan.md) | 출시 시점 결정 변경 (Decisions Log) — **정본** |
-| 3️⃣ | [`docs/05_launch_runbook.md`](docs/05_launch_runbook.md) | Day 0~12 단계별 작업 가이드 |
-| 4️⃣ | [`docs/03_one_page_spec_v3.md`](docs/03_one_page_spec_v3.md) | 페르소나 5명 + 콘텐츠 톤 |
+| 1️⃣ | [`docs/handoff/07_handoff_prompt.md`](docs/handoff/07_handoff_prompt.md) | **다른 세션 인계 프롬프트 (가장 먼저)** |
+| 2️⃣ | [`docs/specs/04_dev_plan.md` §18](docs/specs/04_dev_plan.md) | 출시 시점 결정 변경 (Decisions Log) — **정본** |
+| 3️⃣ | [`docs/runbooks/05_launch_runbook.md`](docs/runbooks/05_launch_runbook.md) | Day 0~12 단계별 작업 가이드 |
+| 4️⃣ | [`docs/specs/03_one_page_spec_v3.md`](docs/specs/03_one_page_spec_v3.md) | 페르소나 5명 + 콘텐츠 톤 |
 | 5️⃣ | [GitHub Issues #1~#10](https://github.com/juhee2464amanda/caselab/issues) | 외부 콘솔 작업 체크리스트 + 변경 코멘트 |
 
 ## 🎯 "돈 0원 출시" 모드 결정 사항 (요약)
@@ -30,7 +30,7 @@
 | 인스타 | `@ai_caselab` |
 | 운영비 | 월 $0, 연 $0 |
 
-자세한 결정 변경 이력은 `docs/04_dev_plan.md §18` 참고.
+자세한 결정 변경 이력은 `docs/specs/04_dev_plan.md §18` 참고.
 
 ## 🚀 빠른 시작
 
@@ -101,4 +101,4 @@ npm run dev          # 로컬 메인 페이지 200 응답
 
 ## 💬 결정 변경 시
 
-새 결정을 내릴 때마다 4곳 갱신 — 자세한 절차는 `docs/07_handoff_prompt.md` 마지막 체크리스트 참고.
+새 결정을 내릴 때마다 4곳 갱신 — 자세한 절차는 `docs/handoff/07_handoff_prompt.md` 마지막 체크리스트 참고.

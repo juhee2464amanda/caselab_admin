@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { createSupabaseServerClient, isSupabaseConfigured } from '@/lib/supabase/server';
-import { CategoryQuickEdit } from '@/components/admin/CategoryQuickEdit';
+import { CategoryQuickEdit } from '@/components/admin/content/CategoryQuickEdit';
 
 // /admin/tools → '프롬프트 순위' (피드백 #6).
 // 전체 콘텐츠에서 prompt_copy 이벤트가 많은 = 잘 복사되는 프롬프트 순위.

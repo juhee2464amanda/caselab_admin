@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
-import { refineSection } from '@/lib/ai-draft';
+import { refineSection } from '@/lib/ai/ai-draft';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';

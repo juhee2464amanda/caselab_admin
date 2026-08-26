@@ -1,8 +1,8 @@
 import Link from 'next/link';
 import { createSupabaseServerClient, isSupabaseConfigured } from '@/lib/supabase/server';
 import { Button } from '@/components/ui/button';
-import { CategoryQuickEdit } from '@/components/admin/CategoryQuickEdit';
-import { ContentRowActions } from '@/components/admin/ContentRowActions';
+import { CategoryQuickEdit } from '@/components/admin/content/CategoryQuickEdit';
+import { ContentRowActions } from '@/components/admin/content/ContentRowActions';
 import { formatDate } from '@/lib/utils';
 
 // ─────────────── 타입 정의 ───────────────

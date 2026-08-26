@@ -1,5 +1,5 @@
 import { createSupabaseServerClient, isSupabaseConfigured } from '@/lib/supabase/server';
-import { CategoryQuickEdit } from '@/components/admin/CategoryQuickEdit';
+import { CategoryQuickEdit } from '@/components/admin/content/CategoryQuickEdit';
 import { formatDate } from '@/lib/utils';
 
 // /admin/topics — 후보 카드 (D29) + 피드백 #5: 투표 많은 후보 / raw 신규 제안 분리 + 제출자 정보.

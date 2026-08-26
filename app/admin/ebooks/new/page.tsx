@@ -1,4 +1,4 @@
-import { EbookForm } from '@/components/admin/EbookForm';
+import { EbookForm } from '@/components/admin/assets/EbookForm';
 
 // /admin/ebooks/new — ebook 등록 (피드백 #8-1)
 export default function AdminEbookNew() {

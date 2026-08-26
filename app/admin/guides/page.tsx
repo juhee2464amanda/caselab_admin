@@ -1,6 +1,6 @@
 import { createSupabaseServerClient, isSupabaseConfigured } from '@/lib/supabase/server';
-import { GuideManager, type Guide } from '@/components/admin/GuideManager';
-import { CategoryQuickEdit } from '@/components/admin/CategoryQuickEdit';
+import { GuideManager, type Guide } from '@/components/admin/assets/GuideManager';
+import { CategoryQuickEdit } from '@/components/admin/content/CategoryQuickEdit';
 
 // /admin/guides — 공식 가이드 관리 (콘텐츠 스튜디오 탭, 피드백 #7). tools(category='guide').
 // body{guideCategory, source, sourceType}가 본가 /guides 계약 — 목록·폼 모두 이 축으로.

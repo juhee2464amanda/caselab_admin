@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
-import { proposeEdge } from '@/lib/ai-draft';
-import { isSeedTrack, type SeedTrack } from '@/lib/seed-tracks';
+import { proposeEdge } from '@/lib/ai/ai-draft';
+import { isSeedTrack, type SeedTrack } from '@/lib/seeds/seed-tracks';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';

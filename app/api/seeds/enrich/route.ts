@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { createSupabaseAdminClient } from '@/lib/supabase/admin';
-import { enrichSeedFromSource } from '@/lib/ai-draft';
+import { enrichSeedFromSource } from '@/lib/ai/ai-draft';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';

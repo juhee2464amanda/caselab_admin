@@ -5,7 +5,7 @@ import {
   type SeedSourceRow,
   type SourceRow,
   type ToolSourceItem,
-} from '@/components/admin/CardPressManager';
+} from '@/components/admin/studio/CardPressManager';
 import { TOOL_SOURCE_SELECT, toolSourceState, type ToolSourceRow } from '@/lib/cardpress/tool-source';
 
 // /admin/cardnews — 카드프레스 검수 스튜디오 (콘텐츠 스튜디오 탭).

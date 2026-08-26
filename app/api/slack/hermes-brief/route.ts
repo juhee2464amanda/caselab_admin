@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import crypto from 'crypto';
 import { createSupabaseAdminClient } from '@/lib/supabase/admin';
-import { sourceFromLane } from '@/lib/seed-sources';
+import { sourceFromLane } from '@/lib/seeds/seed-sources';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';

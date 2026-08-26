@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import crypto from 'crypto';
 import { createSupabaseAdminClient } from '@/lib/supabase/admin';
 import { verifyIngestToken } from '@/lib/ingest-auth';
-import { PROMPT_CATEGORIES } from '@/lib/prompt-body';
+import { PROMPT_CATEGORIES } from '@/lib/content/prompt-body';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';

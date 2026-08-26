@@ -136,7 +136,7 @@ async function probe(token) {
 async function connect() {
   const shortToken = argOf('--token');
   if (!shortToken) {
-    console.error('--token 이 필요합니다. docs/10_instagram_connect_runbook.md C단계 참고.');
+    console.error('--token 이 필요합니다. docs/runbooks/10_instagram_connect_runbook.md C단계 참고.');
     process.exit(1);
   }
   const appSecret = argOf('--app-secret', process.env.META_APP_SECRET);

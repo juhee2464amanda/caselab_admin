@@ -1,5 +1,5 @@
 import { createSupabaseServerClient, isSupabaseConfigured } from '@/lib/supabase/server';
-import { FaqManager, type Faq } from '@/components/admin/FaqManager';
+import { FaqManager, type Faq } from '@/components/admin/ops/FaqManager';
 
 // /admin/faq — FAQ 관리 (D51). 추가·수정·삭제·발행 토글은 FaqManager(client).
 export default async function AdminFaq() {

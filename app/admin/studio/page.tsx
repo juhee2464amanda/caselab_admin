@@ -1,7 +1,7 @@
 import { createSupabaseServerClient, isSupabaseConfigured } from '@/lib/supabase/server';
-import { Studio } from '@/components/admin/Studio';
-import type { CurSeed } from '@/components/admin/SeedCuration';
-import { WINDOW_HOURS } from '@/lib/seed-curation';
+import { Studio } from '@/components/admin/studio/Studio';
+import type { CurSeed } from '@/components/admin/seeds/SeedCuration';
+import { WINDOW_HOURS } from '@/lib/seeds/seed-curation';
 
 // /admin/studio — 콘텐츠 스튜디오(작업실). 씨앗 인박스 + 기획방향→개요→본문→편집→발행→홈배치를 한 화면에서.
 export const dynamic = 'force-dynamic';

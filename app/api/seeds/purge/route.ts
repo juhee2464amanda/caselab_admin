@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { createSupabaseAdminClient } from '@/lib/supabase/admin';
-import { RETENTION_DAYS, MAX_UNUSED_SEEDS } from '@/lib/seed-curation';
+import { RETENTION_DAYS, MAX_UNUSED_SEEDS } from '@/lib/seeds/seed-curation';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';

@@ -1,8 +1,8 @@
 import Link from 'next/link';
 import { createSupabaseServerClient, isSupabaseConfigured } from '@/lib/supabase/server';
 import { Button } from '@/components/ui/button';
-import { EbookPdfUpload } from '@/components/admin/EbookPdfUpload';
-import { TestSendButton } from '@/components/admin/TestSendButton';
+import { EbookPdfUpload } from '@/components/admin/assets/EbookPdfUpload';
+import { TestSendButton } from '@/components/admin/newsletters/TestSendButton';
 
 // /admin/ebooks — 판매 중인 ebook (피드백 #8-2). 판매수·매출·발송완료 지표 + PDF 연결 + 테스트 발송.
 export const dynamic = 'force-dynamic';

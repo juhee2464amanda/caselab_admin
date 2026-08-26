@@ -1,0 +1,3889 @@
+'use client';
+
+/* eslint-disable @next/next/no-img-element */
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
+import { createSupabaseBrowserClient } from '@/lib/supabase/client';
+import { CARD_H, CARD_W, renderSlide } from '@/lib/cardpress/templates';
+import { RenderSlideSchema } from '@/types/cardpress';
+import type { RenderSlideInput } from '@/types/cardpress';
+import type { CardSlide, CardTemplateId, CardAccent, EndingProps } from '@/types/cardpress';
+import { CardTemplatePicker, type PickResult } from '@/components/admin/studio/CardTemplatePicker';
+import { STYLE_PACKS, type StylePackId } from '@/lib/cardpress/mapping';
+import {
+  ART_TEXT_ARTS,
+  ART_TEXT_HINT,
+  COVER_ART_OPTIONS,
+  COVER_ART_PRIMARY,
+  coverArtChoices,
+  carryStyle,
+  convertProps,
+  IMAGE_KEY,
+  PHOTO_ALT,
+  TEMPLATE_LABEL,
+} from '@/lib/cardpress/convert';
+import {
+  CTA_ENDINGS,
+  CTA_TYPE_HINTS,
+  CTA_TYPE_LABELS,
+  type CardCtaType,
+} from '@/lib/cardpress/cta-endings';
+import { coverImageOf, endingFor, type EndingCard } from '@/lib/cardpress/endings';
+import {
+  creditBlock,
+  hasCreditBlock,
+  stripCreditBlock,
+  upsertCreditBlock,
+  usedCredits,
+  type PhotoCredit,
+} from '@/lib/cardpress/credits';
+
+const ACCENT_HEX: Record<CardAccent, string> = {
+  'cat-case': '#2F6BFF',
+  'cat-trend': '#7C3AED',
+  'cat-tool': '#0E9F6E',
+  'cat-prompt': '#C2410C',
+  'cat-guide': '#0F766E',
+};
+
+// 카드프레스 검수 스튜디오 (spec §3-③)
+// 좌: 슬라이드 리스트(on/off·순서·템플릿 교체·인라인 편집) / 우: 실비율 프리뷰 + 캡션·스레드 편집.
+// 이미지 트레이: 본문 추출 이미지 + 메타포 검색어 → Unsplash 인라인 검색 → 클릭 배치.
+
+export type CardRow = {
+  id: string;
+  source_type: 'content' | 'tool' | 'seed';
+  source_id: string;
+  slides: CardSlide[];
+  accent: CardAccent;
+  extracted_images: string[];
+  ig_caption: string | null;
+  threads_text: string | null;
+  threads_cover: string | null;
+  metaphor_queries?: string[];
+  edge?: string | null;
+  cta_type?: CardCtaType;
+  cta_keyword?: string | null;
+  /** DM형 엔딩 카드별 오버라이드(색·배경·오버레이) — migration 1032 */
+  ending_props?: EndingProps | null;
+  cover_candidates?: Array<{ thumb: string; full: string; credit: string; creditLink: string }>;
+  /** 사진 출처 표기 — 실제로 쓰인 사진만 캡션에 넣는다 (migration 1027) */
+  photo_credits?: PhotoCredit[];
+  status: 'auto_draft' | 'reviewed' | 'published';
+  published_to: Array<{ channel: string; post_id: string; at: string }>;
+  created_at?: string;
+  updated_at: string;
+};
+
+export type SourceRow = {
+  id: string;
+  title: string;
+  track: 'case' | 'trend';
+  slug: string;
+  status: string;
+  view_count?: number | null;
+  published_at?: string | null;
+};
+
+/**
+ * 카드뉴스 소스 ③ — 본가 자료실(tools) 발행물.
+ * usable/reason은 서버(lib/cardpress/tool-source)가 본가 실노출 규칙 + 재료량으로 판정해 넘긴다.
+ * 못 쓰는 자료도 목록에서 지우지 않고 사유와 함께 보여준다("있는데 안 보임"을 없애려는 것).
+ */
+export type ToolSourceItem = {
+  id: string;
+  name: string;
+  slug: string;
+  category: string;
+  /** 가이드 · 프롬프트 · 도구 · 맥락 카드 */
+  kind: string;
+  usable: boolean;
+  reason: string | null;
+};
+
+/** 씨앗 아카이브 후보 — 카드뉴스 소스 ① (미발행 원석) */
+export type SeedSourceRow = {
+  id: string;
+  title: string;
+  lane: string | null;
+  status: string;
+  suggested_angle: string | null;
+  essence: Record<string, string> | null;
+  created_at: string;
+  /** 출처 원문 URL — 있으면 기획 패널에서 '원문 재가공 점검' 제공 */
+  source_url: string | null;
+};
+
+/** 씨앗 표시 제목 — 채점 헤드라인 우선, 없으면 "[lane]" 태그 벗긴 원제목 */
+function seedDisplayTitle(s: Pick<SeedSourceRow, 'title' | 'essence'>): string {
+  return s.essence?.headline?.trim() || s.title.replace(/^\s*\[[^\]]*\]\s*/, '');
+}
+
+/** 기본 노출(raw/adopted)이 아닌 씨앗을 검색으로 꺼냈을 때 붙는 꼬리표 — 왜 목록에 안 보였는지 드러낸다 */
+const SEED_STATUS_NOTE: Record<string, string> = {
+  generating: '생성중',
+  published: '콘텐츠 발행됨',
+  rejected: '숨김',
+};
+
+const STATUS_LABEL: Record<CardRow['status'], { text: string; cls: string }> = {
+  auto_draft: { text: '검수 대기', cls: 'bg-yellow-100 text-yellow-700' },
+  reviewed: { text: '검수 완료', cls: 'bg-blue-100 text-blue-700' },
+  published: { text: '발행됨', cls: 'bg-green-100 text-green-700' },
+};
+
+// 템플릿 교체 대안 (재료가 같은 섹션에서 서로 넘나들 수 있는 쌍) — 행에 바로 뜨는 지름길 버튼용.
+// 여기 없는 템플릿도 [템플릿] 버튼의 시각 피커에서 전부 고를 수 있다(사진 자리 없는 장의 막다른 길 제거).
+// P 계열은 사진 유무·정보량에 따라 서로 갈아끼운다: 사진 실패 → P5/P6로 폴백.
+const ALT_MAP: Partial<Record<CardTemplateId, CardTemplateId[]>> = {
+  B2: ['P1', 'P5', 'B7', 'B6'], B7: ['P6', 'B2'], B6: ['B2'], C1: ['C2', 'C5'], C2: ['C1', 'C5'],
+  C5: ['C1', 'C2'], B4: ['P4', 'P3', 'B2'],
+  P1: ['P5', 'P2', 'B2'], P2: ['P1', 'P3'], P3: ['P4', 'P2'], P4: ['P3', 'B4'],
+  P5: ['P1', 'P6'], P6: ['P5', 'B7'],
+  B1: ['P1'], B3: ['P2'], B5: ['P1'], B8: ['P5'], B9: ['P3'], C3: ['C1'], C4: ['C1'],
+  B10: ['P2', 'B2'], B11: ['B2', 'P1'], P7: ['P1', 'P3'],
+  B12: ['B2', 'P1'], B13: ['B10', 'P2'], B14: ['B11', 'B5'], B15: ['B4', 'P4'],
+  B16: ['B7', 'P6'], B17: ['B6', 'B1'], B18: ['B10', 'P5'],
+  C6: ['C1', 'C2'], C7: ['C1', 'C6'], P8: ['P3', 'P2'], P9: ['P2', 'C7'], P10: ['B9', 'P3'], P11: ['P2', 'P1'],
+};
+
+// 형광펜 색 팔레트 — 캐러셀 가이드 시스템(카테고리 3색+Bad 레드) + 벤치마크 골드
+const HL_PALETTE: Array<{ hex: string; name: string }> = [
+  { hex: '#2F6BFF', name: '블루' },
+  { hex: '#7C3AED', name: '바이올렛' },
+  { hex: '#0E9F6E', name: '에메랄드' },
+  { hex: '#E11D48', name: '레드' },
+  // P계열 기본 강조색과 같은 값 — 팔레트 골드(#D9A414)가 실제 렌더 골드와 달라 헷갈렸다
+  { hex: '#E8B857', name: '골드' },
+  // v3 밝은 톤의 형광펜과 같은 라임 — 밝은 배경 박스는 hlSpan이 글자를 잉크색으로 뒤집는다
+  { hex: '#C6F24E', name: '라임' },
+];
+
+// 형광펜(hl = 배경 포인트색 필)이 가리키는 대상 필드 — 드래그 선택 → 형광펜 지정에 사용
+const HL_TARGET: Partial<Record<CardTemplateId, string>> = {
+  C1: 'title', C2: 'title', C3: 'title', B4: 'title', B1: 'heading', B6: 'heading',
+};
+// **강조** 마커(포인트색 볼드)를 렌더하는 필드
+const EM_FIELDS = new Set(['bullets', 'body', 'cap', 'lead', 'resolve', 'items', 'heading', 'title', 'quote', 'sub', 'good', 'bad']);
+
+// 슬라이드별 이미지가 들어가는 props 키 · 템플릿 라벨은 lib/cardpress/convert 에 단일 정의 (IMAGE_KEY, TEMPLATE_LABEL)
+
+// ── 템플릿별 인라인 편집 필드 정의 ──────────────────────────
+type FieldKind = 'input' | 'textarea' | 'lines' | 'pairs' | 'pair-single';
+type FieldDef = { key: string; label: string; kind: FieldKind; hint?: string; pairKeys?: [string, string] };
+
+const FIELDS: Record<CardTemplateId, FieldDef[]> = {
+  C1: [
+    { key: 'kicker', label: '키커', kind: 'input', hint: '헤드라인 위 프레이밍 ("~의 경제학")' },
+    { key: 'title', label: '제목', kind: 'textarea', hint: '줄바꿈 그대로 반영 · 줄당 ≤12자' },
+    { key: 'hl', label: '형광펜 단어', kind: 'input', hint: '제목 속 부분 문자열' },
+    { key: 'sub', label: '부제', kind: 'input' },
+    { key: 'footer', label: '푸터', kind: 'input', hint: '@영문개념 (예: @BLINDSPOT PASS)' },
+    { key: 'coverImage', label: '배경 이미지 URL', kind: 'input' },
+  ],
+  C5: [
+    { key: 'kicker', label: '맥락 한 줄', kind: 'input' },
+    { key: 'big', label: '거대 숫자/단어', kind: 'input', hint: '≤6자 (10배, FOCUS)' },
+    { key: 'resolve', label: '해소 문장', kind: 'textarea', hint: '1~2줄, **강조** 1개' },
+    { key: 'footer', label: '푸터', kind: 'input', hint: '@영문개념' },
+    { key: 'coverImage', label: '배경 이미지 URL (텍스처로 깔림)', kind: 'input' },
+  ],
+  C2: [
+    { key: 'eyebrow', label: '도입', kind: 'input' },
+    { key: 'title', label: '제목', kind: 'textarea', hint: '줄당 ≤12자' },
+    { key: 'hl', label: '형광펜 단어', kind: 'input' },
+    { key: 'sub', label: '하단 부연', kind: 'input' },
+  ],
+  C3: [
+    { key: 'logoText', label: '로고 글자', kind: 'input' },
+    { key: 'title', label: '제목', kind: 'textarea' },
+    { key: 'hl', label: '형광펜 단어', kind: 'input' },
+    { key: 'sub', label: '하단 부연', kind: 'input' },
+  ],
+  C4: [
+    { key: 'eyebrow', label: '도입', kind: 'input' },
+    { key: 'vsA', label: 'A (이름 | 제작사)', kind: 'pair-single', pairKeys: ['name', 'by'] },
+    { key: 'vsB', label: 'B (이름 | 제작사)', kind: 'pair-single', pairKeys: ['name', 'by'] },
+    { key: 'sub', label: '하단 부연', kind: 'input' },
+  ],
+  B1: [
+    { key: 'lead', label: '도입', kind: 'input', hint: '**강조** 1개 가능' },
+    { key: 'heading', label: '제목', kind: 'input' },
+    { key: 'hl', label: '형광펜 구', kind: 'input' },
+    { key: 'rows', label: '항목 (이름 | 설명)', kind: 'pairs', pairKeys: ['term', 'desc'] },
+  ],
+  B2: [
+    { key: 'banner', label: '배너', kind: 'input' },
+    {
+      key: 'lead',
+      label: '핵심 한 줄 (개요)',
+      kind: 'textarea',
+      hint: '채우면 개요 모드 — 큰 패널 + 번호 목록으로 렌더 · ≤32자 · 비우면 일반 불릿',
+    },
+    { key: 'bullets', label: '불릿 (줄마다 1개)', kind: 'lines', hint: '**강조** 마커, ≤30자' },
+    { key: 'media', label: '이미지 URL', kind: 'input' },
+  ],
+  B3: [
+    { key: 'badge', label: '배지', kind: 'input', hint: '비우면 "30초 개념"' },
+    { key: 'term', label: '용어', kind: 'input' },
+    { key: 'termEn', label: '영문', kind: 'input' },
+    { key: 'lead', label: '한 줄 정의', kind: 'input' },
+    { key: 'body', label: '부연', kind: 'textarea' },
+  ],
+  B4: [
+    { key: 'title', label: '선언 문장', kind: 'textarea', hint: '줄당 ≤13자' },
+    { key: 'hl', label: '형광펜 단어', kind: 'input' },
+    { key: 'attribution', label: '출처 표기', kind: 'input' },
+    { key: 'coverImage', label: '배경 이미지 URL', kind: 'input' },
+  ],
+  B5: [
+    { key: 'heading', label: '제목', kind: 'input', hint: '비우면 "솔직 후기"' },
+    { key: 'layout', label: '레이아웃', kind: 'input', hint: 'split(사진+상하) | versus(좌우 대비) · 비우면 길이로 자동' },
+    { key: 'goodLabel', label: '왼쪽 라벨', kind: 'input', hint: '비우면 "잘된 것"' },
+    { key: 'good', label: '잘된 것 (줄마다 1개)', kind: 'lines', hint: '≤38자 · **강조** 1구절' },
+    { key: 'badLabel', label: '오른쪽 라벨', kind: 'input', hint: '비우면 "별로였던 것"' },
+    { key: 'bad', label: '별로였던 것 (줄마다 1개)', kind: 'lines', hint: '≤38자 · 실패를 뭉개지 말 것' },
+    { key: 'image', label: '사진 URL', kind: 'input', hint: 'split 레이아웃 상단 밴드 (비우면 그라데이션)' },
+  ],
+  B6: [
+    { key: 'heading', label: '제목', kind: 'input' },
+    { key: 'hl', label: '형광펜 구', kind: 'input' },
+    { key: 'steps', label: '스텝 (제목 | 설명)', kind: 'pairs', pairKeys: ['title', 'desc'] },
+  ],
+  B7: [
+    { key: 'big', label: '큰 숫자', kind: 'input' },
+    { key: 'unit', label: '단위', kind: 'input' },
+    { key: 'cap', label: '캡션', kind: 'textarea', hint: '**강조** 1개' },
+    { key: 'sub', label: '부연', kind: 'input' },
+  ],
+  B8: [
+    { key: 'badge', label: '배지', kind: 'input', hint: '예: 패턴 03 · 비우면 "프롬프트 패턴"' },
+    { key: 'patternEn', label: '영어 패턴명', kind: 'input', hint: '원문 그대로 (크게 표시) — 예: Blindspot Pass' },
+    { key: 'patternName', label: '한글 패턴명', kind: 'input', hint: '≤12자 (영문 아래 부제)' },
+    { key: 'when', label: '어떤 상황에서', kind: 'input', hint: '≤22자' },
+    { key: 'lines', label: '원문 발췌 (줄마다 1줄, 3~5줄)', kind: 'lines', hint: '[변수]는 초록, # 시작 줄은 주석' },
+    { key: 'linesKo', label: '한글 병기 (줄마다 1줄, 선택)', kind: 'lines', hint: '원문과 같은 줄 수 — 줄 아래 작게 렌더' },
+    { key: 'effect', label: '기대 효과', kind: 'input', hint: '≤20자' },
+    { key: 'ctaLine', label: 'CTA 문구', kind: 'input', hint: 'CTA는 캡션 전담 — 이미지에 꼭 넣고 싶을 때만' },
+  ],
+  B10: [
+    { key: 'eyebrow', label: '라벨', kind: 'input', hint: '영문 헤어라인 (예: DEEP DIVE)' },
+    { key: 'heading', label: '제목', kind: 'textarea', hint: '1~2줄 · 줄당 ≤16자' },
+    { key: 'hl', label: '형광펜 단어', kind: 'input' },
+    { key: 'body', label: '본문', kind: 'textarea', hint: '빈 줄로 문단 구분 — 2문단 이상이면 2단 칼럼' },
+    { key: 'note', label: '각주', kind: 'input', hint: '하단 회색 한 줄' },
+  ],
+  B11: [
+    { key: 'heading', label: '제목', kind: 'textarea', hint: '1~2줄 · 줄당 ≤16자' },
+    { key: 'hl', label: '형광펜 단어', kind: 'input' },
+    { key: 'cells', label: '타일 (제목 | 설명)', kind: 'pairs', pairKeys: ['title', 'desc'], hint: '3~4개 · 2×2 그리드' },
+  ],
+  B12: [
+    { key: 'heading', label: '제목', kind: 'textarea', hint: '1~2줄' },
+    { key: 'hl', label: '형광펜 단어', kind: 'input' },
+    { key: 'items', label: '체크 항목 (줄마다 1개)', kind: 'lines', hint: '3~6개 · ✓박스로 렌더' },
+    { key: 'footer', label: '각주', kind: 'input' },
+  ],
+  B13: [
+    { key: 'question', label: '질문', kind: 'textarea', hint: '1~2줄 · Q. 뒤에 크게' },
+    { key: 'hl', label: '형광펜 단어', kind: 'input' },
+    { key: 'answer', label: '답변', kind: 'textarea', hint: '≤170자 문단' },
+    { key: 'note', label: '각주', kind: 'input' },
+  ],
+  B14: [
+    { key: 'heading', label: '제목', kind: 'input', hint: '비워도 됨' },
+    { key: 'aTitle', label: '왼쪽 제목', kind: 'input', hint: 'accent 톤 열' },
+    { key: 'aItems', label: '왼쪽 항목 (줄마다 1개)', kind: 'lines' },
+    { key: 'bTitle', label: '오른쪽 제목', kind: 'input' },
+    { key: 'bItems', label: '오른쪽 항목 (줄마다 1개)', kind: 'lines' },
+  ],
+  B15: [
+    { key: 'quote', label: '인용문', kind: 'textarea', hint: '2~3줄 · 거대 따옴표 아래' },
+    { key: 'hl', label: '형광펜 단어', kind: 'input' },
+    { key: 'attribution', label: '출처', kind: 'input', hint: '앞의 — 는 자동' },
+    { key: 'context', label: '부연', kind: 'input' },
+  ],
+  B16: [
+    { key: 'heading', label: '제목', kind: 'input', hint: '비워도 됨' },
+    { key: 'stats', label: '스탯 (숫자 | 설명)', kind: 'pairs', pairKeys: ['big', 'label'], hint: '2~3개 · 단위는 숫자에 붙여도 됨' },
+    { key: 'footer', label: '각주', kind: 'input' },
+  ],
+  B17: [
+    { key: 'heading', label: '제목', kind: 'textarea' },
+    { key: 'hl', label: '형광펜 단어', kind: 'input' },
+    { key: 'steps', label: '단계 (제목 | 설명)', kind: 'pairs', pairKeys: ['title', 'desc'], hint: '3~5개 · 세로 레일' },
+  ],
+  B18: [
+    { key: 'eyebrow', label: '라벨', kind: 'input', hint: '영문 헤어라인' },
+    { key: 'heading', label: '제목', kind: 'textarea', hint: '1~2줄' },
+    { key: 'hl', label: '형광펜 단어', kind: 'input' },
+    { key: 'body', label: '본문', kind: 'textarea', hint: '빈 줄로 문단 구분 — 2문단 이상이면 2단' },
+    { key: 'note', label: '각주', kind: 'input' },
+  ],
+  C6: [
+    { key: 'kicker', label: '키커', kind: 'input', hint: '영문 라벨 (예: CASE STUDY)' },
+    { key: 'title', label: '제목', kind: 'textarea', hint: '2~3줄 · 줄당 ≤10자' },
+    { key: 'hl', label: '형광펜 단어', kind: 'input' },
+    { key: 'sub', label: '부제', kind: 'input' },
+    { key: 'footer', label: '푸터', kind: 'input' },
+  ],
+  C7: [
+    { key: 'kicker', label: '키커', kind: 'input' },
+    { key: 'title', label: '제목', kind: 'textarea', hint: '2~3줄 · 줄당 ≤9자' },
+    { key: 'hl', label: '형광펜 단어', kind: 'input' },
+    { key: 'sub', label: '부제', kind: 'input' },
+    { key: 'coverImage', label: '사진 URL', kind: 'input', hint: '오른쪽 세로 절반 · 비우면 타이포만' },
+  ],
+  B9: [
+    { key: 'lead', label: '도입', kind: 'input' },
+    { key: 'shot', label: '스크린샷 URL', kind: 'input' },
+    { key: 'callouts', label: '말풍선 (문구 | tl·tr·bl·br)', kind: 'pairs', pairKeys: ['text', 'pos'] },
+  ],
+  // ── P 계열 (사진 편집형) ──
+  P1: [
+    { key: 'eyebrow', label: '라벨', kind: 'input', hint: '헤어라인 라벨 · 비우면 카테고리명' },
+    { key: 'lead', label: '핵심 한 줄', kind: 'textarea', hint: '**강조**는 1구절만 · ≤26자' },
+    { key: 'items', label: '목록 (줄마다 1개)', kind: 'lines', hint: '2~4개 · 번호+구분선으로 렌더' },
+    { key: 'image', label: '사진 URL', kind: 'input', hint: '비우면 그라데이션 폴백' },
+  ],
+  P2: [
+    { key: 'eyebrow', label: '라벨', kind: 'input' },
+    { key: 'heading', label: '제목', kind: 'textarea', hint: '가장 크게 서는 줄' },
+    { key: 'sub', label: '부제', kind: 'input', hint: '제목의 62% 크기' },
+    { key: 'body', label: '본문', kind: 'textarea', hint: '작은 회색 문단 — 위계로 읽힌다' },
+    { key: 'image', label: '사진 URL', kind: 'input' },
+  ],
+  P3: [
+    { key: 'label', label: '라벨', kind: 'input' },
+    { key: 'title', label: '헤드라인', kind: 'textarea', hint: '2~3줄 · **강조** 1구절' },
+    { key: 'items', label: '뒷받침 (줄마다 1개)', kind: 'lines', hint: '0~3개 · 비워도 됨' },
+    { key: 'footer', label: '푸터', kind: 'input', hint: '@개념영문 (예: @LOSS LEADER)' },
+    { key: 'image', label: '사진 URL', kind: 'input' },
+  ],
+  P4: [
+    { key: 'quote', label: '인용문', kind: 'textarea', hint: '따옴표는 자동 · ≤48자' },
+    { key: 'attribution', label: '출처', kind: 'input', hint: '앞의 — 는 자동' },
+    { key: 'image', label: '사진 URL', kind: 'input' },
+  ],
+  P5: [
+    { key: 'index', label: '인덱스', kind: 'input', hint: '"02" 같은 진행 표시' },
+    { key: 'eyebrow', label: '라벨', kind: 'input' },
+    { key: 'lead', label: '핵심 한 줄', kind: 'textarea', hint: '사진이 없으니 타이포가 주인공' },
+    { key: 'items', label: '목록 (줄마다 1개)', kind: 'lines', hint: '2~4개' },
+    { key: 'footer', label: '푸터', kind: 'input' },
+    { key: 'image', label: '사진 URL', kind: 'input', hint: '있으면 텍스처 수준(86% 눌림)' },
+  ],
+  P6: [
+    { key: 'kicker', label: '맥락 한 줄', kind: 'input' },
+    { key: 'big', label: '거대 숫자/단어', kind: 'input', hint: '"70%", "10배", "FOCUS" · ≤6자' },
+    { key: 'resolve', label: '해소 문장', kind: 'textarea' },
+    { key: 'footer', label: '푸터', kind: 'input' },
+    { key: 'image', label: '사진 URL', kind: 'input', hint: '있으면 텍스처 수준(82% 눌림)' },
+  ],
+  P7: [
+    { key: 'eyebrow', label: '라벨', kind: 'input' },
+    { key: 'lead', label: '핵심 한 줄', kind: 'textarea', hint: '≤26자 · **강조** 1구절' },
+    { key: 'caption', label: '부연', kind: 'input', hint: '사진 아래 회색 한 줄' },
+    { key: 'image', label: '사진 URL ①', kind: 'input', hint: '비우면 그라데이션 폴백' },
+    { key: 'image2', label: '사진 URL ②', kind: 'input', hint: '있으면 2장 나란히' },
+  ],
+  P8: [
+    { key: 'lead', label: '핵심 한 줄', kind: 'textarea', hint: '사진 아래 · **강조** 1구절' },
+    { key: 'caption', label: '프레임 캡션', kind: 'input', hint: '폴라로이드 안 하단' },
+    { key: 'image', label: '사진 URL', kind: 'input' },
+  ],
+  P9: [
+    { key: 'eyebrow', label: '라벨', kind: 'input' },
+    { key: 'heading', label: '제목', kind: 'textarea', hint: '2~3줄 · 줄당 ≤9자' },
+    { key: 'hl', label: '형광펜 단어', kind: 'input' },
+    { key: 'body', label: '본문', kind: 'textarea', hint: '오른쪽 칼럼 문단' },
+    { key: 'image', label: '사진 URL', kind: 'input', hint: '왼쪽 세로 전체' },
+  ],
+  P10: [
+    { key: 'frameLabel', label: '창 라벨', kind: 'input', hint: 'URL/파일명 자리 · 기본 localhost:3000' },
+    { key: 'lead', label: '핵심 한 줄', kind: 'textarea' },
+    { key: 'caption', label: '부연', kind: 'input' },
+    { key: 'image', label: '스크린샷 URL', kind: 'input' },
+  ],
+  P11: [
+    { key: 'heading', label: '제목', kind: 'textarea', hint: '1~2줄 · 볼드 검정' },
+    { key: 'hl', label: '형광펜 단어', kind: 'input', hint: '옐로 형광펜 박스' },
+    { key: 'body', label: '본문', kind: 'textarea', hint: '**강조**는 볼드 검정' },
+    { key: 'credit', label: '사진 출처', kind: 'input', hint: '사진 좌상단 작은 표기' },
+    { key: 'image', label: '사진 URL', kind: 'input', hint: '상단 풀폭 720px' },
+  ],
+};
+
+function fieldToText(value: unknown, def: FieldDef): string {
+  if (value == null) return '';
+  switch (def.kind) {
+    case 'lines':
+      return Array.isArray(value) ? (value as string[]).join('\n') : String(value);
+    case 'pairs': {
+      const [a, b] = def.pairKeys!;
+      return Array.isArray(value)
+        ? (value as Record<string, string>[]).map((r) => [r[a], r[b]].filter(Boolean).join(' | ')).join('\n')
+        : '';
+    }
+    case 'pair-single': {
+      const [a, b] = def.pairKeys!;
+      const v = value as Record<string, string>;
+      return [v?.[a], v?.[b]].filter(Boolean).join(' | ');
+    }
+    default:
+      return String(value);
+  }
+}
+
+function textToField(text: string, def: FieldDef): unknown {
+  const t = text.trim();
+  if (!t) return undefined;
+  switch (def.kind) {
+    case 'lines':
+      return t.split('\n').map((l) => l.trim()).filter(Boolean);
+    case 'pairs': {
+      const [a, b] = def.pairKeys!;
+      return t
+        .split('\n')
+        .map((l) => l.trim())
+        .filter(Boolean)
+        .map((l) => {
+          const [x, y] = l.split('|').map((s) => s.trim());
+          return y ? { [a]: x, [b]: y } : { [a]: x };
+        });
+    }
+    case 'pair-single': {
+      const [a, b] = def.pairKeys!;
+      const [x, y] = t.split('|').map((s) => s.trim());
+      return y ? { [a]: x, [b]: y } : { [a]: x };
+    }
+    case 'textarea':
+      return text.replace(/\s+$/, '');
+    default:
+      return t;
+  }
+}
+
+/** 편집 폼 값 → props 병합 (폼에 없는 시스템 필드(page 등)는 base에서 유지) */
+function formToProps(
+  template: CardTemplateId,
+  base: Record<string, unknown>,
+  form: Record<string, string>
+): Record<string, unknown> {
+  const props: Record<string, unknown> = { ...base };
+  for (const def of FIELDS[template]) {
+    const v = textToField(form[def.key] ?? '', def);
+    if (v === undefined) delete props[def.key];
+    else props[def.key] = v;
+  }
+  return props;
+}
+
+/** 활성 슬라이드 기준 page("n / total") 재계산 — 커버·B4는 페이지 없음 */
+function renumber(slides: CardSlide[]): CardSlide[] {
+  const PAGED: CardTemplateId[] = ['B1', 'B2', 'B3', 'B5', 'B6', 'B7', 'B8', 'B9'];
+  const enabled = slides.filter((s) => s.enabled);
+  const total = enabled.length;
+  let n = 0;
+  return slides.map((s, i) => {
+    if (!s.enabled) return { ...s, order: i + 1 };
+    n += 1;
+    const props = { ...s.props };
+    if (PAGED.includes(s.template)) props.page = `${n} / ${total}`;
+    return { ...s, order: i + 1, props };
+  });
+}
+
+// ── 본체 ──────────────────────────────────────────────────
+export function CardPressManager({
+  initial,
+  sources,
+  seeds = [],
+  toolSources = [],
+}: {
+  initial: CardRow[];
+  sources: SourceRow[];
+  seeds?: SeedSourceRow[];
+  toolSources?: ToolSourceItem[];
+}) {
+  const router = useRouter();
+  const supabase = createSupabaseBrowserClient();
+  const sourceMap = useMemo(() => new Map(sources.map((s) => [s.id, s])), [sources]);
+
+  const [selectedId, setSelectedId] = useState<string | null>(initial[0]?.id ?? null);
+  const [statusFilter, setStatusFilter] = useState<'all' | CardRow['status']>('all');
+
+  // ?card=<id> 딥링크 — 목록에서 찾아 누르지 않고 특정 카드로 바로 들어온다(테스트·공유용).
+  // 초기 state에서 읽지 않고 마운트 후 반영하는 이유: 서버 렌더는 첫 카드를 고르므로 하이드레이션이 어긋난다.
+  useEffect(() => {
+    const q = new URLSearchParams(window.location.search).get('card');
+    if (q && initial.some((c) => c.id === q)) setSelectedId(q);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // 주소만 갈아끼운다(router.push는 force-dynamic 페이지를 통째로 다시 받아 편집 중 상태가 날아간다)
+  const selectCard = useCallback((id: string) => {
+    setSelectedId(id);
+    const url = new URL(window.location.href);
+    url.searchParams.set('card', id);
+    window.history.replaceState(null, '', url);
+  }, []);
+  const card = initial.find((c) => c.id === selectedId) ?? null;
+  const filtered = statusFilter === 'all' ? initial : initial.filter((c) => c.status === statusFilter);
+
+  // 카드 없는 발행 콘텐츠 → 수동 생성 후보 (검색·트랙 필터·조회수 정렬)
+  const cardBySource = useMemo(
+    () => new Map(initial.filter((c) => c.source_type === 'content').map((c) => [c.source_id, c])),
+    [initial]
+  );
+  const withoutCard = sources.filter((s) => !cardBySource.has(s.id));
+  const [generating, setGenerating] = useState<string | null>(null);
+  const [srcQuery, setSrcQuery] = useState('');
+  const [srcTrack, setSrcTrack] = useState<'all' | 'case' | 'trend'>('all');
+  const [srcSort, setSrcSort] = useState<'recent' | 'views'>('views');
+  const [srcExpanded, setSrcExpanded] = useState(false);
+  // 카드가 이미 있는 발행 글은 후보에서 빠진다 → 목록이 비면 "본가에 글이 없다"로 오독된다.
+  // 감추지 말고 '카드 있음'으로 함께 보여주고, 눌러서 그 카드로 이동하게 한다.
+  const [showCarded, setShowCarded] = useState(false);
+  const alreadyCarded = sources.filter((s) => cardBySource.has(s.id));
+  const candidates = withoutCard
+    .filter((s) => (srcTrack === 'all' ? true : s.track === srcTrack))
+    .filter((s) => (srcQuery.trim() ? s.title.toLowerCase().includes(srcQuery.trim().toLowerCase()) : true))
+    .sort((a, b) =>
+      srcSort === 'views'
+        ? (b.view_count ?? 0) - (a.view_count ?? 0)
+        : (b.published_at ?? '').localeCompare(a.published_at ?? '')
+    );
+  // top3만 기본 노출 — 검색 중이거나 펼치면 전체
+  const visibleCandidates = srcQuery.trim() || srcExpanded ? candidates : candidates.slice(0, 3);
+
+  // ③ 자료실 후보 — 카드 있는 것 제외 → 쓸 수 있는 것(usable)만 후보, 나머지는 사유와 함께 노출
+  const [toolQuery, setToolQuery] = useState('');
+  const [toolExpanded, setToolExpanded] = useState(false);
+  const [showBlocked, setShowBlocked] = useState(false);
+  const toolCarded = toolSources.filter((t) =>
+    initial.some((c) => c.source_type === 'tool' && c.source_id === t.id)
+  );
+  const toolPool = toolSources.filter(
+    (t) => !initial.some((c) => c.source_type === 'tool' && c.source_id === t.id)
+  );
+  const toolCandidates = toolPool
+    .filter((t) => t.usable)
+    .filter((t) => (toolQuery.trim() ? t.name.toLowerCase().includes(toolQuery.trim().toLowerCase()) : true));
+  const visibleToolCandidates = toolQuery.trim() || toolExpanded ? toolCandidates : toolCandidates.slice(0, 3);
+  const blockedTools = toolPool.filter((t) => !t.usable);
+
+  // ① 씨앗 아카이브 후보 — 서버에서 아카이브 전체가 최신순으로 옴. 카드가 이미 있는 씨앗은 제외.
+  // 기본 노출은 미사용 원석(raw/adopted) top3, 검색·펼치기는 아카이브 전체(발행됨·숨김 포함)를 훑는다.
+  const [seedQuery, setSeedQuery] = useState('');
+  const [seedExpanded, setSeedExpanded] = useState(false);
+  const [seedFocus, setSeedFocus] = useState<string | null>(null); // ?seed= 딥링크로 지정된 씨앗(맨 위 고정)
+  const seedPool = useMemo(
+    () => seeds.filter((s) => !initial.some((c) => c.source_type === 'seed' && c.source_id === s.id)),
+    [seeds, initial]
+  );
+  const seedSearching = seedQuery.trim().length > 0;
+  const seedMatches = seedSearching
+    ? seedPool.filter((s) => seedDisplayTitle(s).toLowerCase().includes(seedQuery.trim().toLowerCase()))
+    : seedPool.filter((s) => s.status === 'raw' || s.status === 'adopted');
+  // 딥링크로 온 씨앗은 상태가 뭐든(발행됨·숨김) 맨 위에 고정 — 안 그러면 눌러서 왔는데 목록에 없다.
+  const seedFocusRow = seedFocus ? seedPool.find((s) => s.id === seedFocus) ?? null : null;
+  const seedCandidates = [
+    ...(seedFocusRow ? [seedFocusRow] : []),
+    ...(seedSearching || seedExpanded ? seedMatches : seedMatches.slice(0, 3)).filter((s) => s.id !== seedFocus),
+  ];
+  const seedMap = useMemo(() => new Map(seeds.map((s) => [s.id, s])), [seeds]);
+  const toolMap = useMemo(() => new Map(toolSources.map((t) => [t.id, t])), [toolSources]);
+
+  // 만들기 씬: 소재 선택 → 기획 설정(엣지·CTA) → 생성 시작 → 완료 시 새 카드로 자동 진입
+  const [composeId, setComposeId] = useState<string | null>(null);
+  const [composeKind, setComposeKind] = useState<'content' | 'tool' | 'seed'>('content');
+  const [composeEdge, setComposeEdge] = useState('');
+  const [composeCta, setComposeCta] = useState<CardCtaType>('channel_intro');
+  const [composePack, setComposePack] = useState<StylePackId>('classic');
+  const [composeKeyword, setComposeKeyword] = useState('프롬프트');
+
+  // 씨앗 원문 재가공(source_url 대비 점검 → 적용) — 얇은 씨앗을 카드 생성 전에 원문으로 살찌우는 씬
+  const [enrich, setEnrich] = useState<{
+    phase: 'idle' | 'checking' | 'applying' | 'done';
+    recommend?: boolean;
+    reason?: string;
+    applied?: boolean;
+    error?: string;
+  }>({ phase: 'idle' });
+
+  function startCompose(kind: 'content' | 'tool' | 'seed', sourceId: string) {
+    setComposeKind(kind);
+    setComposeId(sourceId);
+    setComposeEdge('');
+    setComposeCta('channel_intro');
+    setComposeKeyword('프롬프트');
+    setEnrich({ phase: 'idle' });
+  }
+
+  async function runEnrich(seedId: string, mode: 'check' | 'apply') {
+    setEnrich((p) => ({ ...p, phase: mode === 'check' ? 'checking' : 'applying', error: undefined }));
+    try {
+      const res = await fetch('/api/seeds/enrich', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ seedId, mode }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? `HTTP ${res.status}`);
+      setEnrich({ phase: 'done', recommend: data.recommend, reason: data.reason, applied: data.applied });
+      if (data.applied) router.refresh(); // 갱신된 raw_text가 이후 카드 생성에 쓰인다
+    } catch (e) {
+      setEnrich((p) => ({ ...p, phase: 'done', error: (e as Error).message }));
+    }
+  }
+
+  // ?seed=<id> 딥링크 — 씨앗 아카이브의 '카드뉴스로' 버튼이 보내는 주소.
+  // 이미 카드가 있는 씨앗이면 새로 만들지 않고 그 카드 검수로 보낸다(중복 생성 방지).
+  useEffect(() => {
+    const q = new URLSearchParams(window.location.search).get('seed');
+    if (!q) return;
+    const carded = initial.find((c) => c.source_type === 'seed' && c.source_id === q);
+    if (carded) {
+      setSelectedId(carded.id);
+      return;
+    }
+    if (seeds.some((s) => s.id === q)) {
+      setSeedFocus(q);
+      startCompose('seed', q);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  async function createCard() {
+    if (!composeId) return;
+    setGenerating(composeId);
+    try {
+      const res = await fetch('/api/cardpress/generate', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          sourceType: composeKind,
+          sourceId: composeId,
+          edge: composeEdge.trim() || undefined,
+          ctaType: composeCta,
+          ctaKeyword: composeCta === 'comment_dm' ? composeKeyword.trim() || undefined : undefined,
+          stylePack: composePack,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? `HTTP ${res.status}`);
+      setComposeId(null);
+      if (data.card?.id) setSelectedId(data.card.id); // 완료 즉시 검수로 진입
+      router.refresh();
+    } catch (e) {
+      alert(`생성 실패: ${(e as Error).message}`);
+    } finally {
+      setGenerating(null);
+    }
+  }
+
+  // 기획 설정 패널 — 두 소스 패널이 공유 (생성 전에 방향을 정하는 씬)
+  function composePanel(kind: 'content' | 'tool' | 'seed', id: string) {
+    if (composeKind !== kind || composeId !== id) return null;
+    return (
+      <div className="mt-2 mb-1 rounded-lg border border-accent/30 bg-accent/5 p-3 space-y-2.5">
+        {generating === id ? (
+          <div className="text-sm text-ink/70 py-2">
+            <span className="font-semibold">AI가 카드를 만드는 중…</span> (3~10분 소요)
+            <p className="text-xs text-ink/40 mt-1">
+              {kind === 'seed' ? '씨앗 원문을' : '본문을'} 슬라이드로 매핑하고 압축 재작성합니다. 완료되면 아래 목록에 나타나고 바로 검수 화면으로 이동해요.
+              이 탭을 닫지만 않으면 다른 작업을 해도 됩니다.
+            </p>
+          </div>
+        ) : (
+          <>
+            {kind === 'seed' && seedMap.get(id)?.source_url && (
+              <div className="rounded-md bg-ink/[0.03] px-2.5 py-2 text-xs space-y-1">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="font-semibold text-ink/70">원문 재가공</span>
+                  <span className="text-ink/40">씨앗 요약이 얇으면 출처 원문에서 실행 가능한 내용을 다시 뽑아옵니다</span>
+                  {enrich.phase === 'idle' && (
+                    <Button size="sm" variant="outline" onClick={() => runEnrich(id, 'check')}>
+                      원문 대비 점검
+                    </Button>
+                  )}
+                  {(enrich.phase === 'checking' || enrich.phase === 'applying') && (
+                    <span className="text-ink/50">
+                      {enrich.phase === 'checking' ? '원문과 비교 중… (~1분)' : '원문에서 재가공 중… (~3분)'}
+                    </span>
+                  )}
+                </div>
+                {enrich.phase === 'done' && enrich.error && <p className="text-red-600">{enrich.error}</p>}
+                {enrich.phase === 'done' && !enrich.error && enrich.applied && (
+                  <p className="text-green-700">재가공 완료 — 갱신된 원문으로 카드를 생성합니다. {enrich.reason}</p>
+                )}
+                {enrich.phase === 'done' && !enrich.error && !enrich.applied && enrich.recommend && (
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="badge bg-amber-100 text-amber-700">재가공 권장</span>
+                    <span className="text-ink/60">{enrich.reason}</span>
+                    <Button size="sm" variant="accent" onClick={() => runEnrich(id, 'apply')}>
+                      원문에서 재가공 (~3분)
+                    </Button>
+                  </div>
+                )}
+                {enrich.phase === 'done' && !enrich.error && !enrich.applied && enrich.recommend === false && (
+                  <p className="text-ink/50">현재 씨앗으로 충분 — {enrich.reason}</p>
+                )}
+              </div>
+            )}
+            <div>
+              <Label className="text-xs">기획방향 / 엣지 <span className="text-ink/40">(선택 — 비우면 AI가 이 소재의 차별점을 스스로 정의)</span></Label>
+              <Textarea
+                className="mt-1"
+                rows={2}
+                value={composeEdge}
+                onChange={(e) => setComposeEdge(e.target.value)}
+                placeholder={'예: "앤트로픽 현직 엔지니어가 직접 검증했다"는 신뢰가 이 글의 엣지 — 커버와 도입에서 이걸 세울 것'}
+              />
+            </div>
+            <div className="flex items-center gap-2 flex-wrap">
+              <Label className="text-xs shrink-0">스타일 팩</Label>
+              {STYLE_PACKS.map((pk) => (
+                <button
+                  key={pk.id}
+                  onClick={() => setComposePack(pk.id)}
+                  title={pk.desc}
+                  className={`text-xs rounded-full px-2.5 py-1 ${composePack === pk.id ? 'bg-ink text-white' : 'bg-ink/5 text-ink/60 hover:bg-ink/10'}`}
+                >
+                  {pk.label}
+                </button>
+              ))}
+              <span className="text-[11px] text-ink/40">세트의 옷(커버·본문 템플릿 조합)을 통째로 바꿉니다</span>
+            </div>
+            <div className="flex items-center gap-2 flex-wrap">
+              <Label className="text-xs shrink-0">CTA</Label>
+              {(Object.keys(CTA_TYPE_LABELS) as CardCtaType[]).map((v) => (
+                <button
+                  key={v}
+                  onClick={() => setComposeCta(v)}
+                  className={`text-xs rounded-full px-2.5 py-1 ${composeCta === v ? 'bg-accent text-white' : 'bg-ink/5 text-ink/60 hover:bg-ink/10'}`}
+                >
+                  {CTA_TYPE_LABELS[v]}
+                </button>
+              ))}
+              {composeCta === 'comment_dm' && (
+                <>
+                  <span className="text-[11px] text-ink/40">댓글 키워드:</span>
+                  <Input value={composeKeyword} onChange={(e) => setComposeKeyword(e.target.value)} className="text-sm w-28" />
+                </>
+              )}
+            </div>
+            {composeCta === 'comment_dm' && (
+              <p className="text-[11px] text-ink/40">
+                {`캡션·마무리가 "댓글에 '${composeKeyword || '키워드'}' 남기면 DM으로" 문법으로 생성됩니다 (리틀리 자동화 연동 전제)`}
+              </p>
+            )}
+            <CtaEndingPicker ctaType={composeCta} preview />
+            <div className="flex justify-end gap-2">
+              <Button size="sm" variant="outline" onClick={() => setComposeId(null)}>취소</Button>
+              <Button size="sm" variant="accent" onClick={createCard} disabled={generating !== null}>
+                생성 시작 (3~10분)
+              </Button>
+            </div>
+          </>
+        )}
+      </div>
+    );
+  }
+
+  const FILTERS: Array<{ key: 'all' | CardRow['status']; label: string }> = [
+    { key: 'all', label: `전체 ${initial.length}` },
+    { key: 'auto_draft', label: `검수 대기 ${initial.filter((c) => c.status === 'auto_draft').length}` },
+    { key: 'reviewed', label: `검수 완료 ${initial.filter((c) => c.status === 'reviewed').length}` },
+    { key: 'published', label: `발행됨 ${initial.filter((c) => c.status === 'published').length}` },
+  ];
+
+  return (
+    <div className="space-y-6">
+      {/* 1. 새 카드뉴스 만들기 — 소스 3원화: ① 씨앗 아카이브 ② 본가 콘텐츠 ③ 본가 자료실.
+          본가에 발행돼 유저에게 보이는 것은 ②+③으로 전부 덮는다(케이스·트렌드 / 가이드·프롬프트·도구). */}
+      <div className="card p-4 space-y-3">
+        <div className="text-sm font-semibold">
+          새 카드뉴스 만들기{' '}
+          <span className="text-xs text-ink/40 font-normal">씨앗 아카이브 원석 또는 본가 발행물에서 소재 선택</span>
+        </div>
+        <div className="grid gap-4 lg:grid-cols-3">
+          {/* ① 씨앗 아카이브 — 기본은 미사용 원석 top3, 검색하면 아카이브 전체에서 고른다 */}
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between gap-2">
+              <div className="text-xs font-semibold text-ink/70">
+                ① 씨앗 아카이브{' '}
+                <span className="text-ink/40 font-normal">
+                  {seedSearching ? `검색 ${seedMatches.length}건` : '최신 원석 top3'}
+                </span>
+              </div>
+              <a href="/admin/studio/archive" className="text-[11px] text-accent hover:underline shrink-0">아카이브 전체 →</a>
+            </div>
+            <Input
+              value={seedQuery}
+              onChange={(e) => setSeedQuery(e.target.value)}
+              placeholder="아카이브 전체에서 제목 검색"
+            />
+            {seedCandidates.length === 0 ? (
+              <p className="text-xs text-ink/40">
+                {seedSearching ? '검색 결과가 없어요.' : '카드로 만들 씨앗이 없어요. 수집되면 최신순으로 여기 올라와요.'}
+              </p>
+            ) : (
+              <div className="space-y-1.5 max-h-72 overflow-y-auto">
+                {seedCandidates.map((s, i) => {
+                  const hi = s.id === seedFocus || (i === 0 && !seedSearching && !seedFocusRow);
+                  return (
+                    <div key={s.id} className={hi ? 'rounded-lg border border-accent/40 bg-accent/5 p-2.5' : 'px-1'}>
+                      <div className="flex items-center justify-between gap-3 text-sm">
+                        <span className="min-w-0 truncate">
+                          {s.id === seedFocus ? (
+                            <span className="badge bg-accent text-white mr-1.5">아카이브에서 선택</span>
+                          ) : (
+                            hi && <span className="badge bg-accent text-white mr-1.5">MAIN · 최신</span>
+                          )}
+                          <span className={hi ? 'font-medium' : ''}>{seedDisplayTitle(s)}</span>
+                          <span className="text-[11px] text-ink/40 ml-1.5">
+                            {s.created_at.slice(5, 10).replace('-', '/')}{s.lane ? ` · ${s.lane}` : ''}
+                            {SEED_STATUS_NOTE[s.status] ? ` · ${SEED_STATUS_NOTE[s.status]}` : ''}
+                          </span>
+                        </span>
+                        <Button
+                          size="sm"
+                          variant={composeKind === 'seed' && composeId === s.id ? 'accent' : 'outline'}
+                          disabled={generating !== null}
+                          onClick={() =>
+                            composeKind === 'seed' && composeId === s.id ? setComposeId(null) : startCompose('seed', s.id)
+                          }
+                        >
+                          {composeKind === 'seed' && composeId === s.id ? '닫기' : '만들기'}
+                        </Button>
+                      </div>
+                      {hi && s.suggested_angle && (
+                        <p className="text-[11px] text-ink/50 mt-1">추천 각도: {s.suggested_angle}</p>
+                      )}
+                      {composePanel('seed', s.id)}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+            {!seedSearching && seedMatches.length > 3 && (
+              <button onClick={() => setSeedExpanded(!seedExpanded)} className="text-[11px] text-accent hover:underline">
+                {seedExpanded ? '접기 ▴' : `미사용 원석 ${seedMatches.length}개 보기 ▾`}
+              </button>
+            )}
+          </div>
+
+          {/* ② 본가(caselab) 발행 콘텐츠 top3 */}
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <div className="text-xs font-semibold text-ink/70">
+                ② 본가 발행 콘텐츠 <span className="text-ink/40 font-normal">{srcSort === 'views' ? '반응 좋았던 것부터' : '최신 발행부터'} top3</span>
+              </div>
+              {withoutCard.length > 0 && (
+                <div className="flex items-center gap-1.5 text-xs">
+                  {(['all', 'case', 'trend'] as const).map((t) => (
+                    <button key={t} onClick={() => setSrcTrack(t)} className={`rounded-full px-2 py-0.5 ${srcTrack === t ? 'bg-accent text-white' : 'bg-ink/5 text-ink/60'}`}>
+                      {t === 'all' ? '전체' : t === 'case' ? '케이스' : '트렌드'}
+                    </button>
+                  ))}
+                  <button onClick={() => setSrcSort(srcSort === 'views' ? 'recent' : 'views')} className="rounded-full px-2 py-0.5 bg-ink/5 text-ink/60 hover:bg-ink/10">
+                    {srcSort === 'views' ? '조회수순 ▾' : '최신순 ▾'}
+                  </button>
+                </div>
+              )}
+            </div>
+            {withoutCard.length > 0 ? (
+              <>
+                <Input value={srcQuery} onChange={(e) => setSrcQuery(e.target.value)} placeholder="제목 검색" />
+                <div className="space-y-1.5 max-h-72 overflow-y-auto">
+                  {visibleCandidates.map((s) => (
+                    <div key={s.id}>
+                      <div className="flex items-center justify-between gap-3 text-sm">
+                        <span className="truncate">
+                          {s.title}
+                          <span className="text-[11px] text-ink/40 ml-1.5">조회 {s.view_count ?? 0}</span>
+                        </span>
+                        <Button
+                          size="sm"
+                          variant={composeKind === 'content' && composeId === s.id ? 'accent' : 'outline'}
+                          disabled={generating !== null}
+                          onClick={() =>
+                            composeKind === 'content' && composeId === s.id
+                              ? setComposeId(null)
+                              : startCompose('content', s.id)
+                          }
+                        >
+                          {composeKind === 'content' && composeId === s.id ? '닫기' : '만들기'}
+                        </Button>
+                      </div>
+                      {composePanel('content', s.id)}
+                    </div>
+                  ))}
+                  {candidates.length === 0 && <p className="text-xs text-ink/40">조건에 맞는 콘텐츠가 없어요.</p>}
+                </div>
+                {!srcQuery.trim() && candidates.length > 3 && (
+                  <button onClick={() => setSrcExpanded(!srcExpanded)} className="text-[11px] text-accent hover:underline">
+                    {srcExpanded ? '접기 ▴' : `전체 ${candidates.length}개 보기 ▾`}
+                  </button>
+                )}
+              </>
+            ) : (
+              <p className="text-xs text-ink/40">
+                {sources.length === 0
+                  ? '본가 /cases · /trends에 발행된 글이 아직 없어요. 콘텐츠를 발행하면 여기에 대기합니다.'
+                  : `본가 발행 글 ${sources.length}건이 모두 카드로 만들어져 있어요.`}
+              </p>
+            )}
+
+            {/* 카드가 이미 있는 발행 글 — 목록에서 사라진 이유를 드러낸다 */}
+            {alreadyCarded.length > 0 && (
+              <div className="pt-1">
+                <button onClick={() => setShowCarded(!showCarded)} className="text-[11px] text-ink/50 hover:text-ink/80">
+                  {showCarded ? '접기 ▴' : `카드 있는 발행 글 ${alreadyCarded.length}건 보기 ▾`}
+                </button>
+                {showCarded && (
+                  <div className="mt-1 space-y-1">
+                    {alreadyCarded.map((s) => (
+                      <div key={s.id} className="flex items-center justify-between gap-3 text-xs text-ink/60">
+                        <span className="truncate">
+                          <span className="badge bg-ink/10 text-ink/60 mr-1.5">카드 있음</span>
+                          {s.title}
+                        </span>
+                        <button
+                          onClick={() => selectCard(cardBySource.get(s.id)!.id)}
+                          className="shrink-0 text-accent hover:underline"
+                        >
+                          카드 열기 →
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+          </div>
+
+          {/* ③ 본가 자료실(가이드·프롬프트·도구) — /guides · /prompts · /tools 발행물 */}
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between gap-2">
+              <div className="text-xs font-semibold text-ink/70">
+                ③ 본가 자료실 <span className="text-ink/40 font-normal">가이드 · 프롬프트 · 도구</span>
+              </div>
+              <a href="/admin/tools" className="text-[11px] text-accent hover:underline shrink-0">자료실 관리 →</a>
+            </div>
+            {toolSources.length === 0 ? (
+              <p className="text-xs text-ink/40">본가 자료실에 발행된 자료가 아직 없어요.</p>
+            ) : (
+              <>
+                <Input value={toolQuery} onChange={(e) => setToolQuery(e.target.value)} placeholder="이름 검색" />
+                <div className="space-y-1.5 max-h-72 overflow-y-auto">
+                  {visibleToolCandidates.map((t) => (
+                    <div key={t.id}>
+                      <div className="flex items-center justify-between gap-3 text-sm">
+                        <span className="min-w-0 truncate">
+                          <span className="badge bg-ink/10 text-ink/60 mr-1.5">{t.kind}</span>
+                          {t.name}
+                        </span>
+                        <Button
+                          size="sm"
+                          variant={composeKind === 'tool' && composeId === t.id ? 'accent' : 'outline'}
+                          disabled={generating !== null}
+                          onClick={() =>
+                            composeKind === 'tool' && composeId === t.id ? setComposeId(null) : startCompose('tool', t.id)
+                          }
+                        >
+                          {composeKind === 'tool' && composeId === t.id ? '닫기' : '만들기'}
+                        </Button>
+                      </div>
+                      {composePanel('tool', t.id)}
+                    </div>
+                  ))}
+                  {toolCandidates.length === 0 && (
+                    <p className="text-xs text-ink/40">
+                      {toolQuery.trim() ? '조건에 맞는 자료가 없어요.' : '카드로 만들 수 있는 자료가 없어요.'}
+                    </p>
+                  )}
+                </div>
+                {!toolQuery.trim() && toolCandidates.length > 3 && (
+                  <button onClick={() => setToolExpanded(!toolExpanded)} className="text-[11px] text-accent hover:underline">
+                    {toolExpanded ? '접기 ▴' : `전체 ${toolCandidates.length}개 보기 ▾`}
+                  </button>
+                )}
+                {/* 못 쓰는 자료는 숨기지 않고 사유를 보여준다 — "본가엔 있는데 여기 없다"를 없애려는 것 */}
+                {blockedTools.length > 0 && (
+                  <div className="pt-1">
+                    <button onClick={() => setShowBlocked(!showBlocked)} className="text-[11px] text-amber-600 hover:underline">
+                      {showBlocked ? '접기 ▴' : `카드로 못 만드는 자료 ${blockedTools.length}건 ▾`}
+                    </button>
+                    {showBlocked && (
+                      <div className="mt-1 space-y-1">
+                        {blockedTools.map((t) => (
+                          <div key={t.id} className="text-[11px] text-ink/50">
+                            <span className="text-ink/70">{t.name}</span>
+                            <span className="block text-amber-600">{t.reason}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+                {toolCarded.length > 0 && (
+                  <p className="text-[11px] text-ink/40">카드 있는 자료 {toolCarded.length}건은 목록에서 제외됐어요.</p>
+                )}
+              </>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* 2. 상태 필터 + 카드 세트 목록 */}
+      <div>
+        <div className="flex items-center gap-1.5 mb-2">
+          {FILTERS.map((f) => (
+            <button
+              key={f.key}
+              onClick={() => setStatusFilter(f.key)}
+              className={`text-xs rounded-full px-2.5 py-1 transition-colors ${statusFilter === f.key ? 'bg-accent text-white' : 'bg-ink/5 text-ink/60 hover:bg-ink/10'}`}
+            >
+              {f.label}
+            </button>
+          ))}
+        </div>
+        <div className="card divide-y divide-border">
+          {filtered.map((c) => {
+            const src = c.source_type === 'content' ? sourceMap.get(c.source_id) : undefined;
+            const seedSrc = c.source_type === 'seed' ? seedMap.get(c.source_id) : undefined;
+            const toolSrc = c.source_type === 'tool' ? toolMap.get(c.source_id) : undefined;
+            const st = STATUS_LABEL[c.status];
+            const cover =
+              (c.slides[0]?.props as Record<string, unknown> | undefined)?.coverImage as string | undefined;
+            const thumb = cover ?? c.extracted_images[0];
+            return (
+              <button
+                key={c.id}
+                onClick={() => selectCard(c.id)}
+                className={`w-full text-left px-4 py-3 flex items-center justify-between gap-3 transition-colors ${selectedId === c.id ? 'bg-accent/5' : 'hover:bg-ink/[0.02]'}`}
+              >
+                <div className="min-w-0 flex items-center gap-3">
+                  {thumb ? (
+                    <img src={thumb} alt="" className="h-12 w-[38px] rounded object-cover border border-border shrink-0" />
+                  ) : (
+                    <div className="h-12 w-[38px] rounded bg-ink/10 border border-border shrink-0" />
+                  )}
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-medium truncate">
+                        {src?.title ?? toolSrc?.name ?? (seedSrc ? seedDisplayTitle(seedSrc) : c.source_id)}
+                      </span>
+                      <span className="badge bg-ink/5 text-ink/60">
+                        {c.source_type === 'seed'
+                          ? '씨앗'
+                          : c.source_type === 'tool'
+                            ? (toolSrc?.kind ?? '자료실')
+                            : src?.track === 'case'
+                              ? '실전 케이스'
+                              : 'AI 트렌드'}
+                      </span>
+                      <span className="text-xs text-ink/40">{c.slides.filter((s) => s.enabled).length}장</span>
+                    </div>
+                    <div className="text-[11px] text-ink/40 mt-0.5">
+                      생성 {(c.created_at ?? c.updated_at).slice(0, 10)} · 수정 {c.updated_at.slice(0, 10)}
+                      {c.published_to.length > 0 && ` · 발행: ${c.published_to.map((p) => p.channel).join(', ')}`}
+                    </div>
+                  </div>
+                </div>
+                <span className={`badge shrink-0 ${st.cls}`}>{st.text}</span>
+              </button>
+            );
+          })}
+          {filtered.length === 0 && (
+            <p className="px-4 py-6 text-sm text-ink/40">
+              {initial.length === 0
+                ? '아직 생성된 카드가 없어요. 콘텐츠를 발행하면 자동 생성되고, 아래에서 수동으로도 만들 수 있어요.'
+                : '이 상태의 카드가 없어요.'}
+            </p>
+          )}
+        </div>
+      </div>
+
+      {/* updated_at 포함 key — DB가 갱신되면(외부 패치·재생성) 편집기를 새 데이터로 리마운트 (덮어쓰기 사고 방지) */}
+      {card && (
+        <CardEditor
+          key={`${card.id}:${card.updated_at}`}
+          card={card}
+          sourceTitle={
+            card.source_type === 'seed'
+              ? (() => {
+                  const s = seedMap.get(card.source_id);
+                  return s ? seedDisplayTitle(s) : undefined;
+                })()
+              : card.source_type === 'tool'
+                ? toolMap.get(card.source_id)?.name
+                : sourceMap.get(card.source_id)?.title
+          }
+        />
+      )}
+    </div>
+  );
+}
+
+// ── 편집기 ────────────────────────────────────────────────
+function CardEditor({ card, sourceTitle }: { card: CardRow; sourceTitle?: string }) {
+  const router = useRouter();
+  const supabase = createSupabaseBrowserClient();
+
+  // O1(마무리 CTA)은 2026-08-13 템플릿 삭제 — 구 저장분에 남은 O1 슬라이드는 로드에서 제외(렌더 불가)
+  const [slides, setSlides] = useState<CardSlide[]>(
+    card.slides.filter((s) => (s.template as string) !== 'O1')
+  );
+  const [igCaption, setIgCaption] = useState(card.ig_caption ?? '');
+  const [threadsText, setThreadsText] = useState(card.threads_text ?? '');
+  const [threadsCover, setThreadsCover] = useState(card.threads_cover ?? '');
+  const [edge, setEdge] = useState(card.edge ?? '');
+  const [ctaType, setCtaType] = useState<CardCtaType>(card.cta_type ?? 'channel_intro');
+  const [stylePack, setStylePack] = useState<StylePackId>('classic');
+  const [ctaKeyword, setCtaKeyword] = useState(card.cta_keyword ?? '프롬프트');
+  const [endingProps, setEndingProps] = useState<EndingProps>(card.ending_props ?? {});
+  /** 엔딩이 프리뷰 패널에 "선택"된 상태 — slides 인덱스 밖의 가상 마지막 칸 */
+  const [endingSel, setEndingSel] = useState(false);
+  /** 스타일 팩 적용 직전 슬라이드 스냅샷 — [클래식] 클릭 = 여기로 복원 (세션 한정) */
+  const packBaseline = useRef<CardSlide[] | null>(null);
+  /** 엔딩 캔버스 인라인 편집 — big=댓글 키워드, resolve=안내문(ending_props.resolve) */
+  const [endingEdit, setEndingEdit] = useState<{
+    key: 'big' | 'resolve';
+    rect: { x: number; y: number; w: number; h: number };
+    value: string;
+  } | null>(null);
+  // 엔딩 파생본 — EndingCardPreview와 같은 규칙. 프리뷰 패널·전체 편집 나열에 일반 카드처럼 얹는다
+  const endingCard = useMemo(
+    () => endingFor(ctaType, { ctaKeyword, accent: card.accent, coverImage: coverImageOf(slides), overrides: endingProps }),
+    [ctaType, ctaKeyword, card.accent, slides, endingProps]
+  );
+  const [dirty, setDirty] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [selIdx, setSelIdx] = useState(0);
+  const [editIdx, setEditIdx] = useState<number | null>(null);
+  const [rewriting, setRewriting] = useState<number | null>(null);
+  /** 시각 템플릿 피커를 연 슬라이드 인덱스 */
+  const [pickerIdx, setPickerIdx] = useState<number | null>(null);
+  const [viewMode, setViewMode] = useState<'single' | 'grid'>('single');
+  const [quickEdit, setQuickEdit] = useState(false);
+  const [previewMode, setPreviewMode] = useState<'live' | 'png'>('live');
+  const [liveEdit, setLiveEdit] = useState<{
+    idx: number;
+    key: string;
+    rect: { x: number; y: number; w: number; h: number };
+    value: string;
+  } | null>(null);
+  const [selPopup, setSelPopup] = useState<{
+    idx: number;
+    text: string;
+    key: string;
+    rect: { x: number; y: number; w: number; h: number };
+  } | null>(null);
+
+  // 슬라이드 이동(리스트·화살표) 시 열린 오버레이 정리 — 캔버스 내 상호작용은 건드리지 않음
+  function selectSlide(i: number) {
+    setSelIdx(i);
+    setEndingSel(false);
+    setLiveEdit(null);
+    setSelPopup(null);
+  }
+
+  // 엔딩을 일반 카드처럼 "선택"한다 — slides엔 없지만 프리뷰·나열에선 마지막 칸으로 취급
+  function selectEnding() {
+    setEndingSel(true);
+    setLiveEdit(null);
+    setSelPopup(null);
+    setQuickEdit(false);
+  }
+
+  // 저장 안 된 수정이 있으면 새로고침/이탈 시 브라우저 경고 (수정 유실 방지)
+  useEffect(() => {
+    if (!dirty) return;
+    const warn = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = '';
+    };
+    window.addEventListener('beforeunload', warn);
+    return () => window.removeEventListener('beforeunload', warn);
+  }, [dirty]);
+
+  // 라이브 캔버스 편집 헬퍼 — 인덱스 지정 패치 (전체 편집 모드에서 모든 카드가 공유)
+  function patchPropTextAt(idx: number, key: string, text: string) {
+    patch((prev) =>
+      prev.map((s, k) => {
+        if (k !== idx) return s;
+        const def = FIELDS[s.template].find((d) => d.key === key);
+        if (!def) return s;
+        const v = textToField(text, def);
+        const p = { ...s.props };
+        if (v === undefined) delete p[key];
+        else p[key] = v;
+        // 형광펜 대상 텍스트를 고쳐서 hl이 더 이상 안 맞으면 자동 정리 (드래그로 재지정)
+        if (key === HL_TARGET[s.template] && typeof p.hl === 'string' && typeof v === 'string' && !v.includes(p.hl)) {
+          delete p.hl;
+          delete p.hlColor;
+        }
+        return { ...s, props: p };
+      })
+    );
+  }
+
+  /** 여러 props 동시 패치 (undefined = 삭제) — 형광펜 텍스트+색 지정 등 */
+  function patchPropsAt(idx: number, partial: Record<string, unknown>) {
+    patch((prev) =>
+      prev.map((s, k) => {
+        if (k !== idx) return s;
+        const p = { ...s.props };
+        for (const [key, v] of Object.entries(partial)) {
+          if (v === undefined || v === '') delete p[key];
+          else p[key] = v;
+        }
+        return { ...s, props: p };
+      })
+    );
+  }
+  function patchStyle(
+    key:
+      | 'accentColor'
+      | 'hlColor'
+      | 'overlay'
+      | 'coverPos'
+      | 'titleAnchor'
+      | 'coverLayout'
+      | 'hlStyle'
+      | 'coverArt'
+      | 'artText'
+      | 'artIcons'
+      | 'tone',
+    value: unknown
+  ) {
+    // 포인트색은 카드 전체의 색 — 한 장만 바꾸면 뒤 장들과 갈라진다(운영자 요청 2026-08-25).
+    // 전 장에 함께 적용하고 엔딩 오버라이드도 맞춘다. 기본색 리셋(undefined)도 전 장을 함께 되돌린다.
+    if (key === 'accentColor') {
+      patch((prev) =>
+        prev.map((s) => {
+          const p = { ...s.props } as Record<string, unknown>;
+          if (value === undefined || value === '') delete p.accentColor;
+          else p.accentColor = value;
+          // 형광펜 기본색은 hlColor ?? 포인트색 — hlColor가 박혀 있으면(팔레트 사용·v3에서
+          // 레이아웃 전환 시 STYLE_KEYS로 따라옴) 포인트색을 바꿔도 형광펜이 안 따라온다.
+          // 전체 색 변경의 의도는 "다 따라와라"이므로 v3(잠금 팔레트) 밖에서는 hlColor를 걷어낸다.
+          const v3 = s.template === 'C1' && p.coverLayout === 'v3';
+          if (!v3) delete p.hlColor;
+          return { ...s, props: p };
+        })
+      );
+      setEndingProps((prev) => {
+        if (value === undefined || value === '') {
+          const { accentColor: _drop, ...rest } = prev;
+          return rest;
+        }
+        return { ...prev, accentColor: value as string };
+      });
+      setDirty(true);
+      return;
+    }
+    patchPropsAt(selIdx, { [key]: value });
+  }
+  /**
+   * 이미지 배치 — 사진 자리가 없는 템플릿이면 막지 않고 사진형으로 갈아탄다.
+   * "이미지가 있는 경우가 더 중요한 장"을 살리기 위한 경로(운영자 요청 2026-08-15).
+   * 글은 로컬 변환으로 그대로 옮기므로 AI 호출·대기 없음.
+   */
+  function assignImageAt(idx: number, url: string) {
+    const s = slides[idx];
+    if (!s) return;
+    const key = IMAGE_KEY[s.template];
+    if (key) {
+      patchPropsAt(idx, { [key]: url });
+      return;
+    }
+    // 사진 자리가 없는 템플릿 — 다크 커버(C2·C3)처럼 prop만 받고 안 그리는 경우 포함 (IMAGE_KEY 주석 참고)
+    const alt = PHOTO_ALT[s.template];
+    if (!alt) return alert(`${TEMPLATE_LABEL[s.template]}에는 사진 자리가 없어요. [템플릿] 버튼에서 사진형을 골라주세요.`);
+    const { props, missing } = convertProps(s.template, alt, s.props as Record<string, unknown>);
+    if (missing.length) {
+      return alert(
+        `${TEMPLATE_LABEL[s.template]}에는 사진 자리가 없어요.\n` +
+          `${TEMPLATE_LABEL[alt]}(으)로 자동 변환하려 했지만 재료(${missing.join('·')})가 모자랍니다.\n` +
+          `[템플릿] 버튼에서 다른 사진형을 고르거나 AI 재작성을 써주세요.`
+      );
+    }
+    if (
+      !confirm(
+        `${TEMPLATE_LABEL[s.template]}에는 사진 자리가 없어요.\n` +
+          `${TEMPLATE_LABEL[alt]}(으)로 바꾸고 이 사진을 넣을까요?\n(글은 그대로 옮겨집니다 · AI 호출 없음)`
+      )
+    )
+      return;
+    const imageKey = IMAGE_KEY[alt]!;
+    patch((prev) =>
+      prev.map((x, k) => (k === idx ? { ...x, template: alt, props: { ...props, [imageKey]: url } } : x))
+    );
+    setSelIdx(idx);
+  }
+
+  /** 스타일 팩 즉시 적용 — 지금 장들의 글을 유지한 채 팩 규칙대로 템플릿만 로컬 변환.
+   *  (AI 없음 · 프리뷰 즉시 반영. "제대로 다시 쓰기"는 팩 선택 후 [AI 전체 재생성]) */
+  function applyPackLocally(packId: StylePackId) {
+    setStylePack(packId);
+    // 클래식은 치환표가 빈 팩이라 아무것도 안 바꿨다 — 그래서 다른 팩에 다녀오면 돌아올 길이 없었다.
+    // 첫 팩 적용 직전 스냅샷을 잡아두고, 클래식 클릭 = 그 시점으로 복원.
+    if (packId === 'classic') {
+      if (!packBaseline.current) {
+        alert('되돌릴 기준이 없어요 — 이 세션에서 팩을 바꾼 적이 없거나 이미 클래식 상태입니다.');
+        return;
+      }
+      if (
+        !confirm(
+          '팩을 적용하기 전 상태로 되돌릴까요?\n(팩 적용 후 고친 글·사진도 그 시점으로 돌아갑니다)'
+        )
+      )
+        return;
+      patch(() => packBaseline.current!);
+      packBaseline.current = null;
+      return;
+    }
+    const rule = STYLE_PACKS.find((p) => p.id === packId);
+    if (!rule) return;
+    const skipped: string[] = [];
+    let changed = 0;
+    const next = slides.map((s, i) => {
+      const keep = s.template === 'B8' || s.template === 'B5';
+      const to = i === 0
+        ? rule.coverSwap[s.template]
+        : keep
+          ? undefined
+          : rule.uniform ?? rule.swap[s.template];
+      if (!to || to === s.template) return s;
+      const { props, missing } = convertProps(s.template, to, s.props as Record<string, unknown>);
+      if (missing.length) {
+        skipped.push(`${i + 1}장 ${TEMPLATE_LABEL[s.template]} (재료 부족: ${missing.join('·')})`);
+        return s;
+      }
+      changed += 1;
+      return { ...s, template: to, props };
+    });
+    if (!changed && !skipped.length) return alert('이 팩으로 바꿀 장이 없어요 — 이미 같은 모양입니다.');
+    if (
+      !confirm(
+        `${rule.label} 팩으로 ${changed}장을 즉시 갈아입힐까요?\n(글은 그대로 옮겨집니다 · AI 호출 없음)` +
+          (skipped.length ? `\n\n건너뜀:\n${skipped.join('\n')}` : '') +
+          `\n\n문장까지 팩 규격으로 다시 쓰려면 취소 후 [AI 전체 재생성]을 쓰세요.`
+      )
+    )
+      return;
+    if (!packBaseline.current) packBaseline.current = slides; // 클래식 복원용 — 첫 팩 적용 직전 상태
+    patch(() => next);
+  }
+
+  /** 시각 피커에서 고른 템플릿으로 즉시 변환 (AI 없이 글만 옮김) */
+  function applyTemplatePick(idx: number, r: PickResult) {
+    patch((prev) => prev.map((x, k) => (k === idx ? { ...x, template: r.template, props: r.props } : x)));
+    setSelIdx(idx);
+    setPickerIdx(null);
+  }
+
+  const sel = slides[selIdx] as CardSlide | undefined;
+
+  /** 템플릿 피커 미리보기·빈 슬라이드에 미리 꽂아둘 이미지 (커버 후보 → 본문 추출 순) */
+  const trayImage = card.cover_candidates?.[0]?.full ?? card.extracted_images?.[0];
+
+  // ── 사진 출처 카탈로그 ──
+  // 저장된 출처 + 커버 후보 + 이번 세션에 트레이가 찾아온 결과를 URL로 색인해 두고,
+  // "지금 실제로 카드에 깔린 사진"만 골라 표기한다(사진을 갈아끼우면 표기도 따라 바뀐다).
+  const [trayCredits, setTrayCredits] = useState<PhotoCredit[]>([]);
+  const creditCatalog = useMemo(() => {
+    const m = new Map<string, PhotoCredit>();
+    for (const c of card.cover_candidates ?? [])
+      m.set(c.full, { url: c.full, credit: c.credit, creditLink: c.creditLink, source: 'unsplash' });
+    for (const c of card.photo_credits ?? []) m.set(c.url, c);
+    for (const c of trayCredits) m.set(c.url, c);
+    return m;
+  }, [card.cover_candidates, card.photo_credits, trayCredits]);
+
+  const activeCredits = useMemo(
+    () => usedCredits(slides, creditCatalog, threadsCover),
+    [slides, creditCatalog, threadsCover]
+  );
+
+  const patch = useCallback((updater: (prev: CardSlide[]) => CardSlide[]) => {
+    setSlides((prev) => renumber(updater(prev)));
+    setDirty(true);
+  }, []);
+
+  // ── 프리뷰: 선택 슬라이드를 렌더 API로 PNG화 (props 해시로 캐시) ──
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [previewErr, setPreviewErr] = useState<string | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const previewKey = sel ? JSON.stringify({ t: sel.template, p: sel.props }) : '';
+  const urlRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!sel || previewMode !== 'png') return;
+    let cancelled = false;
+    setPreviewLoading(true);
+    setPreviewErr(null);
+    const timer = setTimeout(async () => {
+      try {
+        const res = await fetch('/api/cardpress/render', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ template: sel.template, accent: card.accent, props: sel.props }),
+        });
+        if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? `렌더 ${res.status}`);
+        const blob = await res.blob();
+        if (cancelled) return;
+        if (urlRef.current) URL.revokeObjectURL(urlRef.current);
+        urlRef.current = URL.createObjectURL(blob);
+        setPreviewUrl(urlRef.current);
+      } catch (e) {
+        if (!cancelled) setPreviewErr((e as Error).message);
+      } finally {
+        if (!cancelled) setPreviewLoading(false);
+      }
+    }, 400); // 연타 편집 디바운스
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [previewKey, card.accent]);
+
+  // ── 슬라이드 조작 ──
+  function move(i: number, dir: -1 | 1) {
+    const j = i + dir;
+    if (j < 0 || j >= slides.length) return;
+    patch((prev) => {
+      const next = [...prev];
+      [next[i], next[j]] = [next[j], next[i]];
+      return next;
+    });
+    setSelIdx(j);
+  }
+
+  /** 슬라이드 삭제 — 체크 해제(제외)와 달리 목록에서 아예 없앤다. 저장 전까진 DB에 안 닿는다. */
+  function removeSlide(i: number) {
+    if (!confirm(`${i + 1}번 슬라이드(${TEMPLATE_LABEL[slides[i].template]})를 삭제할까요?`)) return;
+    patch((prev) => prev.filter((_, k) => k !== i));
+    setSelIdx((prev) => (prev > i ? prev - 1 : Math.min(prev, slides.length - 2 < 0 ? 0 : slides.length - 2)));
+    setEditIdx((prev) => (prev === null ? null : prev === i ? null : prev > i ? prev - 1 : prev));
+    setPickerIdx((prev) => (prev === null ? null : prev === i ? null : prev > i ? prev - 1 : prev));
+  }
+
+  function applyEdit(i: number, form: Record<string, string>) {
+    patch((prev) =>
+      prev.map((s, k) => (k === i ? { ...s, props: formToProps(s.template, s.props, form) } : s))
+    );
+    setEditIdx(null);
+  }
+
+  async function swapTemplate(i: number, target: CardTemplateId) {
+    const s = slides[i];
+    // 원본 섹션이 없으면(수동 추가분 등) AI 재작성이 불가능 — 로컬 변환으로 대체해 막다른 길을 없앤다
+    if (!s.sourceSection) {
+      const { props, missing } = convertProps(s.template, target, s.props as Record<string, unknown>);
+      if (missing.length)
+        return alert(
+          `이 슬라이드는 원본 섹션이 없어 AI 재작성을 못 해요.\n` +
+            `그대로 옮기기도 재료(${missing.join('·')})가 모자랍니다 — 다른 템플릿을 골라주세요.`
+        );
+      applyTemplatePick(i, { template: target, props, missing });
+      return;
+    }
+    setRewriting(i);
+    try {
+      const res = await fetch('/api/cardpress/rewrite-slide', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ sourceType: card.source_type, sourceId: card.source_id, sourceSection: s.sourceSection, template: target }),
+      });
+      if (!res.ok) throw new Error((await res.json()).error ?? `HTTP ${res.status}`);
+      const { slide } = (await res.json()) as { slide: { template: CardTemplateId; props: Record<string, unknown> } };
+      // 글은 AI가 새로 쓰되, 스타일(포인트색·커버 유형·아트)은 기존 슬라이드에서 이어받는다
+      const props = carryStyle(s.props as Record<string, unknown>, slide.props);
+      patch((prev) => prev.map((x, k) => (k === i ? { ...x, template: slide.template, props } : x)));
+      setSelIdx(i);
+      setPickerIdx(null);
+    } catch (e) {
+      alert(`템플릿 교체 실패: ${(e as Error).message}`);
+    } finally {
+      setRewriting(null);
+    }
+  }
+
+  // 커버 후보 클릭 → 무조건 커버(1번)에 적용. 다크 커버(C2·C3)면 사진 커버(C1)로 자동 전환.
+  function applyCover(url: string) {
+    patch((prev) =>
+      prev.map((s, i) => {
+        if (i !== 0) return s;
+        const props: Record<string, unknown> = { ...s.props, coverImage: url };
+        if (s.template === 'C2' || s.template === 'C3') {
+          if (props.eyebrow && !props.kicker) props.kicker = props.eyebrow; // 도입 문구는 키커로 승계
+          delete props.eyebrow;
+          delete props.pill;
+          delete props.logoText;
+          return { ...s, template: 'C1' as const, props };
+        }
+        return { ...s, props };
+      })
+    );
+    setSelIdx(0);
+  }
+
+  // 인스타 Graph API 캐러셀 상한 10칸 — 엔딩 카드가 1칸을 항상 먹으므로 편집 슬라이드는 9장까지
+  const IG_SLIDE_MAX = 9;
+  const enabledCount = slides.filter((s) => s.enabled).length;
+
+  /** 켜진 슬라이드가 상한을 넘으면 뒤에서부터 제외(체크 해제) — 필수 슬라이드는 건너뛴다 */
+  function trimToMax() {
+    patch((prev) => {
+      let over = prev.filter((s) => s.enabled).length - IG_SLIDE_MAX;
+      const next = [...prev];
+      for (let i = next.length - 1; i >= 0 && over > 0; i--) {
+        if (!next[i].enabled || next[i].required) continue;
+        next[i] = { ...next[i], enabled: false };
+        over--;
+      }
+      if (over > 0) alert(`필수 슬라이드가 많아 ${IG_SLIDE_MAX}장까지 못 줄였어요. 필수 표시 슬라이드를 직접 정리해 주세요.`);
+      return next;
+    });
+  }
+
+  // 트레이의 커버 아트 클릭 → 무조건 커버(1번)에 적용. C1이 아니면 글을 그대로 옮겨 C1 v3로 전환.
+  function applyCoverArt(art: string) {
+    patch((prev) =>
+      prev.map((s, i) => {
+        if (i !== 0) return s;
+        let props = { ...s.props } as Record<string, unknown>;
+        if (s.template !== 'C1') props = convertProps(s.template, 'C1', props).props;
+        props.coverLayout = 'v3';
+        props.coverArt = art;
+        return { ...s, template: 'C1' as const, props };
+      })
+    );
+    setSelIdx(0);
+  }
+
+  // ── 편집 가능한 라이브 캔버스 (텍스트 클릭·형광펜 팔레트·팬·드롭 오버레이 포함) — 단일/전체 모드 공용 ──
+  function renderEditableCanvas(i: number) {
+    const s = slides[i];
+    if (!s) return null;
+    const popup = selPopup?.idx === i ? selPopup : null;
+    const editing = liveEdit?.idx === i ? liveEdit : null;
+    return (
+      <div className="relative">
+        <LiveSlide
+          slide={s}
+          accent={card.accent}
+          onEditProp={(key, rect) => {
+            const def = FIELDS[s.template].find((d) => d.key === key);
+            if (!def) return;
+            setSelIdx(i);
+            setSelPopup(null);
+            setLiveEdit({ idx: i, key, rect, value: fieldToText((s.props as Record<string, unknown>)[key], def) });
+          }}
+          onSelectText={(info) => {
+            setSelIdx(i);
+            setLiveEdit(null);
+            setSelPopup({ idx: i, ...info });
+          }}
+          onDropImage={(url) => { setSelIdx(i); assignImageAt(i, url); }}
+          onPan={(pos) => { setSelIdx(i); patchPropsAt(i, { coverPos: pos }); }}
+        />
+        {/* 드래그 선택 → 형광펜/포인트색 미니 툴바 */}
+        {popup && (() => {
+          const def = FIELDS[s.template].find((d) => d.key === popup.key);
+          const raw = def ? fieldToText((s.props as Record<string, unknown>)[popup.key], def) : '';
+          const canHl = HL_TARGET[s.template] === popup.key && raw.includes(popup.text);
+          const canEm = EM_FIELDS.has(popup.key) && raw.includes(popup.text);
+          const isHl = s.props.hl === popup.text;
+          const emApplied = raw.includes(`**${popup.text}**`);
+          const goldApplied = raw.includes(`==${popup.text}==`);
+          if (!canHl && !canEm) return null;
+          const btn = 'text-[11px] rounded px-2 py-1 whitespace-nowrap';
+          return (
+            <div
+              className="absolute z-20 flex items-center gap-1 rounded-md border border-border bg-white shadow-lg p-1"
+              style={{ left: Math.max(0, popup.rect.x), top: Math.max(0, popup.rect.y - 38) }}
+              onMouseDown={(e) => e.preventDefault()}
+            >
+              {canHl && (
+                <>
+                  <span className="text-[10px] text-ink/40 pl-1">형광펜</span>
+                  {HL_PALETTE.map((c) => (
+                    <button
+                      key={c.hex}
+                      title={`형광펜 · ${c.name}`}
+                      onClick={() => {
+                        // 카테고리 기본색과 같으면 hlColor 저장 생략(기본색 추종)
+                        const isDefault = c.hex === ((s.props.accentColor as string) ?? ACCENT_HEX[card.accent]);
+                        patchPropsAt(i, { hl: popup.text, hlColor: isDefault ? undefined : c.hex });
+                        setSelPopup(null);
+                      }}
+                      className={`h-5 w-5 rounded border ${isHl && ((s.props.hlColor ?? ACCENT_HEX[card.accent]) === c.hex) ? 'ring-2 ring-offset-1 ring-ink/60 border-transparent' : 'border-black/10'}`}
+                      style={{ background: c.hex }}
+                    />
+                  ))}
+                  {isHl && (
+                    <button className={`${btn} bg-ink/10`} onClick={() => { patchPropsAt(i, { hl: undefined, hlColor: undefined }); setSelPopup(null); }}>
+                      해제
+                    </button>
+                  )}
+                </>
+              )}
+              {canEm && !emApplied && !goldApplied && (
+                <>
+                  <button
+                    className={`${btn} bg-accent/10 text-accent font-bold`}
+                    onClick={() => { patchPropTextAt(i, popup.key, raw.replace(popup.text, `**${popup.text}**`)); setSelPopup(null); }}
+                  >
+                    A 포인트색
+                  </button>
+                  {/* ==마커== = 골드 글자색(#E8B857) — 썸네일에서 쓰던 노란 강조를 본문에도 */}
+                  <button
+                    className={`${btn} font-bold`}
+                    style={{ background: 'rgba(232,184,87,0.18)', color: '#B98A2E' }}
+                    onClick={() => { patchPropTextAt(i, popup.key, raw.replace(popup.text, `==${popup.text}==`)); setSelPopup(null); }}
+                  >
+                    A 골드
+                  </button>
+                </>
+              )}
+              {canEm && (emApplied || goldApplied) && (
+                <button
+                  className={`${btn} bg-ink/10`}
+                  onClick={() => {
+                    const next = emApplied
+                      ? raw.replace(`**${popup.text}**`, popup.text)
+                      : raw.replace(`==${popup.text}==`, popup.text);
+                    patchPropTextAt(i, popup.key, next);
+                    setSelPopup(null);
+                  }}
+                >
+                  강조 해제
+                </button>
+              )}
+              <button className={`${btn} text-ink/40`} onClick={() => setSelPopup(null)}>✕</button>
+            </div>
+          );
+        })()}
+        {editing && (
+          <textarea
+            autoFocus
+            className="absolute z-10 rounded-md border-2 border-accent bg-white text-ink shadow-lg p-2 text-sm leading-snug"
+            style={{
+              left: Math.max(0, editing.rect.x),
+              top: editing.rect.y,
+              width: Math.max(220, editing.rect.w + 24),
+              minHeight: Math.max(52, editing.rect.h + 16),
+            }}
+            defaultValue={editing.value}
+            onBlur={(e) => { patchPropTextAt(i, editing.key, e.target.value); setLiveEdit(null); }}
+            onKeyDown={(e) => {
+              if (e.key === 'Escape') setLiveEdit(null);
+              if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) (e.target as HTMLTextAreaElement).blur();
+            }}
+          />
+        )}
+      </div>
+    );
+  }
+
+  // 엔딩 캔버스 — 슬라이드형(DM)은 LiveSlide를 그대로 얹어 일반 카드처럼 클릭 편집.
+  // big(키워드)→cta_keyword, resolve(안내문)→ending_props.resolve로 흘려보낸다. 비우면 줄 삭제.
+  function renderEndingCanvas() {
+    if (endingCard.kind !== 'slide') return <EndingCanvas ending={endingCard} accent={card.accent} />;
+    const pseudo = {
+      template: endingCard.template,
+      props: endingCard.props,
+      order: slides.length + 1,
+      enabled: true,
+    } as CardSlide;
+    return (
+      <div className="relative">
+        <LiveSlide
+          slide={pseudo}
+          accent={card.accent}
+          onEditProp={(key, rect) => {
+            if (key !== 'big' && key !== 'resolve') return; // 엔딩은 이 두 칸만 쓴다
+            setEndingEdit({
+              key,
+              rect,
+              value:
+                key === 'big'
+                  ? ctaKeyword
+                  : (endingProps.resolve ?? '댓글에 이 단어만 남기면 **DM**으로 보내드려요'),
+            });
+          }}
+          onSelectText={() => {}}
+          onDropImage={(url) => { setEndingProps((p) => ({ ...p, image: url })); setDirty(true); }}
+          onPan={() => {}}
+        />
+        {endingEdit && (
+          <textarea
+            autoFocus
+            className="absolute z-10 rounded-md border-2 border-accent bg-white text-ink shadow-lg p-2 text-sm leading-snug"
+            style={{
+              left: Math.max(0, endingEdit.rect.x),
+              top: endingEdit.rect.y,
+              width: Math.max(220, endingEdit.rect.w + 24),
+              minHeight: Math.max(52, endingEdit.rect.h + 16),
+            }}
+            defaultValue={endingEdit.value}
+            onBlur={(e) => {
+              const v = e.target.value.trim();
+              if (endingEdit.key === 'big') {
+                if (v) setCtaKeyword(v); // 키워드는 비울 수 없다 — 리틀리 트리거가 사라진다
+              } else {
+                setEndingProps((p) => ({ ...p, resolve: v })); // ''이면 안내문 줄 삭제
+              }
+              setDirty(true);
+              setEndingEdit(null);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Escape') setEndingEdit(null);
+              if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) (e.target as HTMLTextAreaElement).blur();
+            }}
+          />
+        )}
+      </div>
+    );
+  }
+
+  // 스타일 툴바 — 선택 슬라이드(selIdx)의 색·효과·텍스트 위치 (단일/전체 모드 공용)
+  function renderStyleToolbar(s: CardSlide) {
+    // v3 커버는 잠금 팔레트 — accentColor를 무시하고 형광펜은 hlColor ?? V3_BLUE/LIME만 쓴다
+    // (templates.tsx C1V3). 여기서 포인트색 스와치를 그대로 보여주면 렌더와 어긋난 거짓 색이 된다.
+    const isV3 = s.template === 'C1' && (s.props.coverLayout as string) === 'v3';
+    const v3Light =
+      ((s.props.tone as string) ?? (['studio', 'data'].includes((s.props.coverArt as string) ?? '') ? 'light' : 'dark')) === 'light';
+    return (
+      <div className="flex items-center gap-3 mb-2 text-[11px] flex-wrap text-ink/60">
+        <span className="font-semibold text-ink/70">{selIdx + 1}번 스타일</span>
+        {isV3 ? (
+          <>
+            <label className="flex items-center gap-1" title="v3 커버는 포인트색 대신 이 형광펜색만 씁니다">
+              형광펜색
+              <input
+                type="color"
+                value={(s.props.hlColor as string) ?? (v3Light ? '#C6F24E' : '#2F4BF0')}
+                onChange={(e) => patchStyle('hlColor', e.target.value)}
+                className="h-5 w-7 cursor-pointer rounded border border-border p-0"
+              />
+            </label>
+            {typeof s.props.hlColor === 'string' && (
+              <button onClick={() => patchStyle('hlColor', undefined)} className="rounded px-1.5 py-0.5 bg-ink/5 hover:bg-ink/10">
+                기본색
+              </button>
+            )}
+          </>
+        ) : (
+          <>
+            <label className="flex items-center gap-1" title="모든 장 + 엔딩의 포인트색에 함께 적용됩니다">
+              포인트색(전체)
+              <input
+                type="color"
+                value={(s.props.accentColor as string) ?? ACCENT_HEX[card.accent]}
+                onChange={(e) => patchStyle('accentColor', e.target.value)}
+                className="h-5 w-7 cursor-pointer rounded border border-border p-0"
+              />
+            </label>
+            {typeof s.props.accentColor === 'string' && (
+              <button onClick={() => patchStyle('accentColor', undefined)} className="rounded px-1.5 py-0.5 bg-ink/5 hover:bg-ink/10">
+                기본색
+              </button>
+            )}
+          </>
+        )}
+        {['C1', 'B4', 'C5'].includes(s.template) && typeof s.props.coverImage === 'string' && (
+          <label className="flex items-center gap-1">
+            어둡기
+            <input
+              type="range"
+              min={0}
+              max={0.85}
+              step={0.05}
+              value={(s.props.overlay as number) ?? (s.template === 'C5' ? 0.68 : s.template === 'B4' ? 0.45 : 0.28)}
+              onChange={(e) => patchStyle('overlay', parseFloat(e.target.value))}
+              className="w-20"
+            />
+          </label>
+        )}
+        {s.template === 'C1' && (
+          <label className="flex items-center gap-1">
+            커버 유형
+            <select
+              value={(s.props.coverLayout as string) ?? 'bottom'}
+              onChange={(e) => patchStyle('coverLayout', e.target.value)}
+              className="border border-border rounded px-1 py-0.5 bg-transparent"
+            >
+              <option value="v3">v3 잠금 규격</option>
+              <option value="bottom">기본(좌하단)</option>
+              <option value="center">센터 포스터</option>
+              <option value="band">하단 밴드</option>
+              <option value="giant">하단 초대형</option>
+            </select>
+          </label>
+        )}
+        {/* v3는 레이아웃을 안 흔든다 — 고르는 건 '그림'뿐. 아트마다 필요한 재료가 달라서 입력칸도 같이 바뀐다 */}
+        {s.template === 'C1' && (s.props.coverLayout as string) === 'v3' && (
+          <>
+            <label className="flex items-center gap-1">
+              아트
+              <select
+                value={(s.props.coverArt as string) ?? 'photo'}
+                onChange={(e) => patchStyle('coverArt', e.target.value)}
+                className="border border-border rounded px-1 py-0.5 bg-transparent"
+              >
+                {coverArtChoices((s.props.coverArt as string) ?? 'photo').map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            {ART_TEXT_ARTS.includes((s.props.coverArt as string) ?? 'photo') && (
+              <label className="flex items-center gap-1">
+                아트 글
+                <input
+                  value={(s.props.artText as string) ?? ''}
+                  onChange={(e) => patchStyle('artText', e.target.value)}
+                  placeholder={ART_TEXT_HINT[(s.props.coverArt as string) ?? 'photo']}
+                  title={'줄바꿈은 \\n 으로 넣습니다'}
+                  className="w-56 border border-border rounded px-1 py-0.5 bg-transparent"
+                />
+              </label>
+            )}
+            {['logos', 'mask'].includes((s.props.coverArt as string) ?? '') && (
+              <label className="flex items-center gap-1">
+                로고
+                <input
+                  value={((s.props.artIcons as string[]) ?? []).join(', ')}
+                  onChange={(e) =>
+                    patchStyle(
+                      'artIcons',
+                      e.target.value
+                        .split(',')
+                        .map((v) => v.trim())
+                        .filter(Boolean)
+                    )
+                  }
+                  placeholder="claude, notion"
+                  title="Simple Icons 슬러그 또는 이미지 URL (쉼표로 구분)"
+                  className="w-44 border border-border rounded px-1 py-0.5 bg-transparent"
+                />
+              </label>
+            )}
+            <label className="flex items-center gap-1">
+              톤
+              <select
+                value={(s.props.tone as string) ?? 'auto'}
+                onChange={(e) => patchStyle('tone', e.target.value === 'auto' ? undefined : e.target.value)}
+                className="border border-border rounded px-1 py-0.5 bg-transparent"
+              >
+                <option value="auto">자동</option>
+                <option value="dark">어둡게</option>
+                <option value="light">밝게</option>
+              </select>
+            </label>
+          </>
+        )}
+        {/* 세로 앵커는 좌하단형에서만 의미 — 나머지 유형은 자리가 구조로 정해진다 */}
+        {s.template === 'C1' && ((s.props.coverLayout as string) ?? 'bottom') === 'bottom' && (
+          <label className="flex items-center gap-1">
+            텍스트 위치
+            <select
+              value={(s.props.titleAnchor as string) ?? 'bottom'}
+              onChange={(e) => patchStyle('titleAnchor', e.target.value)}
+              className="border border-border rounded px-1 py-0.5 bg-transparent"
+            >
+              <option value="bottom">하단</option>
+              <option value="center">중앙</option>
+              <option value="top">상단</option>
+            </select>
+          </label>
+        )}
+        {typeof s.props.hl === 'string' && s.props.hl && (
+          <label className="flex items-center gap-1">
+            형광펜
+            <select
+              value={(s.props.hlStyle as string) ?? 'box'}
+              onChange={(e) => patchStyle('hlStyle', e.target.value)}
+              className="border border-border rounded px-1 py-0.5 bg-transparent"
+            >
+              <option value="box">색 박스</option>
+              <option value="text">글자색</option>
+              <option value="underline">밑줄</option>
+            </select>
+          </label>
+        )}
+        <span className="text-ink/35">텍스트 클릭=수정 · 드래그/더블클릭=형광펜 팔레트 · 사진 드래그=이동 · 트레이 끌어오기=배치</span>
+      </div>
+    );
+  }
+
+  // ── 저장/상태 ──
+  async function save(nextStatus?: CardRow['status']) {
+    setSaving(true);
+    const row: Record<string, unknown> = {
+      slides: renumber(slides),
+      ig_caption: igCaption || null,
+      threads_text: threadsText || null,
+      threads_cover: threadsCover || null,
+      edge: edge || null,
+      cta_type: ctaType,
+      cta_keyword: ctaKeyword || null,
+      ending_props: Object.keys(endingProps).length ? endingProps : null,
+      // 실제로 쓰인 사진의 출처만 남긴다 — 갈아끼운 사진의 표기가 유령으로 남지 않게
+      photo_credits: activeCredits,
+      ...(nextStatus ? { status: nextStatus } : {}),
+    };
+    let { error } = await supabase.from('content_cards').update(row).eq('id', card.id);
+    // 1027 미적용 DB 호환 — 컬럼이 없으면 그것만 빼고 재시도(저장 자체가 막히면 안 된다)
+    if (error?.message.includes('photo_credits')) {
+      delete row.photo_credits;
+      ({ error } = await supabase.from('content_cards').update(row).eq('id', card.id));
+    }
+    // 1032 미적용 DB 호환 — 같은 이유
+    if (error?.message.includes('ending_props')) {
+      delete row.ending_props;
+      ({ error } = await supabase.from('content_cards').update(row).eq('id', card.id));
+    }
+    setSaving(false);
+    if (error) return alert(`저장 실패: ${error.message}`);
+    setDirty(false);
+    router.refresh();
+  }
+
+  async function runGenerate() {
+    const res = await fetch('/api/cardpress/generate', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        sourceType: card.source_type,
+        sourceId: card.source_id,
+        edge: edge.trim() || undefined,
+        ctaType,
+        ctaKeyword: ctaKeyword.trim() || undefined,
+        stylePack,
+      }),
+    });
+    if (!res.ok) throw new Error((await res.json()).error ?? `HTTP ${res.status}`);
+    router.refresh();
+  }
+
+  async function regenerate() {
+    if (!confirm(`AI로 전체를 다시 생성할까요? 지금까지의 수정이 덮어써져요. (수 분 소요)${edge.trim() ? `\n\n엣지 방향: ${edge.trim()}` : ''}`)) return;
+    setSaving(true);
+    try {
+      await runGenerate();
+    } catch (e) {
+      alert(`재생성 실패: ${(e as Error).message}`);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  // 씨앗 소스 전용 — 생성해 보니 씨앗이 얇았을 때: 출처 원문에서 raw_text를 재가공한 뒤 그걸로 전체 재생성
+  async function enrichAndRegenerate() {
+    if (!confirm('씨앗을 출처 원문에서 재가공한 뒤 카드 전체를 다시 생성할까요? 지금까지의 수정이 덮어써져요. (재가공 ~3분 + 생성 3~10분)')) return;
+    setSaving(true);
+    try {
+      const res = await fetch('/api/seeds/enrich', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ seedId: card.source_id, mode: 'apply' }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? `HTTP ${res.status}`);
+      if (!data.applied) {
+        if (!confirm(`AI 판단: 원문 재가공이 도움이 안 됩니다 — ${data.reason}\n\n그래도 지금 씨앗으로 재생성할까요?`)) return;
+      }
+      await runGenerate();
+    } catch (e) {
+      alert(`원문 재가공 재생성 실패: ${(e as Error).message}`);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function remove() {
+    if (!confirm('이 카드 세트를 삭제할까요?')) return;
+    const { error } = await supabase.from('content_cards').delete().eq('id', card.id);
+    if (error) return alert(`삭제 실패: ${error.message}`);
+    router.refresh();
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <div className="flex items-center gap-2 min-w-0">
+          <h2 className="font-serif text-base font-semibold truncate">{sourceTitle ?? card.source_id}</h2>
+          <span className={`badge shrink-0 ${STATUS_LABEL[card.status].cls}`}>{STATUS_LABEL[card.status].text}</span>
+          {dirty && <span className="text-xs text-amber-600">저장 안 됨</span>}
+        </div>
+        <div className="flex items-center gap-2">
+          <Button size="sm" variant="outline" onClick={regenerate} disabled={saving}>AI 전체 재생성</Button>
+          {card.source_type === 'seed' && (
+            <Button size="sm" variant="outline" onClick={enrichAndRegenerate} disabled={saving}>원문 재가공 후 재생성</Button>
+          )}
+          <Button size="sm" variant="outline" onClick={remove} disabled={saving}>삭제</Button>
+          <Button size="sm" variant="outline" onClick={() => save()} disabled={saving || !dirty}>{saving ? '저장 중…' : '저장'}</Button>
+          <Button size="sm" variant="accent" onClick={() => save('reviewed')} disabled={saving}>검수 완료</Button>
+        </div>
+      </div>
+
+      {/* 엣지 + CTA 유형 — 수정 후 [AI 전체 재생성]하면 이 방향·문법으로 다시 쓴다 */}
+      <div className="card p-3 space-y-2">
+        <div className="flex items-center gap-2">
+          <Label className="text-xs shrink-0">엣지</Label>
+          <Input
+            value={edge}
+            onChange={(e) => { setEdge(e.target.value); setDirty(true); }}
+            placeholder="이 콘텐츠의 차별점 한 줄 (예: 앤트로픽 현직 엔지니어가 직접 공개한 검증된 패턴)"
+            className="text-sm"
+          />
+        </div>
+        <div className="flex items-center gap-2 flex-wrap">
+          <Label className="text-xs shrink-0">CTA</Label>
+          {(Object.keys(CTA_TYPE_LABELS) as CardCtaType[]).map((v) => (
+            <button
+              key={v}
+              onClick={() => { setCtaType(v); setDirty(true); }}
+              className={`text-xs rounded-full px-2.5 py-1 ${ctaType === v ? 'bg-accent text-white' : 'bg-ink/5 text-ink/60 hover:bg-ink/10'}`}
+            >
+              {CTA_TYPE_LABELS[v]}
+            </button>
+          ))}
+          {ctaType === 'comment_dm' && (
+            <>
+              <span className="text-[11px] text-ink/40">댓글 키워드:</span>
+              <Input
+                value={ctaKeyword}
+                onChange={(e) => { setCtaKeyword(e.target.value); setDirty(true); }}
+                className="text-sm w-28"
+              />
+              <span className="text-[11px] text-ink/40">리틀리 댓글 자동화·숏링크에 같은 키워드 세팅 필요</span>
+            </>
+          )}
+          <span className="text-[11px] text-ink/40 ml-auto hidden lg:block">수정 후 [AI 전체 재생성] = 이 방향·문법으로 재작성</span>
+        </div>
+        <div className="flex items-center gap-2 flex-wrap">
+          <Label className="text-xs shrink-0">스타일 팩</Label>
+          {STYLE_PACKS.map((pk) => (
+            <button
+              key={pk.id}
+              onClick={() => applyPackLocally(pk.id)}
+              title={pk.desc}
+              className={`text-xs rounded-full px-2.5 py-1 ${stylePack === pk.id ? 'bg-ink text-white' : 'bg-ink/5 text-ink/60 hover:bg-ink/10'}`}
+            >
+              {pk.label}
+            </button>
+          ))}
+          <span className="text-[11px] text-ink/40">누르면 지금 장들이 즉시 갈아입혀집니다(글 유지) · [AI 전체 재생성]은 문장까지 팩 규격으로 재작성</span>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-[1fr_400px] gap-4 items-start">
+        {/* 좌: 슬라이드 리스트 */}
+        <div className="space-y-3">
+          {enabledCount > IG_SLIDE_MAX && (
+            <div className="rounded-lg border border-red-300 bg-red-500/[0.04] px-3 py-2 flex items-center justify-between gap-3 text-xs">
+              <span className="text-red-600">
+                인스타 캐러셀은 엔딩 포함 10장까지 — 지금 {enabledCount + 1}장이라 발행이 막힙니다.
+              </span>
+              <button onClick={trimToMax} className="shrink-0 rounded-md border border-red-300 px-2 py-1 text-red-600 hover:bg-red-50">
+                뒤에서부터 제외해 {IG_SLIDE_MAX}장으로
+              </button>
+            </div>
+          )}
+          <div className="card divide-y divide-border">
+            {slides.map((s, i) => (
+              <div key={i} className={`px-3 py-2.5 ${i === selIdx ? 'bg-accent/5' : ''}`}>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={s.enabled}
+                    onChange={() => patch((prev) => prev.map((x, k) => (k === i ? { ...x, enabled: !x.enabled } : x)))}
+                    title="포함/제외"
+                  />
+                  <button onClick={() => selectSlide(i)} className="flex-1 min-w-0 text-left flex items-center gap-2">
+                    <span className="badge bg-ink/5 text-ink/60 shrink-0">{TEMPLATE_LABEL[s.template]}</span>
+                    <span className={`text-sm truncate ${s.enabled ? '' : 'line-through text-ink/30'}`}>
+                      {String((s.props as Record<string, unknown>).title ?? (s.props as Record<string, unknown>).heading ?? (s.props as Record<string, unknown>).banner ?? (s.props as Record<string, unknown>).term ?? (s.props as Record<string, unknown>).cap ?? '')}
+                    </span>
+                    {s.required && <span className="text-[10px] text-red-500 shrink-0" title={s.required}>필수</span>}
+                  </button>
+                  <div className="flex items-center gap-1 shrink-0 text-xs">
+                    <button onClick={() => move(i, -1)} className="px-1.5 py-0.5 rounded border border-border hover:bg-ink/5" title="위로">↑</button>
+                    <button onClick={() => move(i, 1)} className="px-1.5 py-0.5 rounded border border-border hover:bg-ink/5" title="아래로">↓</button>
+                    {(ALT_MAP[s.template] ?? []).slice(0, 2).map((alt) => (
+                      <button
+                        key={alt}
+                        onClick={() => swapTemplate(i, alt)}
+                        disabled={rewriting !== null}
+                        className="px-1.5 py-0.5 rounded border border-border hover:bg-ink/5 text-accent"
+                        title={`${TEMPLATE_LABEL[alt]}(으)로 ${s.sourceSection ? 'AI 재작성' : '그대로 변환'}`}
+                      >
+                        {rewriting === i ? '…' : `→${alt}`}
+                      </button>
+                    ))}
+                    <button
+                      onClick={() => { setSelIdx(i); setPickerIdx(i); }}
+                      className="px-1.5 py-0.5 rounded border border-border hover:bg-ink/5 text-accent"
+                      title="템플릿 전체를 모양으로 보고 고르기 (사진 자리가 있는 것 포함)"
+                    >
+                      템플릿
+                    </button>
+                    <button onClick={() => setEditIdx(editIdx === i ? null : i)} className="px-1.5 py-0.5 rounded border border-border hover:bg-ink/5 text-accent">
+                      {editIdx === i ? '닫기' : '편집'}
+                    </button>
+                    <button
+                      onClick={() => removeSlide(i)}
+                      className="px-1.5 py-0.5 rounded border border-border hover:bg-red-50 text-red-500"
+                      title="이 슬라이드를 목록에서 삭제 (저장해야 확정)"
+                    >
+                      삭제
+                    </button>
+                  </div>
+                </div>
+                {editIdx === i && (
+                  <SlideForm slide={s} accent={card.accent} sourceType={card.source_type} sourceId={card.source_id} onApply={(form) => applyEdit(i, form)} onCancel={() => setEditIdx(null)} />
+                )}
+              </div>
+            ))}
+            <AddSlidePanel
+              sourceType={card.source_type}
+              sourceId={card.source_id}
+              accent={card.accent}
+              fallbackImage={trayImage}
+              onAdd={(slide) => {
+                if (enabledCount >= IG_SLIDE_MAX) {
+                  alert(`켜진 슬라이드가 이미 ${IG_SLIDE_MAX}장이에요. 엔딩 포함 10장이 인스타 캐러셀 상한이라, 먼저 다른 장을 제외하거나 삭제해 주세요.`);
+                  return;
+                }
+                patch((prev) => [...prev, { ...slide, order: prev.length + 1, enabled: true }]);
+                setSelIdx(slides.length);
+              }}
+            />
+          </div>
+
+          {/* 엔딩 트레이 — 슬라이드 목록 맨 끝(이미지 트레이 위)에 항상 붙는 자리.
+              저장은 slides가 아니라 cta_type이라 여기서 유형만 바꾸면 카드가 갈린다. */}
+          <EndingCardPreview
+            ctaType={ctaType}
+            ctaKeyword={ctaKeyword}
+            accent={card.accent}
+            coverImage={coverImageOf(slides)}
+            endingProps={endingProps}
+            slideCount={slides.filter((s) => s.enabled).length}
+            onChangeCtaType={(v) => { setCtaType(v); setDirty(true); }}
+            onChangeCtaKeyword={(v) => { setCtaKeyword(v); setDirty(true); }}
+            onChangeEndingProps={(v) => { setEndingProps(v); setDirty(true); }}
+            selected={endingSel}
+            onSelect={selectEnding}
+          />
+
+          <ImageTray
+            card={card}
+            coverSlide={slides[0]}
+            onCoverArt={applyCoverArt}
+            targetIndex={selIdx}
+            onPick={(url) => assignImageAt(selIdx, url)}
+            onCover={applyCover}
+            onThreadsCover={(u) => { setThreadsCover(u); setDirty(true); }}
+            onCredits={(entries) => setTrayCredits((prev) => {
+              const m = new Map(prev.map((c) => [c.url, c]));
+              for (const e of entries) m.set(e.url, e);
+              return [...m.values()];
+            })}
+          />
+
+          {/* 캡션·스레드 */}
+          <div className="card p-4 space-y-3">
+            <div>
+              <Label className="text-xs">인스타 캡션</Label>
+              <Textarea className="mt-1" rows={7} value={igCaption} onChange={(e) => { setIgCaption(e.target.value); setDirty(true); }} />
+              <CtaEndingPicker
+                ctaType={ctaType}
+                caption={igCaption}
+                onApply={(next) => { setIgCaption(next); setDirty(true); }}
+              />
+            </div>
+            <div>
+              <Label className="text-xs">스레드 글 <span className="text-ink/40">(본가 링크 포함)</span></Label>
+              <Textarea className="mt-1" rows={7} value={threadsText} onChange={(e) => { setThreadsText(e.target.value); setDirty(true); }} />
+            </div>
+            <div>
+              <Label className="text-xs">스레드 커버 이미지 URL <span className="text-ink/40">(이미지 트레이에서 &ldquo;스레드 커버로&rdquo; 클릭)</span></Label>
+              <Input className="mt-1" value={threadsCover} onChange={(e) => { setThreadsCover(e.target.value); setDirty(true); }} placeholder="https://…" />
+            </div>
+
+            <PhotoCreditPanel
+              credits={activeCredits}
+              igCaption={igCaption}
+              threadsText={threadsText}
+              onInsertCaption={(next) => { setIgCaption(next); setDirty(true); }}
+              onInsertThreads={(next) => { setThreadsText(next); setDirty(true); }}
+            />
+          </div>
+
+          <PublishPanel card={card} dirty={dirty} />
+        </div>
+
+        {/* 우: 실비율(4:5) 프리뷰 — 1장 / 그리드(전체 흐름 검수) 토글 */}
+        <div className="card p-4 lg:sticky lg:top-4">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-sm font-semibold flex items-center gap-2">
+              프리뷰 {viewMode === 'single' ? (endingSel ? `엔딩 · ${slides.length + 1}칸째` : sel ? `${selIdx + 1} / ${slides.length}` : '') : ''}
+              {dirty && (
+                <button
+                  onClick={() => save()}
+                  disabled={saving}
+                  className="text-[11px] rounded-full px-2.5 py-1 bg-amber-500 text-white hover:bg-amber-600 animate-pulse"
+                  title="수정 사항이 아직 DB에 저장되지 않았어요"
+                >
+                  {saving ? '저장 중…' : '● 저장 안 됨 — 저장하기'}
+                </button>
+              )}
+            </span>
+            <div className="flex gap-1 items-center">
+              <button
+                onClick={() => setViewMode(viewMode === 'single' ? 'grid' : 'single')}
+                className={`px-2 py-0.5 rounded border text-xs ${viewMode === 'grid' ? 'bg-accent text-white border-accent' : 'border-border hover:bg-ink/5'}`}
+                title="전체 흐름을 한눈에"
+              >
+                전체 편집
+              </button>
+              {viewMode === 'single' && (
+                <>
+                  <button
+                    onClick={() => { setPreviewMode(previewMode === 'live' ? 'png' : 'live'); setLiveEdit(null); }}
+                    className="px-2 py-0.5 rounded border border-border text-xs hover:bg-ink/5"
+                    title="라이브=바로 편집(근사) · PNG=발행 실물 확인"
+                  >
+                    {previewMode === 'live' ? 'PNG 확인' : '라이브 편집'}
+                  </button>
+                  <button
+                    onClick={() => setQuickEdit(!quickEdit)}
+                    className={`px-2 py-0.5 rounded border text-xs ${quickEdit ? 'bg-accent text-white border-accent' : 'border-border hover:bg-ink/5 text-accent'}`}
+                    title="폼으로 수정 (AI 초안 3개 포함)"
+                  >
+                    폼
+                  </button>
+                  <button
+                    onClick={() => (endingSel ? selectSlide(slides.length - 1) : selectSlide(Math.max(0, selIdx - 1)))}
+                    className="px-2 py-0.5 rounded border border-border text-xs hover:bg-ink/5"
+                  >←</button>
+                  <button
+                    onClick={() => {
+                      // 마지막 슬라이드에서 →는 엔딩(가상 마지막 칸)으로 넘어간다
+                      if (endingSel) return;
+                      if (selIdx >= slides.length - 1) selectEnding();
+                      else selectSlide(selIdx + 1);
+                    }}
+                    className="px-2 py-0.5 rounded border border-border text-xs hover:bg-ink/5"
+                  >→</button>
+                </>
+              )}
+            </div>
+          </div>
+          {sel && (viewMode === 'grid' || (previewMode === 'live' && !endingSel)) && renderStyleToolbar(sel)}
+          {viewMode === 'single' && endingSel ? (
+            <>
+              {renderEndingCanvas()}
+              <p className="text-xs text-ink/40 mt-2">
+                키워드·안내문은 텍스트 클릭으로 바로 수정(안내문은 비우면 삭제) · 포인트색·배경은 왼쪽 [엔딩 · 자동] 패널.
+              </p>
+            </>
+          ) : viewMode === 'single' ? (
+            <>
+              {previewMode === 'live' && sel ? (
+                renderEditableCanvas(selIdx)
+              ) : (
+                <div className="relative w-full rounded-lg overflow-hidden border border-border bg-ink/5" style={{ aspectRatio: '4 / 5' }}>
+                  {previewUrl && !previewErr && (
+                    <img src={previewUrl} alt="슬라이드 프리뷰" className={`w-full h-full object-contain transition-opacity ${previewLoading ? 'opacity-40' : ''}`} />
+                  )}
+                  {previewLoading && !previewUrl && (
+                    <div className="absolute inset-0 flex items-center justify-center text-xs text-ink/40">렌더 중…</div>
+                  )}
+                  {previewErr && (
+                    <div className="absolute inset-0 flex items-center justify-center text-xs text-red-500 p-4 text-center">{previewErr}</div>
+                  )}
+                </div>
+              )}
+              {sel && !sel.enabled && <p className="text-xs text-amber-600 mt-2">이 슬라이드는 제외 상태예요.</p>}
+              {/* 프리뷰 빠른 수정 — 적용하면 위 프리뷰가 바로 재렌더 */}
+              {quickEdit && sel && (
+                <SlideForm
+                  key={`${selIdx}-${sel.template}`}
+                  slide={sel}
+                  accent={card.accent}
+                  sourceType={card.source_type}
+                  sourceId={card.source_id}
+                  onApply={(form) => { applyEdit(selIdx, form); setQuickEdit(false); }}
+                  onCancel={() => setQuickEdit(false)}
+                />
+              )}
+            </>
+          ) : (
+            /* 전체 편집 — 모든 카드가 라이브 캔버스, 각 카드 위에서 동일하게 편집 */
+            <div className="space-y-4 max-h-[75vh] overflow-y-auto pr-1">
+              {slides.map((s, i) => (
+                <div key={i} className={s.enabled ? '' : 'opacity-40'}>
+                  <div className="flex items-center justify-between text-[11px] text-ink/40 mb-1">
+                    <span>
+                      {i + 1}. {TEMPLATE_LABEL[s.template]}
+                      {!s.enabled && ' · 제외됨'}
+                      {i === selIdx && <span className="text-accent ml-1">◂ 스타일 툴바 대상</span>}
+                    </span>
+                    <button onClick={() => { selectSlide(i); setViewMode('single'); }} className="text-accent hover:underline">
+                      단일 보기
+                    </button>
+                  </div>
+                  {renderEditableCanvas(i)}
+                </div>
+              ))}
+              {/* 엔딩 — slides엔 없지만 발행 캐러셀의 실제 마지막 칸이라 나열에도 붙인다 */}
+              <div>
+                <div className="flex items-center justify-between text-[11px] text-ink/40 mb-1">
+                  <span>
+                    {slides.length + 1}. 엔딩 — {endingCard.label} (자동)
+                    {endingSel && <span className="text-accent ml-1">◂ 선택됨</span>}
+                  </span>
+                  <button onClick={() => { selectEnding(); setViewMode('single'); }} className="text-accent hover:underline">
+                    단일 보기
+                  </button>
+                </div>
+                {renderEndingCanvas()}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* 템플릿 시각 피커 — 지금 슬라이드의 글을 각 템플릿에 얹은 모습으로 보고 고른다 */}
+      {pickerIdx !== null && slides[pickerIdx] && (
+        <CardTemplatePicker
+          open
+          onOpenChange={(v) => !v && setPickerIdx(null)}
+          accent={card.accent}
+          slide={slides[pickerIdx]}
+          fallbackImage={trayImage}
+          recommended={ALT_MAP[slides[pickerIdx].template] ?? []}
+          busy={rewriting !== null}
+          title={`${pickerIdx + 1}번 슬라이드 템플릿 바꾸기 · 지금 ${TEMPLATE_LABEL[slides[pickerIdx].template]}`}
+          onPick={(r) => applyTemplatePick(pickerIdx, r)}
+          // AI 재작성은 원본 섹션이 있는 슬라이드만 가능 — 없으면 재료 부족 칸을 잠근다(헛클릭 방지)
+          onAiRewrite={slides[pickerIdx].sourceSection ? (t) => swapTemplate(pickerIdx, t) : undefined}
+        />
+      )}
+    </div>
+  );
+}
+
+// ── 엔딩 큰 캔버스 — 일반 카드처럼 실비율(4:5)로 프리뷰·나열에 얹는다 ──
+// 파생 카드라 읽기 전용: 수정은 엔딩 패널(키워드·색·배경)에서 하고 여기는 그 결과만 크게 비춘다.
+function EndingCanvas({ ending, accent }: { ending: EndingCard; accent: CardAccent }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [w, setW] = useState(0);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => setW(el.clientWidth));
+    ro.observe(el);
+    setW(el.clientWidth);
+    return () => ro.disconnect();
+  }, []);
+  return (
+    <div
+      ref={ref}
+      className="relative w-full overflow-hidden rounded-lg border border-border bg-ink/5"
+      style={{ aspectRatio: '4 / 5' }}
+    >
+      {ending.kind === 'video' ? (
+        <video src={ending.videoUrl} poster={ending.posterUrl} autoPlay loop muted playsInline className="h-full w-full object-cover" />
+      ) : ending.kind === 'image' ? (
+        <img src={ending.imageUrl} alt="엔딩 카드" className="h-full w-full object-cover" />
+      ) : w > 0 ? (
+        <div
+          style={{
+            width: CARD_W,
+            height: CARD_H,
+            transform: `scale(${w / CARD_W})`,
+            transformOrigin: 'top left',
+            pointerEvents: 'none',
+          }}
+        >
+          {renderSlide({ template: ending.template, accent, props: ending.props } as RenderSlideInput)}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+// ── 엔딩 카드(마지막 장) 미리보기 ─────────────────────────────
+// 엔딩은 slides에 저장하지 않고 cta_type에서 파생한다(lib/cardpress/endings.ts).
+// 채널의 것이라 매번 같은데 slides에 복사해두면 문구 한 줄 고칠 때 과거 카드와 갈라지기 때문.
+// → 유형 칩을 바꾸면 이 미리보기가 즉시 바뀌고, 발행·zip이 같은 규칙으로 마지막 칸에 붙인다.
+function EndingCardPreview({
+  ctaType,
+  ctaKeyword,
+  accent,
+  coverImage,
+  endingProps,
+  slideCount,
+  onChangeCtaType,
+  onChangeCtaKeyword,
+  onChangeEndingProps,
+  selected,
+  onSelect,
+}: {
+  ctaType: CardCtaType;
+  ctaKeyword: string;
+  accent: CardAccent;
+  /** 카드 커버 이미지 — DM형 배경 기본값(없으면 민짜 다크) */
+  coverImage?: string;
+  /** 카드별 오버라이드(ending_props) — 저장은 부모의 save()가 한다 */
+  endingProps?: EndingProps;
+  /** 활성 슬라이드 수 — 엔딩까지 더해 캐러셀 10칸을 넘는지 여기서 알려준다 */
+  slideCount?: number;
+  onChangeCtaType?: (v: CardCtaType) => void;
+  onChangeCtaKeyword?: (v: string) => void;
+  onChangeEndingProps?: (v: EndingProps) => void;
+  /** 썸네일 클릭 → 프리뷰 패널에 일반 카드처럼 크게 (부모의 endingSel) */
+  selected?: boolean;
+  onSelect?: () => void;
+}) {
+  const ending = useMemo(
+    () => endingFor(ctaType, { ctaKeyword, accent, coverImage, overrides: endingProps }),
+    [ctaType, ctaKeyword, accent, coverImage, endingProps]
+  );
+  // 배경 검색 — 커버와 같은 Unsplash 경로(/api/cardpress/unsplash, 4:5 크롭 URL 반환).
+  // AI 생성(OPENAI_API_KEY 종량 과금)이 아니라 이미 세팅된 UNSPLASH_ACCESS_KEY를 쓴다.
+  const [bgQuery, setBgQuery] = useState('');
+  const [bgBusy, setBgBusy] = useState(false);
+  const [bgErr, setBgErr] = useState<string | null>(null);
+  const [bgResults, setBgResults] = useState<Array<{ id: string; thumb: string; full: string }>>([]);
+  async function searchBackground() {
+    if (!bgQuery.trim() || bgBusy) return;
+    setBgBusy(true);
+    setBgErr(null);
+    try {
+      const res = await fetch(`/api/cardpress/unsplash?query=${encodeURIComponent(bgQuery.trim())}`);
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error ?? `HTTP ${res.status}`);
+      if (json.notice) setBgErr(json.notice as string);
+      setBgResults((json.results ?? []).slice(0, 6));
+    } catch (e) {
+      setBgErr((e as Error).message);
+    } finally {
+      setBgBusy(false);
+    }
+  }
+  const [png, setPng] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const urlRef = useRef<string | null>(null);
+  const key = ending.kind === 'slide' ? JSON.stringify({ t: ending.template, p: ending.props }) : '';
+
+  useEffect(() => {
+    if (!key) {
+      setPng(null);
+      return;
+    }
+    let cancelled = false;
+    setErr(null);
+    // 키워드를 타이핑하면 글자마다 렌더가 날아간다 → 디바운스
+    const timer = setTimeout(async () => {
+      try {
+        const { t, p } = JSON.parse(key) as { t: CardTemplateId; p: Record<string, unknown> };
+        const res = await fetch('/api/cardpress/render', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ template: t, accent, props: p }),
+        });
+        if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? `렌더 ${res.status}`);
+        const blob = await res.blob();
+        if (cancelled) return;
+        if (urlRef.current) URL.revokeObjectURL(urlRef.current);
+        urlRef.current = URL.createObjectURL(blob);
+        setPng(urlRef.current);
+      } catch (e) {
+        if (!cancelled) setErr((e as Error).message);
+      }
+    }, 400);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [key, accent]);
+
+  const total = slideCount != null ? slideCount + 1 : null;
+  const over = total != null && total > 10;
+
+  return (
+    <div className="card border-dashed p-3">
+      <div className="flex items-center gap-2 flex-wrap">
+        <span className="badge bg-accent/10 text-accent">엔딩 · 자동</span>
+        <span className="text-sm font-medium">마지막 장 — {ending.label}</span>
+        {ending.kind === 'video' && <span className="badge bg-ink/5 text-ink/60">영상</span>}
+        {total != null && (
+          <span className={`text-[11px] ml-auto ${over ? 'text-amber-600' : 'text-ink/40'}`}>
+            엔딩 포함 {total}칸{over && ' — 인스타 캐러셀 10칸 초과'}
+          </span>
+        )}
+      </div>
+
+      <div className="mt-2.5 flex gap-3">
+        <button
+          onClick={onSelect}
+          disabled={!onSelect}
+          className={`w-[104px] shrink-0 overflow-hidden rounded border bg-ink/5 text-left ${
+            selected ? 'border-accent ring-2 ring-accent' : 'border-ink/10'
+          } ${onSelect ? 'cursor-pointer hover:border-ink/30' : ''}`}
+          style={{ aspectRatio: '1080 / 1350' }}
+          title="클릭하면 프리뷰 패널에 일반 카드처럼 크게 보여요"
+        >
+          {ending.kind === 'video' ? (
+            <video
+              src={ending.videoUrl}
+              poster={ending.posterUrl}
+              autoPlay
+              loop
+              muted
+              playsInline
+              className="h-full w-full object-cover"
+            />
+          ) : ending.kind === 'image' ? (
+            <img src={ending.imageUrl} alt="엔딩 카드" className="h-full w-full object-cover" />
+          ) : png ? (
+            <img src={png} alt="엔딩 카드 미리보기" className="h-full w-full object-cover" />
+          ) : (
+            <div className="grid h-full place-items-center text-[10px] text-ink/30">
+              {err ? '렌더 실패' : '렌더 중…'}
+            </div>
+          )}
+        </button>
+
+        <div className="min-w-0 text-[11px] leading-relaxed text-ink/50">
+          {onChangeCtaType && (
+            <div className="flex items-center gap-1.5 flex-wrap">
+              {(Object.keys(CTA_TYPE_LABELS) as CardCtaType[]).map((v) => (
+                <button
+                  key={v}
+                  onClick={() => onChangeCtaType(v)}
+                  className={`text-xs rounded-full px-2.5 py-1 ${
+                    ctaType === v ? 'bg-accent text-white' : 'bg-ink/5 text-ink/60 hover:bg-ink/10'
+                  }`}
+                  title="엔딩 카드와 캡션 마무리 문법을 함께 결정합니다"
+                >
+                  {CTA_TYPE_LABELS[v]}
+                </button>
+              ))}
+            </div>
+          )}
+          {ctaType === 'comment_dm' && onChangeCtaKeyword && (
+            <div className="mt-2 flex items-center gap-2 flex-wrap">
+              <span className="text-[11px] font-medium text-ink/60">댓글 키워드</span>
+              <Input
+                value={ctaKeyword}
+                onChange={(e) => onChangeCtaKeyword(e.target.value)}
+                placeholder="프롬프트"
+                className="text-sm w-32"
+              />
+              <span className="text-[11px] text-ink/40">
+                이 단어가 카드에 제일 크게 들어갑니다 (4자 이내 권장)
+              </span>
+            </div>
+          )}
+          {ctaType === 'comment_dm' && onChangeEndingProps && (
+            <div className="mt-2 flex items-center gap-2 flex-wrap">
+              <span className="text-[11px] font-medium text-ink/60">포인트색</span>
+              <input
+                type="color"
+                value={endingProps?.accentColor ?? ACCENT_HEX[accent]}
+                onChange={(e) => onChangeEndingProps({ ...endingProps, accentColor: e.target.value })}
+                className="h-6 w-8 cursor-pointer rounded border border-border p-0"
+                title="키워드·강조 색 (기본: 카테고리색)"
+              />
+              {endingProps?.accentColor && (
+                <button
+                  onClick={() => {
+                    const { accentColor: _drop, ...rest } = endingProps;
+                    onChangeEndingProps(rest);
+                  }}
+                  className="text-[11px] text-accent hover:underline"
+                >
+                  기본색으로
+                </button>
+              )}
+              {coverImage || endingProps?.image ? (
+                <>
+                  <span className="text-[11px] font-medium text-ink/60 ml-2">배경 어둡기</span>
+                  <input
+                    type="range"
+                    min={0.3}
+                    max={0.9}
+                    step={0.02}
+                    value={endingProps?.overlay ?? 0.62}
+                    onChange={(e) => onChangeEndingProps({ ...endingProps, overlay: Number(e.target.value) })}
+                    className="w-24"
+                    title="배경(커버 이미지) 위 오버레이 — 낮출수록 사진이 드러남"
+                  />
+                </>
+              ) : (
+                <span className="text-[11px] text-ink/40 ml-2">커버 이미지가 없어 다크 단색 배경이에요</span>
+              )}
+            </div>
+          )}
+          {ctaType === 'comment_dm' && onChangeEndingProps && (
+            <div className="mt-2 space-y-1.5">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-[11px] font-medium text-ink/60">배경 검색</span>
+                <Input
+                  value={bgQuery}
+                  onChange={(e) => setBgQuery(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && searchBackground()}
+                  placeholder="Unsplash 검색어 (예: dark desk moody)"
+                  className="text-sm w-60"
+                  disabled={bgBusy}
+                />
+                <button
+                  onClick={searchBackground}
+                  disabled={bgBusy || !bgQuery.trim()}
+                  className="text-xs rounded-full px-2.5 py-1 bg-accent text-white disabled:opacity-40"
+                  title="커버와 같은 Unsplash 검색 — 4:5 크롭으로 배경 적용"
+                >
+                  {bgBusy ? '검색 중…' : '검색'}
+                </button>
+                {endingProps?.image && (
+                  <button
+                    onClick={() => {
+                      const { image: _drop, ...rest } = endingProps;
+                      onChangeEndingProps(rest);
+                    }}
+                    className="text-[11px] text-accent hover:underline"
+                  >
+                    검색 배경 지우기 (커버로)
+                  </button>
+                )}
+              </div>
+              {bgResults.length > 0 && (
+                <div className="flex gap-1.5 flex-wrap">
+                  {bgResults.map((r) => (
+                    <button
+                      key={r.id}
+                      onClick={() => onChangeEndingProps({ ...endingProps, image: r.full })}
+                      className={`overflow-hidden rounded border ${
+                        endingProps?.image === r.full ? 'border-accent ring-1 ring-accent' : 'border-ink/10 hover:border-ink/30'
+                      }`}
+                      style={{ width: 44, aspectRatio: '1080 / 1350' }}
+                      title="클릭하면 엔딩 배경으로 적용"
+                    >
+                      <img src={r.thumb} alt="배경 후보" className="h-full w-full object-cover" />
+                    </button>
+                  ))}
+                </div>
+              )}
+              {bgErr && <p className="text-[11px] text-red-600">{bgErr}</p>}
+            </div>
+          )}
+          <p className="mt-1.5">{ending.note}</p>
+          <p className="mt-1 text-ink/40">
+            이 자리는 <b className="text-ink/60">항상 맨 마지막</b>입니다. 슬라이드로 저장되지 않고 발행·zip 때
+            {ending.kind === 'video' ? ' 캐러셀 영상 칸으로 ' : ' 이미지로 '}
+            붙어요 — 유형을 바꾸면 이 카드도 바뀌고, <b className="text-ink/60">[저장]</b>을 눌러야 발행에 반영됩니다.
+          </p>
+          {over && (
+            <p className="mt-1 text-amber-600">
+              슬라이드를 {total - 10}장 꺼야 인스타 발행이 됩니다 (엔딩은 항상 붙습니다).
+            </p>
+          )}
+          {err && <p className="mt-1 text-red-600">{err}</p>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── 발행 패널 — 렌더→버킷 업로드 검수 → 채널 선택 → 원클릭 발행 / zip 백업 ──
+function PublishPanel({ card, dirty }: { card: CardRow; dirty: boolean }) {
+  const router = useRouter();
+  const [channels, setChannels] = useState<{ instagram: boolean; threads: boolean }>({
+    instagram: true,
+    threads: true,
+  });
+  const [busy, setBusy] = useState<'check' | 'prepare' | 'publish' | 'phone' | null>(null);
+  const [images, setImages] = useState<string[]>([]);
+  const [ending, setEnding] = useState<{ kind: string; label: string; url: string | null } | null>(null);
+  const [errors, setErrors] = useState<string[]>([]);
+  const [priceWarn, setPriceWarn] = useState<string | null>(null);
+  const [phoneLink, setPhoneLink] = useState<{ url: string; count: number } | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  // 발행 직전 가격 재검증 — 수집 후 소스 사이트에서 가격이 바뀐 걸 저장본만 믿고 내보내는 사고 방지.
+  // 경고만 하고 발행은 막지 않는다 (사이트 다운·JS 렌더면 '확인 불가'로 통과).
+  async function checkPrices(): Promise<string | null> {
+    setBusy('check');
+    try {
+      const res = await fetch('/api/cardpress/price-check', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ cardId: card.id }),
+      });
+      const pc = await res.json();
+      if (!res.ok || !pc.applicable) return null;
+      if (pc.error) return `가격 확인 불가 — ${pc.error}`;
+      if (pc.mismatches?.length)
+        return `가격 불일치 — 카드에는 ${pc.mismatches.join(', ')}, 소스 사이트 현재 표기는 ${(pc.livePrices ?? []).join(', ')}`;
+      return null;
+    } catch {
+      return '가격 확인 불가 — 요청 실패';
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function call(dryRun: boolean) {
+    if (dirty) return alert('저장 안 된 수정이 있어요. 먼저 [저장]을 눌러주세요.');
+    if (!dryRun) {
+      const picked = Object.entries(channels).filter(([, v]) => v).map(([k]) => k);
+      if (picked.length === 0) return alert('발행 채널을 선택하세요.');
+      const warn = await checkPrices();
+      setPriceWarn(warn);
+      const head = warn ? `⚠️ ${warn}\n이대로 발행하면 틀린 가격이 게시될 수 있어요.\n\n` : '';
+      if (!confirm(`${head}선택한 채널(${picked.join(', ')})에 즉시 게시됩니다. 발행할까요?`)) return;
+    }
+    setBusy(dryRun ? 'prepare' : 'publish');
+    setErrors([]);
+    try {
+      const res = await fetch('/api/cardpress/publish', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          cardId: card.id,
+          dryRun,
+          channels: Object.entries(channels).filter(([, v]) => v).map(([k]) => k),
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? `HTTP ${res.status}`);
+      setImages(data.images ?? []);
+      setEnding(data.ending ?? null);
+      if (data.errors) setErrors(data.errors);
+      if (!dryRun && !data.errors) router.refresh();
+    } catch (e) {
+      setErrors([(e as Error).message]);
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  // 폰에서 직접 올려야 할 때 — 카드를 렌더·업로드하고, 폰에서 열 링크를 만든다.
+  // (인스타 DM API로 보내는 방식은 Meta가 웹훅을 막아 불가 — 런북 10장 E 참고)
+  async function makePhoneLink() {
+    if (dirty) return alert('저장 안 된 수정이 있어요. 먼저 [저장]을 눌러주세요.');
+    setBusy('phone');
+    setErrors([]);
+    setPhoneLink(null);
+    setCopied(false);
+    try {
+      const res = await fetch('/api/cardpress/handoff', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ cardId: card.id }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? `HTTP ${res.status}`);
+      // localhost 링크는 폰에서 자기 자신을 가리켜 안 열린다 → 서버가 준 LAN 주소를 우선 쓴다.
+      const origin = data.lanOrigin ?? window.location.origin;
+      setPhoneLink({ url: `${origin}${data.path}`, count: data.count });
+    } catch (e) {
+      setErrors([(e as Error).message]);
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  return (
+    <div className="card p-4 space-y-3">
+      <div className="text-sm font-semibold">발행</div>
+      <div className="flex items-center gap-4 text-sm">
+        {(['instagram', 'threads'] as const).map((ch) => (
+          <label key={ch} className="flex items-center gap-1.5">
+            <input
+              type="checkbox"
+              checked={channels[ch]}
+              onChange={() => setChannels((p) => ({ ...p, [ch]: !p[ch] }))}
+            />
+            {ch === 'instagram' ? 'Instagram 캐러셀+캡션' : 'Threads 글+링크+커버'}
+          </label>
+        ))}
+      </div>
+      <div className="flex items-center gap-2 flex-wrap">
+        <Button size="sm" variant="outline" onClick={() => call(true)} disabled={busy !== null}>
+          {busy === 'prepare' ? '렌더·업로드 중…' : '1) PNG 업로드 검수'}
+        </Button>
+        <Button size="sm" variant="accent" onClick={() => call(false)} disabled={busy !== null}>
+          {busy === 'check' ? '가격 확인 중…' : busy === 'publish' ? '발행 중…' : '2) 발행'}
+        </Button>
+        <a
+          href={`/api/cardpress/zip?cardId=${card.id}`}
+          className="text-xs text-accent hover:underline"
+          download
+        >
+          zip 다운로드 (수동 업로드 백업)
+        </a>
+        <button
+          type="button"
+          onClick={makePhoneLink}
+          disabled={busy !== null}
+          className="text-xs text-accent hover:underline disabled:opacity-50 disabled:no-underline"
+        >
+          {busy === 'phone' ? '카드 준비 중…' : '폰으로 보내기 (직접 업로드용 링크)'}
+        </button>
+      </div>
+      {phoneLink && (
+        <div className="rounded-lg bg-ink/5 p-3 space-y-2">
+          <p className="text-xs text-ink/60">
+            카드 {phoneLink.count}장 준비됨 — 이 링크를 폰으로 옮기세요(카톡 &lsquo;나에게 보내기&rsquo; 등).
+            폰에서 이미지를 꾹 눌러 저장하고 캡션은 버튼으로 복사합니다.
+          </p>
+          <div className="flex items-center gap-2">
+            <input
+              readOnly
+              value={phoneLink.url}
+              onFocus={(e) => e.currentTarget.select()}
+              className="flex-1 rounded border border-ink/15 bg-white px-2 py-1 text-xs"
+            />
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => {
+                navigator.clipboard.writeText(phoneLink.url);
+                setCopied(true);
+                setTimeout(() => setCopied(false), 1800);
+              }}
+            >
+              {copied ? '복사됨 ✓' : '복사'}
+            </Button>
+          </div>
+          {phoneLink.url.includes('://192.') || phoneLink.url.includes('://10.') ? (
+            <p className="text-[11px] text-ink/40">
+              같은 와이파이에 있는 폰에서만 열립니다 (로컬 dev 서버 주소).
+            </p>
+          ) : null}
+        </div>
+      )}
+      {images.length > 0 && (
+        <p className="text-xs text-ink/60">
+          업로드된 슬라이드 {images.length}장 —{' '}
+          {images.map((u, i) => (
+            <a key={u} href={u} target="_blank" rel="noreferrer" className="text-accent hover:underline mr-1">
+              {i + 1}
+            </a>
+          ))}
+          (클릭해서 실물 확인)
+          {ending?.url && (
+            <>
+              {' · 엔딩 '}
+              <a href={ending.url} target="_blank" rel="noreferrer" className="text-accent hover:underline">
+                {ending.kind === 'video' ? '영상' : '이미지'}
+              </a>
+              {` (${ending.label})`}
+            </>
+          )}
+        </p>
+      )}
+      {priceWarn && (
+        <p className="text-xs text-amber-600">
+          ⚠️ {priceWarn} — 소스 사이트를 열어 확인하고 카드 가격을 맞춰주세요.
+        </p>
+      )}
+      {errors.map((e, i) => (
+        <p key={i} className="text-xs text-red-600">{e}</p>
+      ))}
+      {card.published_to.length > 0 && (
+        <p className="text-xs text-ink/40">
+          발행 이력: {card.published_to.map((p) => `${p.channel} (${p.at.slice(0, 16).replace('T', ' ')})`).join(' · ')}
+        </p>
+      )}
+    </div>
+  );
+}
+
+// ── 라이브 캔버스 — 템플릿을 브라우저에서 직접 렌더(근사), 그 위에서 편집 ──
+// 클릭한 텍스트 조각 → 그 텍스트가 들어있는 prop 필드를 역추적(가장 긴 값 우선).
+// 사진(data-bg) 드래그 = 배경 위치 팬, 트레이 드롭 = 이미지 배치. 최종 실물은 PNG 토글로 확인.
+function LiveSlide({
+  slide,
+  accent,
+  onEditProp,
+  onSelectText,
+  onDropImage,
+  onPan,
+}: {
+  slide: CardSlide;
+  accent: CardAccent;
+  onEditProp: (key: string, rect: { x: number; y: number; w: number; h: number }) => void;
+  /** 텍스트 드래그 선택 → 형광펜/강조 미니 툴바 */
+  onSelectText: (info: { text: string; key: string; rect: { x: number; y: number; w: number; h: number } }) => void;
+  onDropImage: (url: string) => void;
+  onPan: (pos: string) => void;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [w, setW] = useState(0);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => setW(el.clientWidth));
+    ro.observe(el);
+    setW(el.clientWidth);
+    return () => ro.disconnect();
+  }, []);
+  const scale = w > 0 ? w / 1080 : 0;
+  const pan = useRef<{ x0: number; y0: number; px: number; py: number; moved: boolean } | null>(null);
+  const justPanned = useRef(false); // 팬 종료 직후의 click을 텍스트 편집으로 오인하지 않게
+
+  const parsed = RenderSlideSchema.safeParse({ template: slide.template, accent, props: slide.props });
+
+  function posOf(): [number, number] {
+    const m = typeof slide.props.coverPos === 'string' ? slide.props.coverPos.match(/([\d.]+)%\s+([\d.]+)%/) : null;
+    return m ? [parseFloat(m[1]), parseFloat(m[2])] : [50, 50];
+  }
+
+  function onMouseDown(e: React.MouseEvent) {
+    downPos.current = { x: e.clientX, y: e.clientY };
+    const t = e.target as HTMLElement;
+    if (!t.closest('[data-bg]')) return;
+    const [px, py] = posOf();
+    pan.current = { x0: e.clientX, y0: e.clientY, px, py, moved: false };
+    e.preventDefault();
+  }
+  function onMouseMove(e: React.MouseEvent) {
+    if (!pan.current || w === 0) return;
+    const dx = ((e.clientX - pan.current.x0) / w) * 100;
+    const dy = ((e.clientY - pan.current.y0) / (w * 1.25)) * 100;
+    if (Math.abs(dx) + Math.abs(dy) > 1) {
+      pan.current.moved = true;
+      justPanned.current = true;
+    }
+    const nx = Math.min(100, Math.max(0, pan.current.px - dx));
+    const ny = Math.min(100, Math.max(0, pan.current.py - dy));
+    if (pan.current.moved) onPan(`${nx.toFixed(1)}% ${ny.toFixed(1)}%`);
+  }
+  // 텍스트 조각 → 소유 prop 필드 역추적 (가장 긴 값 = 상위 필드 우선)
+  function findOwnerField(text: string): FieldDef | null {
+    const defs = FIELDS[slide.template];
+    let best: FieldDef | null = null;
+    let bestLen = -1;
+    for (const d of defs) {
+      const v = fieldToText((slide.props as Record<string, unknown>)[d.key], d)
+        .replace(/\*\*/g, '')
+        .replace(/==/g, '')
+        .replace(/\s+/g, ' ');
+      if (v && v.includes(text) && v.length > bestLen) {
+        best = d;
+        bestLen = v.length;
+      }
+    }
+    return best;
+  }
+
+  // 클릭 지점 근처의 텍스트 리프 탐색 — Satori 규격 박스(고정 lineHeight·자간)와 브라우저 글리프가
+  // 어긋나서 "글자 바로 위" 클릭이 컨테이너에 떨어지던 문제(운영자: 옆·위로 옮겨야 편집이 열림).
+  // 정확히 맞은 게 없으면 반경 안에서 가장 가까운 텍스트 조각을 대신 잡는다.
+  function nearestTextEl(x: number, y: number): HTMLElement | null {
+    const root = ref.current;
+    if (!root) return null;
+    let best: HTMLElement | null = null;
+    let bestDist = 28; // 화면 px 허용 반경
+    for (const el of root.querySelectorAll<HTMLElement>('div,span')) {
+      if (el.childElementCount > 0) continue; // 리프만 — 컨테이너는 여러 필드를 합쳐 역추적이 안 된다
+      const txt = (el.textContent ?? '').trim();
+      if (!txt) continue;
+      const r = el.getBoundingClientRect();
+      const dx = x < r.left ? r.left - x : x > r.right ? x - r.right : 0;
+      const dy = y < r.top ? r.top - y : y > r.bottom ? y - r.bottom : 0;
+      const d = Math.hypot(dx, dy);
+      if (d < bestDist) {
+        bestDist = d;
+        best = el;
+      }
+    }
+    return best;
+  }
+
+  const justSelected = useRef(false);
+  const downPos = useRef<{ x: number; y: number } | null>(null);
+  const pendingEdit = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => { if (pendingEdit.current) clearTimeout(pendingEdit.current); }, []);
+
+  // 선택 읽기는 이벤트 한 틱 뒤에 (Safari는 mouseup 시점에 selection이 아직 확정 전일 수 있음)
+  function readSelection() {
+    setTimeout(() => {
+      const selObj = window.getSelection();
+      if (!selObj || selObj.isCollapsed || !ref.current?.contains(selObj.anchorNode)) return;
+      const text = selObj.toString().trim().replace(/\s+/g, ' ');
+      if (!text) return;
+      const owner = findOwnerField(text);
+      if (!owner) return;
+      // 선택이 확정됐으면 예약된 클릭 편집은 취소 — 선택 UX가 우선
+      if (pendingEdit.current) {
+        clearTimeout(pendingEdit.current);
+        pendingEdit.current = null;
+      }
+      const rr = selObj.getRangeAt(0).getBoundingClientRect();
+      const cr = ref.current.getBoundingClientRect();
+      justSelected.current = true;
+      onSelectText({
+        text,
+        key: owner.key,
+        rect: { x: rr.left - cr.left, y: rr.top - cr.top, w: rr.width, h: rr.height },
+      });
+    }, 0);
+  }
+
+  function onMouseUp() {
+    pan.current = null;
+    readSelection();
+  }
+
+  function onClick(e: React.MouseEvent) {
+    if (justPanned.current) {
+      justPanned.current = false;
+      return;
+    }
+    if (justSelected.current) {
+      justSelected.current = false;
+      return;
+    }
+    // 드래그(선택 시도)였으면 클릭 편집을 열지 않는다
+    if (downPos.current && Math.hypot(e.clientX - downPos.current.x, e.clientY - downPos.current.y) > 4) return;
+    const selObj = window.getSelection();
+    if (selObj && !selObj.isCollapsed) return;
+    let t = e.target as HTMLElement;
+    let text = (t.textContent ?? '').trim().replace(/\s+/g, ' ');
+    let best = text ? findOwnerField(text) : null;
+    // 직격이 아니면 근접 텍스트로 폴백 — 배경(data-bg) 위여도 글자 근처면 편집을 연다
+    if (!best) {
+      const near = nearestTextEl(e.clientX, e.clientY);
+      if (!near) return;
+      t = near;
+      text = (t.textContent ?? '').trim().replace(/\s+/g, ' ');
+      best = text ? findOwnerField(text) : null;
+      if (!best) return;
+    }
+    const cr = ref.current!.getBoundingClientRect();
+    const tr = t.getBoundingClientRect();
+    const rect = { x: tr.left - cr.left, y: tr.top - cr.top, w: tr.width, h: tr.height };
+    // 클릭 편집은 200ms 유예 — 그 사이 더블클릭 선택이 감지되면 취소되고 팔레트가 뜬다
+    if (pendingEdit.current) clearTimeout(pendingEdit.current);
+    pendingEdit.current = setTimeout(() => {
+      pendingEdit.current = null;
+      onEditProp(best.key, rect);
+    }, 200);
+  }
+
+  return (
+    <div
+      ref={ref}
+      className="relative w-full rounded-lg overflow-hidden border border-border bg-ink/5 cursor-text"
+      style={{ aspectRatio: '4 / 5', userSelect: 'text', WebkitUserSelect: 'text' }}
+      onClick={onClick}
+      onDoubleClick={readSelection}
+      onMouseDown={onMouseDown}
+      onMouseMove={onMouseMove}
+      onMouseUp={onMouseUp}
+      onMouseLeave={() => { pan.current = null; }}
+      onDragOver={(e) => e.preventDefault()}
+      onDrop={(e) => {
+        e.preventDefault();
+        const url = e.dataTransfer.getData('text/plain');
+        if (url.startsWith('http')) onDropImage(url);
+      }}
+      title="텍스트 클릭=수정 · 사진 드래그=위치 · 트레이에서 끌어다 놓기=배치"
+    >
+      {scale > 0 && parsed.success ? (
+        <div style={{ width: 1080, height: 1350, transform: `scale(${scale})`, transformOrigin: 'top left', fontFamily: "'Pretendard','Apple SD Gothic Neo',sans-serif", userSelect: 'text', WebkitUserSelect: 'text' }}>
+          {renderSlide(parsed.data)}
+        </div>
+      ) : (
+        <div className="absolute inset-0 flex items-center justify-center text-xs text-red-500 p-4 text-center">
+          {parsed.success ? '' : '슬라이드 데이터 오류 — 편집 폼에서 수정하세요'}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── 그리드 뷰 썸네일 — 렌더 PNG를 키(템플릿+props)로 캐시 ──
+const thumbCache = new Map<string, string>();
+
+function SlideThumb({ slide, accent, label, selected, onClick }: {
+  slide: CardSlide; accent: CardAccent; label: string; selected: boolean; onClick: () => void;
+}) {
+  const key = JSON.stringify({ t: slide.template, a: accent, p: slide.props });
+  const [url, setUrl] = useState<string | null>(thumbCache.get(key) ?? null);
+  const [err, setErr] = useState(false);
+
+  useEffect(() => {
+    if (thumbCache.has(key)) { setUrl(thumbCache.get(key)!); return; }
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch('/api/cardpress/render', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ template: slide.template, accent, props: slide.props }),
+        });
+        if (!res.ok) throw new Error();
+        const objectUrl = URL.createObjectURL(await res.blob());
+        thumbCache.set(key, objectUrl);
+        if (!cancelled) setUrl(objectUrl);
+      } catch {
+        if (!cancelled) setErr(true);
+      }
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key]);
+
+  return (
+    <button
+      onClick={onClick}
+      className={`relative rounded-md overflow-hidden border ${selected ? 'border-accent ring-1 ring-accent' : 'border-border'} bg-ink/5`}
+      style={{ aspectRatio: '4 / 5' }}
+      title={`${label}번 슬라이드`}
+    >
+      {url ? (
+        <img src={url} alt="" className="w-full h-full object-cover" />
+      ) : (
+        <span className="absolute inset-0 flex items-center justify-center text-[10px] text-ink/40">{err ? '오류' : '…'}</span>
+      )}
+      <span className="absolute top-1 left-1 text-[10px] font-bold text-white bg-black/50 rounded px-1">{label}</span>
+    </button>
+  );
+}
+
+// ── 슬라이드 추가 — ① 빈 슬라이드(템플릿을 모양으로 골라 즉시) ② 매핑 계획 섹션 → AI 단건 작성 ──
+function AddSlidePanel({ sourceType, sourceId, accent, fallbackImage, onAdd }: {
+  sourceType: CardRow['source_type'];
+  sourceId: string;
+  accent: CardAccent;
+  fallbackImage?: string;
+  onAdd: (slide: Pick<CardSlide, 'template' | 'props' | 'sourceSection'>) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [plan, setPlan] = useState<Array<{ template: CardTemplateId; sourceSection: string; alternatives: CardTemplateId[]; materialPreview: string }> | null>(null);
+  const [pick, setPick] = useState('');
+  const [template, setTemplate] = useState<CardTemplateId | ''>('');
+  const [busy, setBusy] = useState(false);
+  /** 시각 피커 — 'blank'는 빈 슬라이드 추가, 'ai'는 AI 작성에 쓸 템플릿 고르기 */
+  const [picker, setPicker] = useState<'blank' | 'ai' | null>(null);
+
+  async function openPanel() {
+    setOpen(true);
+    if (plan) return;
+    try {
+      const res = await fetch(`/api/cardpress/plan?sourceId=${sourceId}&sourceType=${sourceType}`);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? `HTTP ${res.status}`);
+      setPlan(data.slides);
+    } catch (e) {
+      alert(`계획 조회 실패: ${(e as Error).message}`);
+      setOpen(false);
+    }
+  }
+
+  const picked = plan?.find((p) => p.sourceSection === pick);
+
+  async function create() {
+    if (!picked) return;
+    setBusy(true);
+    try {
+      const res = await fetch('/api/cardpress/rewrite-slide', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ sourceType, sourceId, sourceSection: picked.sourceSection, template: template || picked.template }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? `HTTP ${res.status}`);
+      onAdd({ template: data.slide.template, props: data.slide.props, sourceSection: picked.sourceSection });
+      setOpen(false);
+      setPick('');
+      setTemplate('');
+    } catch (e) {
+      alert(`슬라이드 작성 실패: ${(e as Error).message}`);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="px-3 py-2.5">
+      <div className="flex items-center gap-3 flex-wrap">
+        <button onClick={() => setPicker('blank')} className="text-xs text-accent hover:underline">
+          + 빈 슬라이드 추가 <span className="text-ink/40">(템플릿을 모양으로 고르고 바로 편집)</span>
+        </button>
+        {!open && (
+          <button onClick={openPanel} className="text-xs text-accent hover:underline">
+            + AI로 작성해 추가 <span className="text-ink/40">(빠뜨린 본문 섹션에서)</span>
+          </button>
+        )}
+      </div>
+      {open &&
+        (!plan ? (
+          <p className="text-xs text-ink/40 mt-2">계획 불러오는 중…</p>
+        ) : (
+          <div className="space-y-2 mt-2">
+            <Label className="text-xs">본문 섹션 선택</Label>
+            <select
+              className="w-full text-sm border border-border rounded-md px-2 py-1.5 bg-transparent"
+              value={pick}
+              onChange={(e) => { setPick(e.target.value); setTemplate(''); }}
+            >
+              <option value="">— 섹션 —</option>
+              {plan.map((p) => (
+                <option key={p.sourceSection} value={p.sourceSection}>
+                  [{p.template}] {p.sourceSection} · {p.materialPreview.slice(0, 40)}
+                </option>
+              ))}
+            </select>
+            {picked && (
+              <div className="flex items-center gap-1.5 flex-wrap text-xs">
+                <span className="text-ink/40">템플릿:</span>
+                <span className="rounded px-1.5 py-0.5 bg-accent text-white">{TEMPLATE_LABEL[template || picked.template]}</span>
+                <button onClick={() => setPicker('ai')} className="text-accent hover:underline">
+                  모양 보고 바꾸기
+                </button>
+              </div>
+            )}
+            <div className="flex justify-end gap-2">
+              <Button size="sm" variant="outline" onClick={() => setOpen(false)}>취소</Button>
+              <Button size="sm" variant="accent" onClick={create} disabled={!picked || busy}>
+                {busy ? 'AI 작성 중… (수 분 소요)' : 'AI로 작성해 추가'}
+              </Button>
+            </div>
+          </div>
+        ))}
+
+      {picker && (
+        <CardTemplatePicker
+          open
+          onOpenChange={(v) => !v && setPicker(null)}
+          accent={accent}
+          fallbackImage={fallbackImage}
+          recommended={picked ? [picked.template, ...picked.alternatives] : []}
+          title={picker === 'blank' ? '빈 슬라이드 — 템플릿 고르기' : 'AI로 쓸 템플릿 고르기'}
+          onPick={(r) => {
+            if (picker === 'blank') {
+              // AI 없이 즉시 추가 — 문구는 자리표시(샘플)라 바로 [편집]에서 갈아끼우면 된다
+              onAdd({ template: r.template, props: r.props });
+            } else {
+              setTemplate(r.template);
+            }
+            setPicker(null);
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+// ── 인라인 편집 폼 (+ AI 수정: 방향 입력 → 초안 3개 비교 → 폼에 반영) ──────────
+function SlideForm({
+  slide,
+  accent,
+  sourceType,
+  sourceId,
+  onApply,
+  onCancel,
+}: {
+  slide: CardSlide;
+  accent: CardAccent;
+  sourceType: CardRow['source_type'];
+  sourceId: string;
+  onApply: (form: Record<string, string>) => void;
+  onCancel: () => void;
+}) {
+  const defs = FIELDS[slide.template];
+  const [form, setForm] = useState<Record<string, string>>(() =>
+    Object.fromEntries(defs.map((d) => [d.key, fieldToText((slide.props as Record<string, unknown>)[d.key], d)]))
+  );
+  const [instruction, setInstruction] = useState('');
+  const [aiBusy, setAiBusy] = useState(false);
+  const [candidates, setCandidates] = useState<Array<Record<string, unknown>> | null>(null);
+  const [pickedCand, setPickedCand] = useState<number | null>(null);
+
+  async function fetchCandidates() {
+    if (!slide.sourceSection) return alert('sourceSection이 없어 AI 수정을 쓸 수 없어요.');
+    if (!instruction.trim()) return alert('수정 방향을 먼저 적어주세요. (예: "숫자를 앞세워 더 도발적으로")');
+    setAiBusy(true);
+    setCandidates(null);
+    setPickedCand(null);
+    try {
+      const res = await fetch('/api/cardpress/rewrite-slide', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          sourceType,
+          sourceId,
+          sourceSection: slide.sourceSection,
+          template: slide.template,
+          instruction: instruction.trim(),
+          currentProps: formToProps(slide.template, slide.props, form),
+          count: 3,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? `HTTP ${res.status}`);
+      setCandidates(data.candidates ?? []);
+    } catch (e) {
+      alert(`AI 초안 실패: ${(e as Error).message}`);
+    } finally {
+      setAiBusy(false);
+    }
+  }
+
+  function pickCandidate(i: number) {
+    if (!candidates) return;
+    const props = candidates[i];
+    setForm(Object.fromEntries(defs.map((d) => [d.key, fieldToText(props[d.key], d)])));
+    setPickedCand(i);
+  }
+
+  return (
+    <div className="mt-2 space-y-2 border-t border-border pt-2">
+      {/* AI 수정 — 방향 제시 → 서로 다른 초안 3개 → 골라서 폼에 반영 → 다듬어 적용 */}
+      <div className="rounded-md bg-accent/5 border border-accent/20 p-2 space-y-2">
+        <div className="flex items-center gap-2">
+          <Input
+            value={instruction}
+            onChange={(e) => setInstruction(e.target.value)}
+            placeholder='AI 수정 방향 (예: "숫자를 앞세워 더 도발적으로", "더 담백하게")'
+            className="text-sm"
+            onKeyDown={(e) => e.key === 'Enter' && !aiBusy && fetchCandidates()}
+          />
+          <Button size="sm" variant="outline" onClick={fetchCandidates} disabled={aiBusy}>
+            {aiBusy ? '초안 생성 중… (1~3분)' : '초안 3개'}
+          </Button>
+        </div>
+        {candidates && candidates.length > 0 && (
+          <div className="flex gap-2">
+            {candidates.map((c, i) => (
+              <div key={i} className="flex flex-col items-center gap-1">
+                <SlideThumb
+                  slide={{ ...slide, props: c }}
+                  accent={accent}
+                  label={`${i + 1}안`}
+                  selected={pickedCand === i}
+                  onClick={() => pickCandidate(i)}
+                />
+                <span className="text-[10px] text-ink/40">{pickedCand === i ? '반영됨 ↓' : '클릭=폼에 반영'}</span>
+              </div>
+            ))}
+          </div>
+        )}
+        {candidates && candidates.length === 0 && <p className="text-xs text-ink/40">후보가 없어요 — 방향을 바꿔 다시 시도해 보세요.</p>}
+      </div>
+
+      {defs.map((d) => (
+        <div key={d.key}>
+          <Label className="text-xs">{d.label}{d.hint && <span className="text-ink/40"> · {d.hint}</span>}</Label>
+          {d.kind === 'input' || d.kind === 'pair-single' ? (
+            <Input className="mt-1" value={form[d.key]} onChange={(e) => setForm((p) => ({ ...p, [d.key]: e.target.value }))} />
+          ) : (
+            <Textarea className="mt-1" rows={d.kind === 'textarea' ? 2 : 4} value={form[d.key]} onChange={(e) => setForm((p) => ({ ...p, [d.key]: e.target.value }))} />
+          )}
+        </div>
+      ))}
+      <div className="flex justify-end gap-2">
+        <Button size="sm" variant="outline" onClick={onCancel}>취소</Button>
+        <Button size="sm" variant="accent" onClick={() => onApply(form)}>적용</Button>
+      </div>
+    </div>
+  );
+}
+
+// ── 사진 출처 표기 ──────────────────────────────────────────
+// Unsplash는 API 약관상 사진가 표기가 의무이고, 원본 콘텐츠에서 긁어온 사진은 남의 저작물이다.
+// 캡션 마무리(CTA) 교체기 — 문구 정의는 lib/cardpress/cta-endings.ts (생성 프롬프트와 공유).
+//
+// 왜 필요한가: AI가 쓴 마무리가 어긋나는 일이 잦다. 실제로 도구 소개 카드에 "원본 링크에서
+// 확인해보세요"가 붙어 나갔는데, 인스타 캡션의 URL은 클릭이 안 돼 갈 곳 없는 CTA였다.
+// 매번 손으로 고쳐 쓰면 톤이 흔들리므로, 검증된 후보를 한 번에 갈아끼운다.
+//
+// 교체 규칙: 캡션 = 본문 + 해시태그 줄. 본문의 **마지막 문단**을 마무리로 보고 그것만 바꾼다
+// (해시태그는 그대로 유지). 마무리가 여러 문단이면 사람이 직접 손보는 게 맞다.
+function splitCaptionTail(caption: string): { body: string; tags: string } {
+  const lines = caption.trimEnd().split('\n');
+  const tagLines: string[] = [];
+  while (lines.length && (lines[lines.length - 1].trim().startsWith('#') || !lines[lines.length - 1].trim())) {
+    const line = lines.pop() as string;
+    if (line.trim()) tagLines.unshift(line);
+  }
+  return { body: lines.join('\n').trimEnd(), tags: tagLines.join('\n') };
+}
+
+// preview 모드 = 만들기 화면용. 아직 캡션이 없어 적용할 대상이 없으므로 "어떤 문장이 나올지"만 보여준다
+// (CTA 유형을 고르는 자리에서 결과를 못 보면 이름만 보고 찍게 된다).
+function CtaEndingPicker({
+  ctaType,
+  caption,
+  onApply,
+  preview,
+}: {
+  ctaType: CardCtaType;
+  caption?: string;
+  onApply?: (next: string) => void;
+  preview?: boolean;
+}) {
+  const endings = CTA_ENDINGS[ctaType];
+  if (!endings.length)
+    return (
+      <p className="mt-1.5 text-[11px] text-ink/40">
+        {preview
+          ? '댓글→DM 유형은 마무리가 댓글 키워드로 조립돼요 — 위 키워드가 그대로 문장에 들어갑니다.'
+          : '댓글→DM 유형은 마무리가 키워드로 조립돼요 — 후보 대신 위 캡션에서 직접 손보세요.'}
+      </p>
+    );
+
+  const { body, tags } = splitCaptionTail(caption ?? '');
+  const paras = body.split(/\n{2,}/);
+  const current = paras[paras.length - 1] ?? '';
+
+  const apply = (text: string) => {
+    if (!onApply) return;
+    const kept = paras.slice(0, -1).join('\n\n').trimEnd();
+    onApply([kept, text].filter(Boolean).join('\n\n') + (tags ? `\n\n${tags}` : ''));
+  };
+
+  return (
+    <div className="mt-1.5 rounded-md border border-ink/10 bg-ink/[0.02] p-2.5">
+      <div className="flex items-baseline gap-2 flex-wrap">
+        <span className="text-[11px] font-medium text-ink/60">
+          {preview ? '이 유형의 마무리 문장' : '마무리 후보'}
+        </span>
+        <span className="text-[11px] text-ink/40">{CTA_TYPE_HINTS[ctaType]}</span>
+      </div>
+      {!preview && (
+        <p className="mt-1 text-[11px] text-ink/35 line-clamp-2">
+          지금 마무리: {current.replace(/\n+/g, ' ') || '(없음)'}
+        </p>
+      )}
+      <div className="mt-2 grid gap-1.5">
+        {endings.map((e) =>
+          preview ? (
+            <div key={e.label} className="rounded border border-ink/10 bg-white px-2.5 py-2">
+              <div className="flex items-baseline gap-1.5">
+                <span className="text-[11px] font-medium text-ink/70">{e.label}</span>
+                <span className="text-[10px] text-ink/40">{e.when}</span>
+              </div>
+              <p className="mt-0.5 text-[11px] leading-relaxed text-ink/55 whitespace-pre-line">{e.text}</p>
+            </div>
+          ) : (
+            <button
+              key={e.label}
+              onClick={() => apply(e.text)}
+              className="text-left rounded border border-ink/10 bg-white px-2.5 py-2 hover:border-accent/50 hover:bg-accent/[0.03]"
+            >
+              <div className="flex items-baseline gap-1.5">
+                <span className="text-[11px] font-medium text-ink/70">{e.label}</span>
+                <span className="text-[10px] text-ink/40">{e.when}</span>
+              </div>
+              <p className="mt-0.5 text-[11px] leading-relaxed text-ink/55 whitespace-pre-line">{e.text}</p>
+            </button>
+          )
+        )}
+      </div>
+      <p className="mt-1.5 text-[10px] text-ink/35">
+        {preview
+          ? 'AI가 이 문장들을 본보기 삼아 소재에 맞게 변주합니다. 생성 후 검수 화면에서 원클릭 교체도 됩니다.'
+          : '누르면 캡션의 마지막 문단만 교체합니다 (해시태그는 유지).'}
+      </p>
+    </div>
+  );
+}
+
+// 지금 카드에 실제로 깔린 사진만 계산해 보여주고, 캡션·스레드 글에 한 번에 넣는다(중복 삽입은 교체).
+function PhotoCreditPanel({
+  credits,
+  igCaption,
+  threadsText,
+  onInsertCaption,
+  onInsertThreads,
+}: {
+  credits: PhotoCredit[];
+  igCaption: string;
+  threadsText: string;
+  onInsertCaption: (next: string) => void;
+  onInsertThreads: (next: string) => void;
+}) {
+  const captionBlock = creditBlock(credits, false);
+  const threadsBlock = creditBlock(credits, true); // 스레드는 링크가 눌리므로 프로필 URL 포함
+  if (credits.length === 0) {
+    // 사진을 갈아끼워 표기 대상이 사라졌는데 캡션엔 옛 출처가 남아 있을 수 있다 — 지우는 건 운영자 판단
+    const stale = stripCreditBlock(igCaption) !== igCaption || stripCreditBlock(threadsText) !== threadsText;
+    return stale ? (
+      <div className="rounded-md border border-amber-300 bg-amber-50 p-2.5 flex items-center gap-2 flex-wrap">
+        <span className="text-[11px] text-amber-700">표기할 외부 사진이 없는데 글에 사진 출처가 남아 있어요.</span>
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={() => { onInsertCaption(stripCreditBlock(igCaption)); onInsertThreads(stripCreditBlock(threadsText)); }}
+        >
+          출처 줄 지우기
+        </Button>
+      </div>
+    ) : (
+      <p className="text-[11px] text-ink/30">
+        사진 출처: 표기할 외부 사진이 없어요 (본가 본문 이미지만 쓰는 중).
+      </p>
+    );
+  }
+  const inCaption = hasCreditBlock(igCaption, captionBlock);
+  const inThreads = hasCreditBlock(threadsText, threadsBlock);
+  return (
+    <div className="rounded-md border border-border p-2.5 space-y-2">
+      <div className="flex items-center gap-2 flex-wrap">
+        <span className="text-xs font-semibold">사진 출처 {credits.length}건</span>
+        {!inCaption && <span className="text-[11px] text-amber-600">캡션에 아직 안 들어갔어요</span>}
+      </div>
+      <ul className="text-[11px] text-ink/60 space-y-0.5">
+        {credits.map((c) => (
+          <li key={`${c.source}:${c.credit}`} className="truncate">
+            <span className={`badge mr-1 ${c.source === 'unsplash' ? 'bg-ink/5 text-ink/60' : 'bg-amber-100 text-amber-700'}`}>
+              {c.source === 'unsplash' ? 'Unsplash' : '웹 출처'}
+            </span>
+            {c.credit}
+            {c.source === 'web' && <span className="text-ink/30"> · 인용 표기 필요</span>}
+          </li>
+        ))}
+      </ul>
+      <pre className="text-[11px] bg-ink/5 rounded p-2 whitespace-pre-wrap break-all">{captionBlock}</pre>
+      <div className="flex items-center gap-2 flex-wrap">
+        <Button size="sm" variant="outline" onClick={() => onInsertCaption(upsertCreditBlock(igCaption, captionBlock))}>
+          {inCaption ? '캡션 표기 갱신' : '인스타 캡션에 넣기'}
+        </Button>
+        <Button size="sm" variant="outline" onClick={() => onInsertThreads(upsertCreditBlock(threadsText, threadsBlock))}>
+          {inThreads ? '스레드 표기 갱신' : '스레드 글에 넣기'}
+        </Button>
+        <span className="text-[11px] text-ink/30">해시태그가 마지막이면 그 앞에 들어갑니다</span>
+      </div>
+    </div>
+  );
+}
+
+// ── 이미지 트레이 — 원본 콘텐츠 / Unsplash 두 갈래 ──────────────────
+// 스톡 사진만으로는 "그 콘텐츠의 사진"이 안 나온다. 소스에 붙어 있는 원본 링크(씨앗 source_url ·
+// 콘텐츠 출처 · 자료실 공식 페이지)를 긁어오는 경로와, 참고 링크를 직접 붙여넣는 경로를 같이 둔다.
+// bright — 대표색이 밝아서 흰 글자가 죽을 수 있는 사진(Unsplash 라우트가 판정해 뒤로 민다)
+type TrayImage = { id: string; thumb: string; full: string; credit?: string; bright?: boolean };
+
+function ImageTray({ card, coverSlide, targetIndex, onCoverArt, onPick, onCover, onThreadsCover, onCredits }: {
+  card: CardRow;
+  /** 1번 슬라이드 — 커버 아트 미리보기·현재 적용 표시의 근거 */
+  coverSlide?: CardSlide;
+  /** 지금 선택된 슬라이드 번호(0-base) — 검색 결과의 "N번 슬라이드에" 라벨용 */
+  targetIndex: number;
+  onCoverArt: (art: string) => void;
+  onPick: (url: string) => void;
+  onCover: (url: string) => void;
+  onThreadsCover: (url: string) => void;
+  /** 찾아온 사진의 출처를 편집기 카탈로그에 등록 — 나중에 캡션 표기를 계산하는 근거 */
+  onCredits: (entries: PhotoCredit[]) => void;
+}) {
+  const [tab, setTab] = useState<'source' | 'unsplash'>('source');
+  const [query, setQuery] = useState('');
+  const [pageUrl, setPageUrl] = useState('');
+  const [results, setResults] = useState<Record<'source' | 'unsplash', TrayImage[]>>({ source: [], unsplash: [] });
+  const [notice, setNotice] = useState<Record<'source' | 'unsplash', string | null>>({ source: null, unsplash: null });
+  const [searching, setSearching] = useState(false);
+  const [sourceLinks, setSourceLinks] = useState<Array<{ label: string; url: string }>>([]);
+
+  async function search(q: string) {
+    if (!q.trim()) return;
+    setSearching(true);
+    setNotice((p) => ({ ...p, unsplash: null }));
+    try {
+      const res = await fetch(`/api/cardpress/unsplash?query=${encodeURIComponent(q)}`);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? `HTTP ${res.status}`);
+      const list = (data.results ?? []) as Array<TrayImage & { creditLink?: string }>;
+      setResults((p) => ({ ...p, unsplash: list }));
+      // Unsplash는 사진가 표기가 API 약관상 의무 — 고르는 즉시 근거를 남긴다
+      onCredits(
+        list
+          .filter((r) => r.credit)
+          .map((r) => ({ url: r.full, credit: r.credit!, creditLink: r.creditLink, source: 'unsplash' as const }))
+      );
+      if (data.notice) setNotice((p) => ({ ...p, unsplash: data.notice }));
+      else if (!data.results?.length) setNotice((p) => ({ ...p, unsplash: '검색 결과가 없어요.' }));
+    } catch (e) {
+      setNotice((p) => ({ ...p, unsplash: `검색 실패: ${(e as Error).message}` }));
+    } finally {
+      setSearching(false);
+    }
+  }
+
+  /** url을 주면 그 페이지만, 없으면 소스에 붙은 원본 링크들을 긁는다 */
+  async function fetchSourceImages(url?: string) {
+    setSearching(true);
+    setNotice((p) => ({ ...p, source: null }));
+    try {
+      const res = await fetch('/api/cardpress/source-images', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ sourceType: card.source_type, sourceId: card.source_id, url }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? `HTTP ${res.status}`);
+      const raw = (data.images ?? []) as Array<{ url: string; from: string }>;
+      const imgs: TrayImage[] = raw.map((im) => ({ id: im.url, thumb: im.url, full: im.url, credit: im.from }));
+      // 남의 저작물이라 인용 표기 대상 — 출처 호스트와 가져온 페이지를 함께 남긴다
+      onCredits(
+        raw.map((im) => ({
+          url: im.url,
+          credit: im.from,
+          creditLink: url ?? data.links?.find((l: { url: string }) => l.url.includes(im.from))?.url,
+          source: 'web' as const,
+        }))
+      );
+      // 링크별로 여러 번 가져올 수 있게 누적(중복 제거)
+      setResults((p) => {
+        const seen = new Set(p.source.map((x) => x.full));
+        return { ...p, source: [...p.source, ...imgs.filter((x) => !seen.has(x.full))] };
+      });
+      if (data.links?.length) setSourceLinks(data.links);
+      setNotice((p) => ({ ...p, source: data.notice ?? null }));
+    } catch (e) {
+      setNotice((p) => ({ ...p, source: `불러오기 실패: ${(e as Error).message}` }));
+    } finally {
+      setSearching(false);
+    }
+  }
+
+  const Thumb = ({ url, thumb, credit, bright }: { url: string; thumb: string; credit?: string; bright?: boolean }) => (
+    <div className="relative group shrink-0">
+      <img
+        src={thumb}
+        alt={credit ?? ''}
+        className="h-20 w-16 object-cover rounded-md border border-border cursor-grab"
+        draggable
+        onDragStart={(e) => e.dataTransfer.setData('text/plain', url)}
+      />
+      {bright && (
+        <span
+          title="대표색이 밝아요 — 흰 글자·워드마크가 죽을 수 있습니다. 쓰려면 어둡기를 올리세요."
+          className="absolute top-1 left-1 rounded bg-amber-500/90 px-1 text-[9px] text-white"
+        >
+          밝음
+        </span>
+      )}
+      <div className="absolute inset-0 hidden group-hover:flex flex-col items-center justify-center gap-1 bg-black/55 rounded-md">
+        <button onClick={() => onPick(url)} className="text-[10px] text-white bg-accent rounded px-1.5 py-0.5">{targetIndex + 1}번 슬라이드에 넣기</button>
+        <button onClick={() => onThreadsCover(url)} className="text-[10px] text-white bg-white/20 rounded px-1.5 py-0.5">스레드 커버로</button>
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="card p-4 space-y-3">
+      <div className="text-sm font-semibold">이미지 트레이 <span className="text-xs text-ink/40 font-normal">(호버 → 배치 · 사진 자리가 없는 템플릿이면 사진형으로 바꿀지 물어봅니다)</span></div>
+      {coverSlide && (
+        <div>
+          <div className="text-[11px] text-ink/40 mb-1">
+            커버 아트 — 지금 1번 커버의 글로 그린 5종, 클릭하면 바로 커버에 적용
+          </div>
+          <div className="flex gap-3 overflow-x-auto pb-1">
+            {(() => {
+              const raw = coverSlide.props as Record<string, unknown>;
+              const base = coverSlide.template === 'C1' ? { ...raw } : convertProps(coverSlide.template, 'C1', raw).props;
+              const current =
+                coverSlide.template === 'C1' && base.coverLayout === 'v3'
+                  ? ((base.coverArt as string) ?? 'photo')
+                  : null;
+              const scale = 102 / CARD_W;
+              return COVER_ART_PRIMARY.map((art) => {
+                const parsed = RenderSlideSchema.safeParse({
+                  template: 'C1',
+                  accent: card.accent,
+                  props: { ...base, coverLayout: 'v3', coverArt: art },
+                });
+                const label = COVER_ART_OPTIONS.find((o) => o.value === art)?.label ?? art;
+                return (
+                  <button
+                    key={art}
+                    onClick={() => onCoverArt(art)}
+                    title={`${label} — 커버에 적용`}
+                    className={`relative shrink-0 h-32 w-[102px] overflow-hidden rounded-md border transition-shadow ${
+                      current === art ? 'border-accent ring-2 ring-accent' : 'border-border hover:ring-2 hover:ring-accent'
+                    }`}
+                  >
+                    {parsed.success ? (
+                      <div
+                        style={{
+                          width: CARD_W,
+                          height: CARD_H,
+                          transform: `scale(${scale})`,
+                          transformOrigin: 'top left',
+                          fontFamily: "'Pretendard','Apple SD Gothic Neo',sans-serif",
+                          pointerEvents: 'none',
+                        }}
+                      >
+                        {renderSlide(parsed.data)}
+                      </div>
+                    ) : (
+                      <span className="flex h-full items-center justify-center text-[9px] text-ink/30">미리보기 불가</span>
+                    )}
+                    {current === art && (
+                      <span className="absolute top-1 left-1 rounded bg-accent px-1 text-[9px] text-white">적용 중</span>
+                    )}
+                    <span className="absolute bottom-1 left-1 right-1 rounded bg-black/60 px-1 py-0.5 text-[9px] text-white truncate">
+                      {label}
+                    </span>
+                  </button>
+                );
+              });
+            })()}
+          </div>
+        </div>
+      )}
+      {(card.cover_candidates?.length ?? 0) > 0 && (
+        <div>
+          <div className="text-[11px] text-ink/40 mb-1">커버 후보 — 클릭하면 바로 커버에 적용 (다크 커버면 사진 커버로 전환)</div>
+          <div className="flex gap-3">
+            {card.cover_candidates!.slice(0, 2).map((c) => (
+              <div key={c.full} className="relative group shrink-0">
+                <button onClick={() => onCover(c.full)} title="커버에 적용" className="block">
+                  <img
+                    src={c.thumb}
+                    alt={c.credit}
+                    className="h-32 w-[102px] object-cover rounded-md border border-border group-hover:ring-2 group-hover:ring-accent transition-shadow cursor-grab"
+                    draggable
+                    onDragStart={(e) => e.dataTransfer.setData('text/plain', c.full)}
+                  />
+                </button>
+                <button
+                  onClick={() => onThreadsCover(c.full)}
+                  className="absolute bottom-1 left-1 right-1 hidden group-hover:block text-[10px] text-white bg-black/60 rounded px-1 py-0.5"
+                >
+                  스레드 커버로
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+      {card.extracted_images.length > 0 && (
+        <div>
+          <div className="text-[11px] text-ink/40 mb-1">본문 추출 이미지</div>
+          <div className="flex gap-2 overflow-x-auto pb-1">
+            {card.extracted_images.map((u) => <Thumb key={u} url={u} thumb={u} />)}
+          </div>
+        </div>
+      )}
+      {/* 이미지 찾기 — 원본 콘텐츠 / 스톡(Unsplash) */}
+      <div className="border-t border-border pt-3 space-y-2">
+        <div className="flex items-center gap-1">
+          {([
+            ['source', '원본 콘텐츠에서'],
+            ['unsplash', 'Unsplash 스톡'],
+          ] as const).map(([v, label]) => (
+            <button
+              key={v}
+              onClick={() => setTab(v)}
+              className={`text-xs rounded-full px-2.5 py-1 ${tab === v ? 'bg-accent text-white' : 'bg-ink/5 text-ink/60 hover:bg-ink/10'}`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+
+        {tab === 'source' ? (
+          <>
+            <div className="flex items-center gap-2">
+              <Button size="sm" variant="outline" onClick={() => fetchSourceImages()} disabled={searching}>
+                {searching ? '가져오는 중…' : '원본 링크에서 가져오기'}
+              </Button>
+              <span className="text-[11px] text-ink/40">
+                {card.source_type === 'seed' ? '씨앗 원본 URL' : card.source_type === 'tool' ? '공식 페이지·출처' : '본문 출처 링크'}에서 사진을 긁어옵니다
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              <Input
+                value={pageUrl}
+                onChange={(e) => setPageUrl(e.target.value)}
+                placeholder="참고 링크 직접 붙여넣기 (기사·제품·릴리스 노트 URL)"
+                onKeyDown={(e) => e.key === 'Enter' && pageUrl.trim() && fetchSourceImages(pageUrl.trim())}
+              />
+              <Button size="sm" variant="outline" onClick={() => pageUrl.trim() && fetchSourceImages(pageUrl.trim())} disabled={searching || !pageUrl.trim()}>
+                가져오기
+              </Button>
+            </div>
+            {sourceLinks.length > 0 && (
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <span className="text-[11px] text-ink/40">찾은 원본 링크:</span>
+                {sourceLinks.map((l) => (
+                  <button
+                    key={l.url}
+                    onClick={() => fetchSourceImages(l.url)}
+                    className="text-[11px] rounded px-1.5 py-0.5 bg-ink/5 text-ink/60 hover:bg-ink/10 max-w-[220px] truncate"
+                    title={l.url}
+                  >
+                    {l.label}
+                  </button>
+                ))}
+              </div>
+            )}
+          </>
+        ) : (
+          <>
+            <div className="flex items-center gap-2">
+              <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Unsplash 검색 (영어)" onKeyDown={(e) => e.key === 'Enter' && search(query)} />
+              <Button size="sm" variant="outline" onClick={() => search(query)} disabled={searching}>{searching ? '검색 중…' : '검색'}</Button>
+            </div>
+            <p className="text-[11px] text-ink/40">
+              결과 사진에 마우스를 올려 [{targetIndex + 1}번 슬라이드에 넣기] — 커버가 아닌 본문 장에도 들어가고, 사진 자리가 없는
+              템플릿이면 사진형으로 바꿀지 물어봅니다.
+            </p>
+            {(card.metaphor_queries?.length ?? 0) > 0 && (
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <span className="text-[11px] text-ink/40">메타포 제안:</span>
+                {card.metaphor_queries!.map((q) => (
+                  <button key={q} onClick={() => { setQuery(q); search(q); }} className="text-[11px] rounded px-1.5 py-0.5 bg-ink/5 text-ink/60 hover:bg-ink/10">
+                    {q}
+                  </button>
+                ))}
+              </div>
+            )}
+          </>
+        )}
+
+        {notice[tab] && <p className="text-xs text-ink/40">{notice[tab]}</p>}
+        {results[tab].length > 0 && (
+          <div className="flex gap-2 overflow-x-auto pb-1">
+            {results[tab].map((r) => <Thumb key={r.id} url={r.full} thumb={r.thumb} credit={r.credit} bright={r.bright} />)}
+          </div>
+        )}
+        {tab === 'source' && (
+          <p className="text-[11px] text-ink/30">
+            WebP·AVIF·아이콘은 자동 제외돼요 (렌더에서 검게 나오는 형식). 저작권은 운영자 판단 — 남의 기사 사진은 인용 표기와 함께 쓰세요.
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}

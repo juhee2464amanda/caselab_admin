@@ -3,9 +3,9 @@ import { randomUUID } from 'crypto';
 import { readFile } from 'fs/promises';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { createSupabaseAdminClient } from '@/lib/supabase/admin';
-import { extractJson } from '@/lib/claude-cli';
-import { callModel } from '@/lib/ai-draft';
-import { captureSources, cleanupCapture, type Candidate } from '@/lib/site-capture';
+import { extractJson } from '@/lib/ai/claude-cli';
+import { callModel } from '@/lib/ai/ai-draft';
+import { captureSources, cleanupCapture, type Candidate } from '@/lib/images/site-capture';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';

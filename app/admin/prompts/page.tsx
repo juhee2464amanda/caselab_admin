@@ -1,5 +1,5 @@
 import { createSupabaseServerClient, isSupabaseConfigured } from '@/lib/supabase/server';
-import { PromptManager, type PromptRow } from '@/components/admin/PromptManager';
+import { PromptManager, type PromptRow } from '@/components/admin/assets/PromptManager';
 
 // /admin/prompts — 바로쓰는 프롬프트 관리 (콘텐츠 스튜디오 탭).
 // 본가 /prompts와 같은 소스: tools(category='prompt'), body{prompt, promptCategory, source, sourceUrl}.

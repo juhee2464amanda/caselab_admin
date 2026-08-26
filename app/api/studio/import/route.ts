@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { createSupabaseAdminClient } from '@/lib/supabase/admin';
-import { generateDraft, generateToolDraft, generatePromptDraft, generateGuideDraft, suggestContentMeta } from '@/lib/ai-draft';
-import { isSeedTrack, type SeedTrack } from '@/lib/seed-tracks';
-import { isTrendVariant } from '@/lib/trend-variants';
-import { trackEdge } from '@/lib/track-edges';
+import { generateDraft, generateToolDraft, generatePromptDraft, generateGuideDraft, suggestContentMeta } from '@/lib/ai/ai-draft';
+import { isSeedTrack, type SeedTrack } from '@/lib/seeds/seed-tracks';
+import { isTrendVariant } from '@/lib/content/trend-variants';
+import { trackEdge } from '@/lib/content/track-edges';
 import { slugify } from '@/lib/utils';
 
 export const runtime = 'nodejs';

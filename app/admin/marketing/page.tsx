@@ -1,6 +1,6 @@
 import { createSupabaseServerClient, isSupabaseConfigured } from '@/lib/supabase/server';
 import { formatDate } from '@/lib/utils';
-import { MarketingLinkForm, ShortLinkCell, ActiveToggle } from '@/components/admin/MarketingLinkForm';
+import { MarketingLinkForm, ShortLinkCell, ActiveToggle } from '@/components/admin/marketing/MarketingLinkForm';
 
 // /admin/marketing — 유입 링크 대장. 자동DM 숏링크(utm_links.kind='dm')
 // 생성·관리 + link_clicks 서버측 클릭 집계(총/최근 7일, 봇 제외).

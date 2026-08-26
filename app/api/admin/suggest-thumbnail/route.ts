@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
-import { callModel } from '@/lib/ai-draft';
-import { extractJson } from '@/lib/claude-cli';
-import { QUERY_LADDER_RULES, dropCliches, searchThumbnailPhotos, type PhotoCandidate } from '@/lib/image-query';
+import { callModel } from '@/lib/ai/ai-draft';
+import { extractJson } from '@/lib/ai/claude-cli';
+import { QUERY_LADDER_RULES, dropCliches, searchThumbnailPhotos, type PhotoCandidate } from '@/lib/images/image-query';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';

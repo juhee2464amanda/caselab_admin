@@ -1,6 +1,6 @@
 import { createSupabaseServerClient, isSupabaseConfigured } from '@/lib/supabase/server';
 import { createSupabaseAdminClient } from '@/lib/supabase/admin';
-import { InsightsClient, type InsightPost, type AdRow } from '@/components/admin/InsightsClient';
+import { InsightsClient, type InsightPost, type AdRow } from '@/components/admin/analytics/InsightsClient';
 
 /**
  * /admin/insights — 인스타 콘텐츠 인사이트 (대시보드 소메뉴)

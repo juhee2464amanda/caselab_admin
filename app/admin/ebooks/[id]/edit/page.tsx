@@ -1,5 +1,5 @@
 import { notFound } from 'next/navigation';
-import { EbookForm } from '@/components/admin/EbookForm';
+import { EbookForm } from '@/components/admin/assets/EbookForm';
 import { createSupabaseServerClient, isSupabaseConfigured } from '@/lib/supabase/server';
 
 export default async function EditEbookPage({

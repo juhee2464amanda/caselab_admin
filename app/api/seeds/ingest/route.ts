@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import crypto from 'crypto';
 import { createSupabaseAdminClient } from '@/lib/supabase/admin';
-import { isSeedSource, sourceFromLane } from '@/lib/seed-sources';
+import { isSeedSource, sourceFromLane } from '@/lib/seeds/seed-sources';
 import { verifyIngestToken } from '@/lib/ingest-auth';
 
 export const runtime = 'nodejs';

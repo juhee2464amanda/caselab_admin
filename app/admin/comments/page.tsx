@@ -1,5 +1,5 @@
 import { createSupabaseServerClient, isSupabaseConfigured } from '@/lib/supabase/server';
-import { CategoryQuickEdit } from '@/components/admin/CategoryQuickEdit';
+import { CategoryQuickEdit } from '@/components/admin/content/CategoryQuickEdit';
 import { formatDate } from '@/lib/utils';
 
 export default async function AdminComments() {

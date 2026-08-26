@@ -1,6 +1,6 @@
 import { createSupabaseServerClient, isSupabaseConfigured } from '@/lib/supabase/server';
 import { formatDate } from '@/lib/utils';
-import { InviteForm } from '@/components/admin/InviteForm';
+import { InviteForm } from '@/components/admin/ops/InviteForm';
 
 // /admin/users/invite — editor 초대 (D47). 현재 운영진 목록 + 초대 폼.
 type Staff = { id: string; name: string | null; email: string | null; role: string; created_at: string };

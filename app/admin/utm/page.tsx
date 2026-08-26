@@ -1,6 +1,6 @@
 import { createSupabaseServerClient, isSupabaseConfigured } from '@/lib/supabase/server';
 import { formatDate } from '@/lib/utils';
-import { UtmBuilderForm } from '@/components/admin/UtmBuilderForm';
+import { UtmBuilderForm } from '@/components/admin/marketing/UtmBuilderForm';
 
 // /admin/utm — UTM 링크 (D25). 현재 생성 이력 목록, Builder 폼은 다음 레이어.
 type UtmLink = {

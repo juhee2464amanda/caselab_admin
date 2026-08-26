@@ -1,6 +1,6 @@
 import { z } from 'zod';
-import { callModel } from '@/lib/ai-draft';
-import { extractJson } from '@/lib/claude-cli';
+import { callModel } from '@/lib/ai/ai-draft';
+import { extractJson } from '@/lib/ai/claude-cli';
 import {
   RenderSlideSchema,
   type CardAccent,

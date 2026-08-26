@@ -1,6 +1,6 @@
 import { createSupabaseServerClient, isSupabaseConfigured } from '@/lib/supabase/server';
-import InflowPanel from '@/components/admin/InflowPanel';
-import EventInsightPanel from '@/components/admin/EventInsightPanel';
+import InflowPanel from '@/components/admin/analytics/InflowPanel';
+import EventInsightPanel from '@/components/admin/analytics/EventInsightPanel';
 
 export default async function AdminAnalytics() {
   if (!isSupabaseConfigured()) return <div className="p-4 sm:p-8 text-sm">Supabase 연결 필요</div>;

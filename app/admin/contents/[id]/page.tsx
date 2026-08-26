@@ -1,5 +1,5 @@
 import { notFound } from 'next/navigation';
-import { TrackForm } from '@/components/admin/TrackForm';
+import { TrackForm } from '@/components/admin/content/TrackForm';
 import { createSupabaseServerClient, isSupabaseConfigured } from '@/lib/supabase/server';
 
 export default async function EditContentPage({

@@ -1,5 +1,5 @@
 import { notFound } from 'next/navigation';
-import { ToolForm } from '@/components/admin/ToolForm';
+import { ToolForm } from '@/components/admin/assets/ToolForm';
 import { createSupabaseServerClient, isSupabaseConfigured } from '@/lib/supabase/server';
 
 export default async function EditToolPage({

@@ -1,0 +1,1463 @@
+import Anthropic from '@anthropic-ai/sdk';
+import { z } from 'zod';
+import { BlockSchema, ContentBodySchema, type ContentBody, JOB_TAGS, JOB_LABELS, type JobTag } from '@/types/content';
+import { runClaudeSubscription, extractJson } from '@/lib/ai/claude-cli';
+import { HUMAN_TONE_RULE } from '@/lib/ai/human-tone';
+import { BUCKETS, bucketProfile, isSeedBucket, type SeedBucket } from '@/lib/seeds/seed-curation';
+import { lintToolBody, ToolBodySchema } from '@/lib/content/tool-body';
+import {
+  PROMPT_CATEGORIES,
+  PROMPT_CATEGORY_LABELS,
+  PROMPT_CATEGORY_CRITERIA,
+  PromptBodySchema,
+  isPromptCategory,
+  type PromptBody,
+} from '@/lib/content/prompt-body';
+import { sourceProfile } from '@/lib/seeds/seed-sources';
+import {
+  TREND_COMMON_RULE,
+  TREND_VARIANTS,
+  isTrendVariant,
+  trendVariantProfile,
+  type TrendVariant,
+} from '@/lib/content/trend-variants';
+import { PERSONA_PROMPT_BLOCK, isPersona, type DirectionProposal, type DirectionProposals } from '@/lib/ai/personas';
+import type { SeedTrack } from '@/lib/seeds/seed-tracks';
+import { trackEdge } from '@/lib/content/track-edges';
+import { sectionSpec, isEmptySection, FREE_SECTION_EXAMPLE } from '@/lib/content/content-sections';
+
+// 본문(블록 배열) 작성 규칙 — D70 스키마의 BlockSchema는 "type" 판별자가 필수다.
+// 초안 단계에선 가장 안전한 두 블록만 쓰게 강제(운영자가 폼에서 다른 블록 추가).
+const BLOCK_RULE = `[중요] "블록 배열" 필드는 각 원소가 아래 두 종류 중 하나여야 합니다(반드시 "type" 포함):
+- {"type":"text","markdown":"문단 텍스트(마크다운 허용, 여러 문장 가능)"}
+- {"type":"heading","level":2,"text":"소제목"}   // level은 2·3·4 (대/중/소)`;
+
+// 모든 생성 트랙 공통 리서치 규칙 — 지어내기 방지, 실제 확인된 것만.
+const RESEARCH_RULE = `[리서치 규칙] 이름·수치·날짜·URL은 WebSearch/WebFetch로 실제 확인한 것만 쓰세요. 확인 못 한 통계·인용·출처는 지어내지 말고 생략하세요. 출처/URL 필드에는 실제로 열어본 URL만 넣고, 확실하지 않으면 빈 문자열/생략하세요.`;
+
+// 씨앗의 출처(provenance)·AI 분류(bucket)를 생성 프롬프트에 컨텍스트로 주입(리서치 방향 grounding).
+function contextBlock(input: { sourceType?: string; bucket?: string }): string {
+  const lines: string[] = [];
+  const src = sourceProfile(input.sourceType);
+  if (src) lines.push(`[출처] ${src.label} — ${src.criteria}`);
+  const b = isSeedBucket(input.bucket) ? bucketProfile(input.bucket) : undefined;
+  if (b) lines.push(`[AI 분류 참고] ${b.label} — ${b.criteria} (참고용, 콘텐츠 방향은 아래 '기획방향'을 최우선으로)`);
+  return lines.length ? '\n' + lines.join('\n') : '';
+}
+
+// 사람이 작성한 '기획방향' — 모든 트랙에서 생성의 최우선 축. 소스를 이 방향에 맞게 재구성/variation한다.
+function directionBlock(direction?: string): string {
+  const d = direction?.trim();
+  if (!d) return '';
+  return `\n[기획방향 — 최우선] ${d}\n→ 위 기획방향을 반드시 중심축으로 삼으세요. 원문(소스)은 이 방향을 뒷받침하는 재료로 재구성·선별하고, 방향과 무관한 내용은 덜어내세요.`;
+}
+
+// 사람이 확정한 '개요(목차)' — 단계적 구체화의 뼈대. 본문은 이 구조를 따라 살을 붙인다.
+function outlineBlock(outline?: string[]): string {
+  const items = (outline ?? []).map((s) => s.trim()).filter(Boolean);
+  if (!items.length) return '';
+  return `\n[확정 개요 — 이 구조를 따르세요] 아래 항목 순서·범위를 유지하며 각 항목을 본문으로 구체화하세요(항목을 임의로 추가·삭제하지 말 것).\n${items.map((s, i) => `${i + 1}. ${s}`).join('\n')}`;
+}
+
+const CASE_SYSTEM = `당신은 케이스랩(Caselab)의 운영자 어시스턴트입니다.
+
+"실전 케이스" 콘텐츠 초안을 D70 스키마에 맞춰 작성합니다. 웹 리서치로 사실을 확인하세요.
+
+${BLOCK_RULE}
+
+응답은 아래 JSON 객체 하나만 반환하세요(설명 없이, "kind" 필수):
+{
+  "kind": "case",
+  "forWho": ["기획자", "1인 사업가"],                              // 이 사례가 유용한 직무 2~4개
+  "caseIntro": [{"type":"text","markdown":"이 사례 소개 2~3문단"}], // 블록 배열
+  "painPoints": [{"num":"01","title":"문제 제목","symptom":"겉으로 드러난 증상","rootCause":"근본 원인"}],
+  "frameworkReference": {"name":"활용한 프레임워크/접근","description":"한두 문장 설명"},
+  "stepCards": [
+    {"num":1,"label":"단계 이름","description":"이 단계 설명","human":"사람이 하는 일","ai":"AI가 하는 일","prompt":"실제로 넣은 프롬프트","goodResult":"좋은 결과 예시","badResult":"안 좋은 결과 예시"}
+  ],
+  "pros": ["이 방식의 장점"],
+  "cons": ["한계/주의점"],
+  "takingPoints": [{"title":"핵심 테이크어웨이","description":"왜 중요한지","action":"바로 할 수 있는 행동"}]
+}
+
+stepCards는 2~5개, num은 1부터 정수. 한국어, 1인칭 운영자 톤. 광고/유료강의 링크 금지.`;
+
+const TREND_SYSTEM = `당신은 케이스랩(Caselab)의 운영자 어시스턴트입니다.
+
+"AI 트렌드" 콘텐츠 초안을 D70 스키마에 맞춰 작성합니다. 웹 리서치로 최신 사실을 확인하세요.
+
+${BLOCK_RULE}
+
+응답은 아래 JSON 객체 하나만 반환하세요(설명 없이, "kind" 필수):
+{
+  "kind": "trend",
+  "what": [{"type":"text","markdown":"이 트렌드가 무엇인지 2~3문단"}],     // 블록 배열
+  "why": [{"type":"text","markdown":"왜 지금 중요한지"}],                  // 블록 배열
+  "forWho": [{"role":"기획자","why":"이 직무에 왜 중요한지"}],            // 2~4개
+  "keyPoints": ["핵심 요점 3~5개(짧은 문장)"],
+  "deepDive": [{"type":"heading","level":2,"text":"소제목"},{"type":"text","markdown":"더 깊은 설명"}],
+  "soWhat": [{"type":"text","markdown":"그래서 실무에서 무엇을 해야 하나"}],
+  "sources": [{"label":"출처 이름","url":"https://..."}]
+}
+
+한국어, 1인칭 운영자 톤. 광고/제휴 링크 금지. 출처는 리서치로 확인된 실제 URL만.`;
+
+// 유형(variant) 선택 시에만 TREND_SYSTEM에 골격·신뢰 규칙을 덧붙인다.
+// 미선택 경로는 TREND_SYSTEM 원형 그대로 — 기존 자유 포맷 보존.
+function trendSystemFor(variant?: TrendVariant): string {
+  if (!variant) return TREND_SYSTEM;
+  const profile = trendVariantProfile(variant);
+  return `${TREND_SYSTEM}\n${TREND_COMMON_RULE}\n\n${profile.promptBlock}\n\n위 골격의 필수 섹션 외 나머지 키는 만들지 마세요(빈 배열도 넣지 말 것).`;
+}
+
+const TOOL_SYSTEM = `당신은 케이스랩(Caselab) 자료실의 운영자 어시스턴트입니다.
+
+"AI 도구" 카드 초안을 작성합니다. 웹에서 해당 도구의 공식 정보를 리서치해 정확하게 채우세요.
+- name: 도구의 정확한 정식 명칭
+- description: 한 문단(2~3문장) 한국어 소개. 무엇을 하는 도구이고 누구에게 유용한지.
+- category: "tool" 고정 (도구 카드)
+- pricing_tier: "free" | "freemium" | "paid" | "custom" 중 실제에 맞게
+- url: 공식 사이트 URL (확실할 때만)
+- body: 서비스 상세 페이지가 렌더하는 스키마. 아래 정의된 키 외에는 절대 넣지 마세요.
+  - audience: 대상 한 구절 (예: "마케터·기획자")
+  - about: { "heading": 섹션 제목, "paragraphs": ["소개 문단"] } — 문단 2~3개
+  - whenToUse: [{ "title": "...", "desc": "..." }] — 언제 쓰면 좋은지 2~4개
+  - features: [{ "title": "...", "desc": "..." }] — 주요 기능 3~5개
+  - pricing: [{ "name": "플랜명", "amount": "가격", "includes": "포함 내용" }] — 리서치로 확인한 것만, 불확실하면 필드 생략
+  - pricingNote: 가격 하단 주석 (선택)
+  - useCases는 내부 케이스 링크 전용이므로 생성 금지.
+
+광고/제휴 링크 금지. 한국어, 1인칭 톤.
+
+응답은 다음 JSON 객체만 반환:
+{
+  "name": "...",
+  "description": "...",
+  "category": "tool",
+  "pricing_tier": "free",
+  "url": "https://...",
+  "body": {
+    "audience": "...",
+    "about": { "heading": "어떤 도구인가", "paragraphs": ["...", "..."] },
+    "whenToUse": [{ "title": "...", "desc": "..." }],
+    "features": [{ "title": "...", "desc": "..." }],
+    "pricing": [{ "name": "Free", "amount": "$0", "includes": "..." }],
+    "pricingNote": "..."
+  }
+}`;
+
+// 프롬프트 카드는 본가 /prompts가 body에서 4필드만 읽는다(lib/prompt-body.ts = 계약 미러).
+// 분류 기준은 그 상수에서 생성 — 화면·게이트·초안이 같은 문구를 쓴다.
+const PROMPT_SYSTEM = `당신은 케이스랩(Caselab) 자료실의 운영자 어시스턴트입니다.
+
+"바로 쓰는 프롬프트" 카드 초안을 작성합니다. 독자가 복사 버튼 한 번으로 바로 실행할 수 있는 것 1개를 만드세요.
+LLM에 넣는 프롬프트뿐 아니라 CLI 커맨드·설정 스니펫도 같은 카드 형식으로 다룹니다.
+
+[독자 — 다른 모든 규칙에 우선]
+케이스랩 독자는 **개발자가 아닙니다.** ${JOB_TAGS.map((t) => JOB_LABELS[t]).join('·')} 실무자입니다.
+- 원문이 엔지니어를 대상으로 쓰였더라도 "개발자용 소재"로 처리하지 마세요. **이 독자가 자기 업무에서 쓸 각도를 찾아 번역하는 것이 이 카드의 핵심 값어치입니다.** 원문 그대로 옮기면 카드를 만들 이유가 없습니다.
+- 각도 찾는 법: 원문이 해결하는 문제를 한 겹 벗겨 "우리 독자도 겪는 같은 상황"으로 바꿔 보세요. 원문이 엔지니어의 도구 연결 비용 문제라면, 독자에게는 "AI에 자료를 잔뜩 물려 쓰다 답이 느려지고 비용이 튀는 상황"일 수 있습니다.
+- **용어는 피하지 말고 가르치면서 쓰세요.** 돌려 말하느라 뭉개진 설명보다, 용어를 그대로 쓰되 친절히 풀어 주는 쪽이 낫습니다. 독자가 이 카드 하나로 개념 하나를 배워 가게 하는 것이 목표입니다.
+  - 처음 나올 때 한 번만 \`용어(짧은 풀이)\` 형태로 풀고, 그 뒤로는 그냥 씁니다.
+    예: "MCP(AI를 내 구글드라이브·슬랙 같은 외부 도구에 연결해 주는 규격)", "토큰(AI가 글을 세는 단위 — 요금과 속도가 여기에 붙습니다)"
+  - 풀이는 사전 정의가 아니라 **"그래서 나한테 뭐가 달라지나"**로 씁니다.
+  - 그 용어가 카드의 뼈대면 소개 문단에서 한두 문장을 따로 할애해 설명해도 좋습니다.
+  - 다만 한 카드에서 새로 푸는 용어는 3개까지. 그 이상은 읽다가 지칩니다.
+- 제목은 상황·효용이 먼저 오게 하되, 용어를 넣는 편이 무엇에 관한 카드인지 분명해지면 넣으세요(예: "… — MCP 연결 편").
+- 프롬프트 본문에 코드·명령어가 들어가야 한다면, 그걸 **어디에 붙여넣는지**(예: Claude 대화창, 터미널)를 description에 반드시 적으세요.
+- 아무리 봐도 이 독자가 쓸 각도가 없으면 억지로 지어내지 말고, description 맨 앞에 \`(비개발자 활용 각도 불명 — 검수 필요)\`를 적어 운영자가 판단하게 하세요.
+
+[가장 중요]
+- 원문이 프롬프트 전문 없이 "이렇게 지시하면 잘 나온다"는 노하우만 담고 있어도, 그 노하우를 복사 가능한 프롬프트 전문으로 재구성해 body.prompt에 넣으세요. 복사 박스가 이 카드의 전부라 여기가 비면 카드가 성립하지 않습니다.
+- body.prompt에는 설명 문장·머리말을 섞지 마세요. 그대로 붙여넣어 실행되는 것만.
+- 독자가 채워야 하는 자리는 {{변수명}} 표기로 남기세요. 변수명도 독자의 업무 말로("{{작업}}"보다 "{{정리할 회의록}}"처럼 무엇을 넣는지 바로 알게).
+
+[프롬프트 품질 기준 — 이 카드의 값어치는 여기서 갈립니다]
+글자 수 제한은 없습니다. 대신 아래 둘 중 하나를 분명히 해내야 합니다.
+① 결과가 달라진다 — 그냥 시켰을 때보다 눈에 띄게 쓸 만한 결과가 나온다.
+② 더 싸게 도달한다 — 같은 결과를 더 적은 토큰·더 적은 왕복으로 얻는다(되묻기·재시도를 없애거나, 길게 늘어놓던 시스템 프롬프트를 대신한다).
+쓰고 나서 자체 점검: 각 줄을 지웠을 때 결과가 어떻게 나빠지는지 한 문장으로 못 대면 그 줄을 지우세요.
+- 인사말, 역할 미화("당신은 세계 최고의…"), 같은 지시의 반복, 장황한 출력 예시는 토큰만 먹고 결과를 바꾸지 않습니다. 넣지 마세요.
+- 출력 형식은 한 번만 못박고 다른 말로 되풀이하지 마세요. 규칙은 짧은 명령문으로.
+
+- name: 무엇을 해주는지 즉시 알 수 있는 짧은 제목. 독자의 업무 말이 앞에 오게 하고, 용어는 그것이 카드의 주제를 분명히 할 때만 뒤에 붙입니다.
+- description: 아래 3부 구조(한국어. 줄바꿈이 화면에 그대로 노출됨)
+  ① 소개 2~3문장 — **첫 문장은 반드시 "어떤 상황에서 꺼내 쓰는지"**를 독자의 업무 장면으로 적습니다("~할 때 씁니다").
+     기능 설명("~해주는 프롬프트입니다")부터 시작하지 마세요. 상황을 먼저 그리고, 그 다음에 무엇을 해주는지.
+     첫 문장에는 용어를 넣지 말고, 용어 풀이는 상황을 그린 뒤에 이어 붙입니다.
+     톤은 아는 사람이 옆에서 설명해 주는 느낌으로 — 어렵게 쓰지도, 아는 걸 생략하지도 마세요.
+  ② [전제조건] — 적극적으로 찾아서 채우세요. 복사해도 바로 못 쓰게 만드는 것을 먼저 점검합니다:
+     설치·계정·유료플랜·권한·OS/셸, 특정 모델이나 도구에서만 되는지, 미리 준비해 붙여넣어야 하는 자료.
+     하나라도 있으면 반드시 적고, 정말 아무 준비 없이 붙여넣기만 하면 되는 경우에만 블록을 생략하세요.
+  ③ [주의] — 잘못 쓰면 손해가 나는 지점이 있을 때만. 없으면 블록 자체를 생략
+  형식:
+  <소개 2~3문장>
+
+  [전제조건]
+  - …
+
+  [주의]
+  - …
+- body.promptCategory: 아래 4개 중 하나(무엇을 도와주는 프롬프트인지로 판단)
+${PROMPT_CATEGORIES.map((c) => `  - "${c}"(${PROMPT_CATEGORY_LABELS[c]}): ${PROMPT_CATEGORY_CRITERIA[c]}`).join('\n')}
+- body.source: 출처 라벨. 원문 출처가 분명하면 그 이름(예: "Anthropic 공식", "Karpathy"), 노하우를 재구성했으면 "Caselab 제작"
+- body.sourceUrl: 원문 URL. 주어진 출처 URL을 그대로 쓰고, 없으면 생략(지어내지 말 것)
+- pricing_tier: "free" 고정
+- jobTags: 검색·분류용 짧은 태그 2~4개(예: "claude-code", "마케팅", "자동화")
+
+body는 prompt·promptCategory·source·sourceUrl 4개 키만 허용합니다. 다른 키는 본가가 읽지 않아 화면에서 사라집니다.
+
+광고/제휴 링크 금지. 한국어, 1인칭 톤.
+
+응답은 다음 JSON 객체만 반환:
+{
+  "name": "...",
+  "description": "소개 2~3문장\\n\\n[전제조건]\\n- …\\n\\n[주의]\\n- …",
+  "category": "prompt",
+  "pricing_tier": "free",
+  "jobTags": ["...", "..."],
+  "body": { "prompt": "...", "promptCategory": "${PROMPT_CATEGORIES.join('|')}", "source": "...", "sourceUrl": "https://..." }
+}`;
+
+const GUIDE_SYSTEM = `당신은 케이스랩(Caselab) 자료실의 운영자 어시스턴트입니다.
+
+"가이드"는 외부 좋은 글/문서로 가는 링크 보관 카드입니다(본문 없음). 브리핑 원문에서 링크와 핵심을 추려 정리하세요. 웹 리서치로 제목·URL을 확인하세요.
+- name: 가이드(외부 글)의 제목
+- description: 1~2문장. 이 글이 무엇을 다루고 왜 볼 만한지.
+- url: 가이드 원문 URL(공식/원출처. 확실할 때만, 불확실하면 빈 문자열)
+- jobTag: 분류 태그 1개. 가능하면 제공처 기준(예: "OpenAI" | "Anthropic" | "Google") 또는 주제 한 단어.
+
+광고/제휴 링크 금지. 한국어.
+
+응답은 다음 JSON 객체만 반환:
+{
+  "name": "...",
+  "description": "...",
+  "url": "https://...",
+  "jobTag": "..."
+}`;
+
+const APIKEY_MODEL = 'claude-opus-4-8';
+
+function provider(): 'subscription' | 'apikey' {
+  return process.env.AI_PROVIDER === 'apikey' ? 'apikey' : 'subscription';
+}
+
+interface CallOpts {
+  /** 허용 도구. 기본 web 리서치. 채점처럼 불필요하면 [] 전달 → 웹콜 없이 빠르게. */
+  allowedTools?: string[];
+  /** 모델. 기본 opus. 채점 등 가벼운 분류는 sonnet로 속도↑. */
+  model?: string;
+  /** 사고량. 미지정 시 래퍼가 'medium' 고정(개인 effortLevel 상속 차단 — lib/claude-cli.ts 참고). */
+  effort?: 'low' | 'medium' | 'high' | 'xhigh';
+  timeoutMs?: number;
+  /** human-tone 규칙 자동 주입. 기본 true. 채점·검색어·포맷복구처럼 산문이 아닌 호출만 false. */
+  humanTone?: boolean;
+}
+
+/**
+ * 포맷 복구(JSON 깨짐·스키마 불일치) 전용 호출 옵션.
+ * 복구는 "이미 받은 본문을 규격에 맞게 고치는" 작업이라 리서치가 전혀 필요 없다.
+ * 기존엔 기본값(opus + WebSearch/WebFetch + 240s)으로 돌아 리서치를 통째로 재실행했고,
+ * 최악 3회(최초+JSON복구+스키마복구)면 라우트 maxDuration을 넘겨 복구 도중 죽었다.
+ */
+const REPAIR_OPTS: CallOpts = { allowedTools: [], model: 'sonnet', effort: 'low', timeoutMs: 60_000, humanTone: false };
+
+/** 복구 프롬프트 — 직전 원문을 그대로 주고 "다시 만들지 말고 고치라"고 지시(리서치 재실행 방지). */
+function repairPrompt(prevRaw: string, issue: string): string {
+  return `아래는 직전에 생성된 출력입니다. ${issue}
+
+[중요] 웹 리서치를 다시 하지 마세요. 아래 내용의 사실·문장은 그대로 두고, 형식만 고쳐서
+설명·코드펜스 없이 유효한 JSON 객체 하나만 반환하세요. 문자열 값 안의 줄바꿈은 \\n으로 이스케이프하세요.
+
+[직전 출력]
+${prevRaw.slice(0, 60000)}`;
+}
+
+/** 시스템+유저 프롬프트로 모델을 호출해 응답 텍스트를 반환. 프로바이더에 따라 구독 CLI / API키 분기.
+ *  (cardpress 등 다른 생성 모듈도 재사용) */
+export async function callModel(system: string, userPrompt: string, opts: CallOpts = {}): Promise<string> {
+  const { humanTone, ...rest } = opts;
+  if (humanTone !== false) system = `${system}\n\n${HUMAN_TONE_RULE}`;
+  if (provider() === 'subscription') {
+    return runClaudeSubscription({ system, prompt: userPrompt, ...rest });
+  }
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) throw new Error('ANTHROPIC_API_KEY 미설정 (AI_PROVIDER=apikey)');
+  const client = new Anthropic({ apiKey });
+  const message = await client.messages.create({
+    model: APIKEY_MODEL,
+    max_tokens: 4000,
+    system,
+    messages: [{ role: 'user', content: userPrompt }],
+  });
+  const textBlock = message.content.find((b) => b.type === 'text');
+  if (!textBlock || textBlock.type !== 'text') throw new Error('AI 응답이 비었어요');
+  return textBlock.text;
+}
+
+export interface DraftInput {
+  track: 'case' | 'trend';
+  title: string;
+  summary?: string;
+  /** 사람이 작성한 기획방향(필수). 모든 트랙에서 이 방향을 중심축으로 소스를 재구성. */
+  direction?: string;
+  /** 사람이 확정한 개요(목차). 있으면 본문이 이 구조를 따른다(단계적 구체화). */
+  outline?: string[];
+  /** 씨앗 출처 provenance(source_type). 리서치 방향 grounding. */
+  sourceType?: string;
+  /** AI 분류(bucket). 참고용. */
+  bucket?: string;
+  /** 트렌드 세부 유형(선택). 미지정이면 기존 자유 포맷 그대로 생성. case 트랙에서는 무시. */
+  variant?: TrendVariant;
+  /** 씨앗 원문 URL(선택). 지정 시 sources[0]에 코드로 강제 주입 — 모델 리서치 운에 안 맡긴다. */
+  sourceUrl?: string;
+}
+
+/**
+ * 모델이 종종 문자열 값 안에 이스케이프 안 된 줄바꿈/제어문자·내부 따옴표를 넣어 JSON.parse가
+ * "Unterminated string"·"Bad control character"로 깨진다. 문자열 리터럴 내부만 정리한다:
+ * - 제어문자(\n \r \t 등)는 이스케이프
+ * - 따옴표는 "다음 비공백이 구조문자(, } ] :)면 종료, 아니면 내부 따옴표로 보고 이스케이프" 휴리스틱
+ */
+function sanitizeModelJson(s: string): string {
+  let out = '';
+  let inStr = false;
+  let esc = false;
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i];
+    if (!inStr) {
+      if (c === '"') inStr = true;
+      out += c;
+      continue;
+    }
+    if (esc) { out += c; esc = false; continue; }
+    if (c === '\\') { out += c; esc = true; continue; }
+    if (c === '"') {
+      let j = i + 1;
+      while (j < s.length && (s[j] === ' ' || s[j] === '\t' || s[j] === '\n' || s[j] === '\r')) j++;
+      const nxt = s[j];
+      if (nxt === undefined || nxt === ',' || nxt === '}' || nxt === ']' || nxt === ':') {
+        out += c; inStr = false; // 진짜 종료 따옴표
+      } else {
+        out += '\\"'; // 내부 따옴표 → 이스케이프
+      }
+      continue;
+    }
+    if (c === '\n') { out += '\\n'; continue; }
+    if (c === '\r') { out += '\\r'; continue; }
+    if (c === '\t') { out += '\\t'; continue; }
+    const code = c.charCodeAt(0);
+    if (code < 0x20) { out += '\\u' + code.toString(16).padStart(4, '0'); continue; }
+    out += c;
+  }
+  return out;
+}
+
+/** extractJson 후 JSON.parse. 실패하면 문자열 내 제어문자·내부 따옴표 정리로 1회 더 시도. 그래도 실패면 null. */
+function parseModelJson(raw: string): unknown | null {
+  const extracted = extractJson(raw);
+  try { return JSON.parse(extracted); } catch { /* noop */ }
+  try { return JSON.parse(sanitizeModelJson(extracted)); } catch { /* noop */ }
+  return null;
+}
+
+/** 케이스/트렌드 초안 생성. ContentBodySchema 검증 + 실패 시 1회 repair 패스. */
+export async function generateDraft(input: DraftInput): Promise<ContentBody> {
+  const systemPrompt = `${input.track === 'case' ? CASE_SYSTEM : trendSystemFor(input.variant)}\n\n${RESEARCH_RULE}`;
+  const userPrompt =
+    `제목: ${input.title}\n요약: ${input.summary ?? ''}` +
+    contextBlock(input) +
+    directionBlock(input.direction) +
+    outlineBlock(input.outline) +
+    `\n\n위 주제로 초안 JSON만 반환하세요.`;
+
+  const raw = await callModel(systemPrompt, userPrompt);
+  let obj = parseModelJson(raw);
+
+  // JSON 자체가 깨진 경우(문자열 내 미이스케이프 줄바꿈 등) → 직전 원문을 고쳐서 받기(리서치 재실행 X)
+  if (obj == null) {
+    obj = parseModelJson(
+      await callModel(systemPrompt, repairPrompt(raw, '유효한 JSON이 아니었습니다.'), REPAIR_OPTS)
+    );
+  }
+  if (obj == null) throw new Error('AI 응답을 JSON으로 읽지 못했어요(파싱 실패). 다시 생성해 주세요.');
+
+  let result = ContentBodySchema.safeParse(obj);
+  if (!result.success) {
+    // repair: 스키마에 정확히 맞는 JSON만 다시 받기 — 역시 직전 결과를 고치는 방식
+    const repaired = parseModelJson(
+      await callModel(
+        systemPrompt,
+        repairPrompt(JSON.stringify(obj), `스키마 검증에 실패했습니다(${result.error.message.slice(0, 500)}).`),
+        REPAIR_OPTS
+      )
+    );
+    if (repaired != null) result = ContentBodySchema.safeParse(repaired);
+  }
+
+  if (!result.success) {
+    throw new Error('AI 응답 검증 실패: ' + result.error.message);
+  }
+
+  // 씨앗 원문 URL을 sources[0]에 강제 주입 — "원본 링크를 확인할 수 없다"는 모델 응답 운에 맡기지 않는다.
+  // (모델이 같은 URL을 이미 넣었으면 중복 제거하고 맨 앞으로 올린다.)
+  const body = result.data;
+  if (body.kind === 'trend' && input.sourceUrl) {
+    const rest = (body.sources ?? []).filter((s) => s.url !== input.sourceUrl);
+    body.sources = [{ label: '원문 보기', url: input.sourceUrl }, ...rest];
+  }
+  return body;
+}
+
+export interface ToolDraft {
+  name?: string;
+  description: string;
+  category: 'tool' | 'prompt' | 'guide' | 'context-card';
+  pricing_tier: 'free' | 'freemium' | 'paid' | 'custom';
+  url?: string;
+  body: Record<string, unknown>;
+  /** 분류·검색용 태그(tools.job_tags). 프롬프트 초안이 채운다. */
+  jobTags?: string[];
+}
+
+const PRICING_TIERS = ['free', 'freemium', 'paid', 'custom'];
+
+/** 자료실(tool/prompt/guide) 생성 입력 — 기획방향(필수)·개요·출처·분류 컨텍스트 공통. */
+export interface LibraryDraftInput {
+  title: string;
+  summary?: string;
+  direction?: string;
+  outline?: string[];
+  sourceType?: string;
+  bucket?: string;
+  /** 씨앗 원문 URL(content_seeds.source_url) — 프롬프트 카드의 출처 칩(body.sourceUrl)에 그대로 쓴다. */
+  sourceUrl?: string;
+}
+
+/** AI 도구 초안 생성. body는 본가 ToolBody 계약(lib/tool-body.ts) 검증 + 실패 시 1회 repair. */
+export async function generateToolDraft(input: LibraryDraftInput): Promise<ToolDraft> {
+  const systemPrompt = `${TOOL_SYSTEM}\n\n${RESEARCH_RULE}`;
+  const userPrompt =
+    `도구명/주제: ${input.title}\n참고(브리핑 원문): ${input.summary ?? ''}` +
+    contextBlock(input) +
+    directionBlock(input.direction) +
+    outlineBlock(input.outline) +
+    `\n\n위 도구를 리서치해 카드 초안 JSON만 반환하세요.`;
+  const raw = await callModel(systemPrompt, userPrompt);
+
+  try {
+    const parsedTop = parseModelJson(raw);
+    if (parsedTop == null) throw new Error('JSON 파싱 실패');
+    let parsed = parsedTop as Record<string, unknown>;
+    let body = (parsed.body && typeof parsed.body === 'object' ? parsed.body : {}) as Record<string, unknown>;
+
+    const bodyIssue = lintToolBody(body);
+    if (bodyIssue) {
+      // repair: 본가 상세가 렌더 못 하는 body → 계약에 맞는 JSON만 다시 받기 (generateDraft와 동일 패턴)
+      const repaired = (parseModelJson(
+        await callModel(
+          systemPrompt,
+          repairPrompt(raw, `body가 상세페이지 스키마 검증에 실패했습니다(${bodyIssue}).`),
+          REPAIR_OPTS
+        )
+      ) ?? {}) as Record<string, unknown>;
+      const repairedBody = (repaired.body && typeof repaired.body === 'object' ? repaired.body : {}) as Record<string, unknown>;
+      if (!lintToolBody(repairedBody)) {
+        parsed = repaired;
+        body = repairedBody;
+      }
+      // repair도 실패하면 원본 body 유지 — ToolForm 발행 게이트가 스키마 위반으로 차단하고 운영자가 보정
+    }
+
+    const pricing = typeof parsed.pricing_tier === 'string' && PRICING_TIERS.includes(parsed.pricing_tier)
+      ? (parsed.pricing_tier as ToolDraft['pricing_tier'])
+      : 'free';
+    return {
+      name: typeof parsed.name === 'string' ? parsed.name : undefined,
+      description: typeof parsed.description === 'string' ? parsed.description : input.title,
+      category: 'tool',
+      pricing_tier: pricing,
+      url: typeof parsed.url === 'string' ? parsed.url : undefined,
+      body,
+    };
+  } catch {
+    // 파싱 실패 → 원문을 description/body에 담아 폴백 (게이트가 발행을 막고, 운영자가 ToolForm에서 보정)
+    return {
+      description: raw.slice(0, 2000),
+      category: 'tool',
+      pricing_tier: 'free',
+      body: { raw },
+    };
+  }
+}
+
+/**
+ * 프롬프트 카드 초안 생성. tools(category='prompt')로 적재.
+ * body는 본가 /prompts 계약(lib/prompt-body.ts)의 4필드로 정규화한다 —
+ * 모델이 계약 밖 키(howToUse·example 등)를 붙여도 여기서 떨궈야 발행 게이트를 통과한다.
+ */
+export async function generatePromptDraft(input: LibraryDraftInput): Promise<ToolDraft> {
+  const userPrompt =
+    `주제/제목: ${input.title}\n참고(브리핑 원문): ${input.summary ?? ''}` +
+    (input.sourceUrl ? `\n출처 URL: ${input.sourceUrl}` : '') +
+    contextBlock(input) +
+    directionBlock(input.direction) +
+    outlineBlock(input.outline) +
+    `\n\n위 주제로 바로 쓸 수 있는 프롬프트 카드 초안 JSON만 반환하세요.`;
+  const raw = await callModel(PROMPT_SYSTEM, userPrompt);
+
+  const str = (v: unknown): string => (typeof v === 'string' ? v.trim() : '');
+  /** 계약 4필드만 남긴 body. prompt가 비면 발행 게이트가 막고 운영자가 복사 박스를 채운다. */
+  const normalizeBody = (b: Record<string, unknown>, fallbackPrompt: string): Record<string, unknown> => {
+    const body: Partial<PromptBody> = {
+      prompt: str(b.prompt) || fallbackPrompt,
+      promptCategory: isPromptCategory(b.promptCategory) ? b.promptCategory : 'make',
+      // 출처 라벨이 비면 "Caselab 제작" — 노하우를 우리가 프롬프트로 재구성한 경우가 기본값이다.
+      source: str(b.source) || 'Caselab 제작',
+    };
+    const sourceUrl = str(b.sourceUrl) || str(input.sourceUrl);
+    if (sourceUrl) body.sourceUrl = sourceUrl;
+    return body as Record<string, unknown>;
+  };
+
+  try {
+    const parsedTop = parseModelJson(raw);
+    if (parsedTop == null) throw new Error('JSON 파싱 실패');
+    const parsed = parsedTop as Record<string, unknown>;
+    const rawBody = (parsed.body && typeof parsed.body === 'object' ? parsed.body : {}) as Record<string, unknown>;
+    const jobTags = Array.isArray(parsed.jobTags)
+      ? parsed.jobTags.filter((t): t is string => typeof t === 'string' && !!t.trim()).map((t) => t.trim()).slice(0, 4)
+      : undefined;
+    return {
+      name: str(parsed.name) || input.title,
+      description: str(parsed.description) || input.title,
+      category: 'prompt',
+      pricing_tier: 'free',
+      // tools.url은 본가 프롬프트 상세가 읽지 않는다(출처는 body.sourceUrl) — 역추적용으로만 보관.
+      url: str(parsed.url) || input.sourceUrl || undefined,
+      body: normalizeBody(rawBody, raw.slice(0, 2000).trim()),
+      jobTags: jobTags?.length ? jobTags : undefined,
+    };
+  } catch {
+    return {
+      name: input.title,
+      description: input.title,
+      category: 'prompt',
+      pricing_tier: 'free',
+      url: input.sourceUrl || undefined,
+      body: normalizeBody({}, raw.slice(0, 2000).trim()),
+    };
+  }
+}
+
+export interface GuideDraft {
+  name: string;
+  description: string;
+  url: string;
+  jobTag?: string;
+}
+
+/** 가이드(외부 링크) 카드 초안 생성. tools(category='guide')로 적재. 본문 없음(메타만). */
+export async function generateGuideDraft(input: LibraryDraftInput): Promise<GuideDraft> {
+  const userPrompt =
+    `주제/제목: ${input.title}\n참고(브리핑 원문): ${input.summary ?? ''}` +
+    contextBlock(input) +
+    directionBlock(input.direction) +
+    outlineBlock(input.outline) +
+    `\n\n위 주제의 외부 가이드 링크 카드 초안 JSON만 반환하세요.`;
+  const raw = await callModel(`${GUIDE_SYSTEM}\n\n${RESEARCH_RULE}`, userPrompt);
+
+  try {
+    const parsedTop = parseModelJson(raw);
+    if (parsedTop == null) throw new Error('JSON 파싱 실패');
+    const parsed = parsedTop as Record<string, unknown>;
+    return {
+      name: typeof parsed.name === 'string' ? parsed.name : input.title,
+      description: typeof parsed.description === 'string' ? parsed.description : '',
+      url: typeof parsed.url === 'string' ? parsed.url : '',
+      jobTag: typeof parsed.jobTag === 'string' && parsed.jobTag ? parsed.jobTag : undefined,
+    };
+  } catch {
+    // 파싱 실패 → 운영자가 GuideManager/ToolForm에서 URL·설명 보정
+    return { name: input.title, description: raw.slice(0, 500), url: '' };
+  }
+}
+
+// ─────────────── 개요 생성(단계적 구체화 1단계) ───────────────
+
+export interface OutlineInput {
+  track: SeedTrack;
+  title: string;
+  summary?: string;
+  direction?: string;
+  sourceType?: string;
+  bucket?: string;
+}
+
+const TRACK_LABEL: Record<SeedTrack, string> = {
+  case: '실전 케이스',
+  trend: 'AI 트렌드',
+  tool: 'AI 도구 카드',
+  prompt: '프롬프트 카드',
+  guide: '외부 가이드 링크',
+};
+
+// 본문을 쓰기 전, 기획방향+소스로 "개요(목차)"만 먼저 제안. 사람이 확인·수정 후 본문 생성으로 넘어감.
+const OUTLINE_SYSTEM = `당신은 케이스랩(Caselab)의 운영자 어시스턴트입니다.
+콘텐츠 본문을 쓰기 전에, 소스와 사람이 준 '기획방향'을 바탕으로 **개요(목차)**만 먼저 제안합니다.
+- 기획방향을 최우선 축으로, 소스에서 그 방향을 뒷받침하는 뼈대만 추립니다.
+- 각 항목은 한 줄(소제목 또는 핵심 포인트). 5~9개.
+- 아직 본문 문장은 쓰지 마세요. 구조(뼈대)만.
+
+${RESEARCH_RULE}
+
+응답은 아래 JSON 객체 하나만 반환하세요(설명 없이):
+{ "title": "다듬은 제목", "outline": ["항목1", "항목2", "…"] }`;
+
+/** 개요(목차) 생성. 사람이 편집 후 generateDraft/Library에 outline으로 넘김. 로컬 전제. */
+export async function generateOutline(input: OutlineInput): Promise<{ title: string; outline: string[] }> {
+  const userPrompt =
+    `콘텐츠 종류: ${TRACK_LABEL[input.track]}\n제목: ${input.title}\n요약: ${input.summary ?? ''}` +
+    contextBlock(input) +
+    directionBlock(input.direction) +
+    `\n\n위를 바탕으로 개요 JSON만 반환하세요.`;
+  const raw = await callModel(OUTLINE_SYSTEM, userPrompt);
+
+  try {
+    const parsed = (parseModelJson(raw) ?? {}) as Record<string, unknown>;
+    const outline = Array.isArray(parsed.outline)
+      ? parsed.outline.filter((x): x is string => typeof x === 'string' && x.trim().length > 0)
+      : [];
+    const title = typeof parsed.title === 'string' && parsed.title.trim() ? parsed.title.trim() : input.title;
+    return { title, outline };
+  } catch {
+    return { title: input.title, outline: [] };
+  }
+}
+
+// ─────────────── 기획방향 제안(개요 생성보다 앞 단계) ───────────────
+// 기획방향은 생성의 최우선 축인데(directionBlock), 빈 칸 앞에서 "무슨 각도로 풀지"가 가장 오래 걸린다.
+// 소스를 읽고 독자 페르소나(lib/personas.ts)가 자기 일로 느낄 지점 2~3개를 각도로 뽑아 고르게 한다.
+// 제안은 어디까지나 출발점 — 운영자는 이 값을 입력칸에서 그대로 고쳐 쓸 수 있고, 직접 쓰기도 그대로 남는다.
+
+export interface DirectionInput {
+  track: SeedTrack;
+  title: string;
+  summary?: string;
+  sourceType?: string;
+  bucket?: string;
+}
+
+function directionSystem(track: SeedTrack): string {
+  const edge = trackEdge(track);
+  return `당신은 케이스랩(Caselab)의 콘텐츠 기획자입니다.
+운영자가 고른 소스(씨앗)를 읽고, 이걸 "${TRACK_LABEL[track]}"으로 만들 때의 **기획방향 후보 2~3개**를 제안합니다.
+
+[기획방향이란] 이 콘텐츠를 누구에게·어떤 막힘을·어떤 메시지로 풀지 정하는 짧은 지시문.
+생성 AI가 이 방향을 최우선 축으로 소스를 재구성하므로, 방향이 곧 콘텐츠의 정체성입니다.
+
+[이 형식(트랙)의 엣지] ${edge.edge}
+→ 이 형식으로 소화되는 방향만 제안하세요. (이 트랙이 덜어내야 할 것: ${edge.cuts})
+
+[먼저 할 일 — 소스 파악]
+1. 소스에서 무엇이 새롭고 무엇이 사실인지 핵심을 스스로 정리한다.
+2. 그 핵심 중 아래 페르소나가 "이건 내 얘기"라고 느낄 접점을 찾는다.
+3. 소스에 근거가 없는 방향은 만들지 않는다(그럴듯한 일반론·지어내기 금지).
+
+${PERSONA_PROMPT_BLOCK}
+
+[좋은 제안의 조건]
+- 2~3개는 서로 다른 페르소나 또는 서로 다른 각도여야 한다. 같은 말을 바꿔 쓴 두 개면 실패.
+- direction은 그대로 입력칸에 붙여 쓸 수 있는 완성된 문장 2~3개. "누구에게 / 어떤 막힘을 / 어떤 메시지·범위로"가 다 들어가야 한다. 제목이나 목차를 쓰지 말 것.
+- why는 그 페르소나의 실제 막힘과 연결한 한 줄. "유용하다" 같은 일반론 금지.
+- 페르소나가 즉시 거절하는 톤(수익 약속·광고·과장·근거 없는 단정) 금지.
+
+${track === 'trend' ? trendVariantRankingBlock() : ''}
+
+응답은 아래 JSON 객체 하나만 반환하세요(설명 없이):
+{
+  "coreInsight": "이 소스의 핵심 한 줄 — 무엇이 새롭고 왜 지금 중요한지",
+  "proposals": [
+    { "headline": "각도 이름 12자 내외", "personas": ["B"], "why": "이 페르소나가 왜 궁금해하는지 한 줄", "direction": "기획방향 2~3문장" }
+  ]${track === 'trend' ? `,
+  "variantRanking": [
+    { "variant": "news", "why": "이 소재가 왜 이 유형인지 한 줄" },
+    { "variant": "analysis", "why": "차선인 이유 한 줄" }
+  ]` : ''}
+}
+proposals는 2~3개, personas는 "A"~"E" 중 1~2개(첫 번째가 주 대상).`;
+}
+
+// 트렌드 세부 유형 추천 블록 — proposeDirections(트렌드 트랙)에만 붙는다.
+function trendVariantRankingBlock(): string {
+  return `
+[세부 유형 추천 — 트렌드 한정]
+이 소재에 가장 맞는 세부 유형을 1순위·2순위로 고르세요(variantRanking, 정확히 2개).
+${TREND_VARIANTS.map((v) => `- ${v.variant}(${v.label}): ${v.fits}`).join('\n')}
+기준은 소재의 구조입니다(주제가 아니라): 바뀐 사실이 본체면 news, 따라 할 행동이 본체면 action,
+확인 안 하면 당하는 변경이면 alert, 숫자·주장의 해석이 본체면 analysis.`;
+}
+
+/**
+ * 소스+페르소나로 기획방향 후보 2~3개 제안. 사람이 고른 뒤 수정해서 개요·본문으로 넘어간다.
+ * 주어진 원문을 읽고 각도를 잡는 작업이라 웹서치 불필요(속도↑). 로컬 작업장 전제.
+ */
+export async function proposeDirections(input: DirectionInput): Promise<DirectionProposals> {
+  const userPrompt =
+    `콘텐츠 종류: ${TRACK_LABEL[input.track]}\n제목: ${input.title}\n소스 원문:\n${input.summary ?? ''}` +
+    contextBlock(input) +
+    `\n\n위 소스를 읽고 기획방향 후보 JSON만 반환하세요.`;
+  const raw = await callModel(directionSystem(input.track), userPrompt, {
+    allowedTools: [],
+    effort: 'medium',
+    timeoutMs: 120_000,
+  });
+
+  const parsed = (parseModelJson(raw) ?? {}) as Record<string, unknown>;
+  const list = Array.isArray(parsed.proposals) ? parsed.proposals : [];
+  const proposals: DirectionProposal[] = [];
+  for (const item of list) {
+    if (!item || typeof item !== 'object') continue;
+    const p = item as Record<string, unknown>;
+    const direction = typeof p.direction === 'string' ? p.direction.trim() : '';
+    if (!direction) continue; // 방향 문장이 없으면 카드로서 쓸모가 없다
+    const personas = (Array.isArray(p.personas) ? p.personas : []).filter(isPersona).slice(0, 2);
+    proposals.push({
+      headline: typeof p.headline === 'string' && p.headline.trim() ? p.headline.trim() : '제안',
+      personas,
+      why: typeof p.why === 'string' ? p.why.trim() : '',
+      direction,
+    });
+  }
+  if (!proposals.length) throw new Error('기획방향 제안을 만들지 못했어요. 다시 시도해 주세요.');
+
+  // 트렌드 세부 유형 추천 — 방향 제안과 같은 호출에서 받는다(추가 호출 0회). 실패해도 방향 제안은 유효.
+  const variantRanking: { variant: string; why: string }[] = [];
+  if (input.track === 'trend' && Array.isArray(parsed.variantRanking)) {
+    for (const item of parsed.variantRanking) {
+      const r = item as Record<string, unknown>;
+      if (isTrendVariant(r?.variant) && !variantRanking.some((x) => x.variant === r.variant)) {
+        variantRanking.push({ variant: r.variant, why: typeof r.why === 'string' ? r.why.trim() : '' });
+      }
+    }
+  }
+
+  return {
+    coreInsight: typeof parsed.coreInsight === 'string' ? parsed.coreInsight.trim() : '',
+    proposals: proposals.slice(0, 3),
+    variantRanking: variantRanking.slice(0, 2),
+  };
+}
+
+// ─────────────── 엣지 제안(MD 직행 레인) ───────────────
+
+export interface EdgeProposal {
+  /** 이 트랙으로 풀 때의 각도 한 줄 */
+  angle: string;
+  /** 트랙 상세 페이지 섹션별 — 문서의 어떤 내용을 어떻게 배치할지 */
+  plan: { section: string; note: string }[];
+  /** 트랙 형식이 요구하지만 문서에 없는 것(지어내지 말고 보강·생략 판단용) */
+  missing: string[];
+  /** 트렌드 트랙 한정 — 세부 유형 추천(1순위·2순위). 다른 트랙·판단 실패면 빈 배열. */
+  variantRanking: { variant: string; why: string }[];
+}
+
+/**
+ * 완성 MD 문서를 특정 트랙의 상세 형식(lib/track-edges.ts 프로파일)에 대고 분석해
+ * 각도·섹션별 배치·부족한 부분을 제안. 사람이 확인·수정 후 생성에 주입한다.
+ * 분류·배치 작업이므로 웹서치 불필요 + 가벼운 모델(채점과 동일 설정).
+ */
+export async function proposeEdge(input: { track: SeedTrack; title: string; markdown: string }): Promise<EdgeProposal> {
+  const edge = trackEdge(input.track);
+  const system = `당신은 케이스랩(Caselab)의 콘텐츠 에디터입니다.
+기획·리서치가 끝난 MD 문서를 "${TRACK_LABEL[input.track]}" 형식으로 재구성하기 전에, 배치 계획만 제안합니다.
+
+[이 형식의 엣지] ${edge.edge}
+[상세 페이지 섹션 — 이 이름 그대로 계획을 세우세요]
+${edge.sections.map((s) => `- ${s.name}: ${s.need}`).join('\n')}
+[이 형식에 맞는 소재] ${edge.fits}
+[덜어낼 것] ${edge.cuts}
+[형식 규칙] ${edge.guide}
+
+- angle: 이 문서를 이 형식으로 풀 때의 각도 한 줄(문서의 논지를 형식의 엣지에 맞게).
+- plan: 위 섹션 각각에 대해, 문서의 어떤 내용을 어떻게 배치·압축할지 한 줄씩. 문서에 근거가 없는 섹션은 note에 "문서에 없음 — " 으로 시작해 대안(생략/보강)을 적으세요.
+- missing: 이 형식이 요구하지만 문서에 없는 것들(지어내면 안 되는 것). 없으면 빈 배열.
+${input.track === 'trend' ? trendVariantRankingBlock() : ''}
+
+응답은 아래 JSON 객체 하나만 반환하세요(설명 없이):
+{ "angle": "…", "plan": [{ "section": "섹션 이름", "note": "배치 계획 한 줄" }], "missing": ["…"]${input.track === 'trend' ? ', "variantRanking": [{ "variant": "news", "why": "…" }, { "variant": "analysis", "why": "…" }]' : ''} }`;
+
+  const userPrompt = `제목: ${input.title}\n\n[문서]\n${input.markdown.slice(0, 16000)}\n\n위 문서의 배치 계획 JSON만 반환하세요.`;
+  const raw = await callModel(system, userPrompt, { allowedTools: [], model: 'sonnet', timeoutMs: 90_000 });
+
+  try {
+    const parsed = (parseModelJson(raw) ?? {}) as Record<string, unknown>;
+    const plan = Array.isArray(parsed.plan)
+      ? parsed.plan
+          .map((p) => {
+            const o = p as Record<string, unknown>;
+            return {
+              section: typeof o.section === 'string' ? o.section.trim() : '',
+              note: typeof o.note === 'string' ? o.note.trim() : '',
+            };
+          })
+          .filter((p) => p.section && p.note)
+      : [];
+    const missing = Array.isArray(parsed.missing)
+      ? parsed.missing.filter((x): x is string => typeof x === 'string' && x.trim().length > 0)
+      : [];
+    const variantRanking: { variant: string; why: string }[] = [];
+    if (input.track === 'trend' && Array.isArray(parsed.variantRanking)) {
+      for (const item of parsed.variantRanking) {
+        const o = item as Record<string, unknown>;
+        if (isTrendVariant(o?.variant) && !variantRanking.some((x) => x.variant === o.variant)) {
+          variantRanking.push({ variant: o.variant, why: typeof o.why === 'string' ? o.why.trim() : '' });
+        }
+      }
+    }
+    return {
+      angle: typeof parsed.angle === 'string' ? parsed.angle.trim() : '',
+      plan,
+      missing,
+      variantRanking: variantRanking.slice(0, 2),
+    };
+  } catch {
+    // 파싱 실패 → 빈 제안(운영자가 직접 작성하거나 제안 없이 생성)
+    return { angle: '', plan: [], missing: [], variantRanking: [] };
+  }
+}
+
+// ─────────────── 발행 메타 자동 제안(MD 직행 레인) ───────────────
+
+export interface ContentMeta {
+  /** 본가 필터·뱃지에 쓰이는 직무 태그(JOB_TAGS 키). 1~2개. */
+  jobTags: JobTag[];
+  /** 카드·상단 한 줄 요약 */
+  summary: string;
+  /** 본문 분량으로 계산한 읽기 시간(분) */
+  readMin: number;
+  /** 적용 시간(분) */
+  applyMin: number;
+}
+
+/** 본문 분량으로 읽기·적용 시간을 추정(결정적, AI 불필요). JSON 길이를 프록시로 사용. */
+function estimateReadingTime(body: ContentBody): { readMin: number; applyMin: number } {
+  const chars = JSON.stringify(body).length;
+  const readMin = Math.min(20, Math.max(2, Math.round(chars / 900)));
+  const applyMin = Math.min(40, Math.max(readMin + 2, Math.round(readMin * 1.6)));
+  return { readMin, applyMin };
+}
+
+/**
+ * MD 직행 생성 직후 발행 메타를 자동 채운다: 시간은 분량으로 계산, 직무 태그·요약은 sonnet로 분류(웹툴X, 빠름).
+ * 실패해도 발행이 막히지 않게 안전 기본값(기획 태그)으로 폴백한다.
+ */
+export async function suggestContentMeta(input: { title: string; markdown: string; body: ContentBody }): Promise<ContentMeta> {
+  const { readMin, applyMin } = estimateReadingTime(input.body);
+  const tagList = JOB_TAGS.map((t) => `${t}(${JOB_LABELS[t]})`).join(', ');
+  const system = `당신은 케이스랩(Caselab)의 콘텐츠 에디터입니다. 발행에 필요한 메타데이터만 뽑습니다.
+- jobTags: 이 콘텐츠가 실무에 도움 되는 직무를 아래 목록의 "영문 키"로 1~2개 선택. 반드시 이 키만 사용(다른 문자열 금지).
+  목록: ${tagList}
+- summary: 콘텐츠 카드·상단에 노출될 한 줄 요약(한국어, 40자 내외, 이모지 금지, 담백하게).
+응답은 아래 JSON 객체 하나만 반환(설명 없이): {"jobTags":["planning"],"summary":"…"}`;
+  const userPrompt = `제목: ${input.title}\n\n[문서]\n${input.markdown.slice(0, 12000)}\n\n위 콘텐츠의 메타 JSON만 반환하세요.`;
+  try {
+    const raw = await callModel(system, userPrompt, { allowedTools: [], model: 'sonnet', timeoutMs: 60_000 });
+    const parsed = (parseModelJson(raw) ?? {}) as Record<string, unknown>;
+    const jobTags = Array.isArray(parsed.jobTags)
+      ? (parsed.jobTags.filter((x): x is JobTag => typeof x === 'string' && (JOB_TAGS as readonly string[]).includes(x)))
+      : [];
+    const summary = typeof parsed.summary === 'string' ? parsed.summary.trim().slice(0, 120) : '';
+    return { jobTags: jobTags.length ? jobTags.slice(0, 2) : ['planning'], summary, readMin, applyMin };
+  } catch {
+    return { jobTags: ['planning'], summary: '', readMin, applyMin };
+  }
+}
+
+// ─────────────── 씨앗 채점(큐레이션) ───────────────
+
+export interface SeedScore {
+  bucket: SeedBucket;
+  score: number; // 0~100
+  reason: string;
+  suggestedAngle: string;
+  /** 제목 대체용 한 줄 핵심(버킷 성격 반영) */
+  headline: string;
+  /** 버킷별 상세(카드 펼침): service={what,feature,category} / trend={whyNow} / painpoint={who,pain} / usecase={who,task,how,result} / prompt={purpose,who,model,gain} */
+  essence: Record<string, string>;
+}
+
+// 채점 시스템 프롬프트는 lib/seed-curation.ts의 BUCKETS 정의에서 생성(단일 출처).
+const SCORE_SYSTEM = `당신은 케이스랩(Caselab)의 콘텐츠 큐레이터입니다. 케이스랩 독자는 AI를 실무에 쓰려는 직무인(기획자·마케터·1인 사업가 등)입니다.
+
+HERMES가 수집한 "씨앗(브리핑 원문)" 하나를 평가해 ① 목적 버킷 분류 ② 0~100 점수 ③ 근거 ④ 콘텐츠화 각도를 매깁니다.
+
+[버킷]
+${BUCKETS.map((b) => `- "${b.key}" (${b.label}): ${b.criteria}`).join('\n')}
+- "etc": 위 어디에도 안 맞거나 광고·홍보·출처불명 루머·기존과 중복으로 가치 낮음.
+
+[점수 4축 — 각 0~100을 매긴 뒤 버킷별 가중치로 가중평균]
+- timeliness(시의성): 지금 화제이고 최신인가
+- practical(실무가치): 우리 독자가 바로 써먹을 수 있나
+- fit(케이스랩 적합성): 우리 톤·포맷으로 차별화해 풀 수 있나. **독자는 개발자가 아니다**(${JOB_TAGS.map((t) => JOB_LABELS[t]).join('·')}) — 원문이 엔지니어 대상이면 비개발자 실무자가 쓸 각도로 번역 가능한지로 판단하고, 그 각도가 안 보이면 크게 낮춘다
+- trust(신뢰도): 출처가 분명하고 광고·루머가 아닌가
+버킷별 가중치(합 100):
+${BUCKETS.map((b) => `- ${b.key}: 시의성 ${b.weights.timeliness} / 실무 ${b.weights.practical} / 적합 ${b.weights.fit} / 신뢰 ${b.weights.trust}`).join('\n')}
+- etc로 분류하면 score는 40 이하로.
+
+[출처 힌트] 씨앗에 출처가 주어지면 참고하되, 실제 버킷은 내용으로 판단하세요(힌트는 강제 아님).
+
+[suggestedAngle] 이 씨앗을 콘텐츠로 만든다면 어떤 각도로 풀지 한 줄(대상·핵심 메시지).
+
+[headline] 이 씨앗의 핵심을 한 줄로 정제(브리핑 원문 제목 대체용). 무엇에 관한 건지 즉시 파악되게.
+- service면 "서비스명 — 무엇을 하는지"(예: "Cursor — AI 페어프로그래밍 코드 에디터").
+- trend면 "무슨 트렌드인지"(예: "OpenAI GPT-5 멀티모달 에이전트 공개").
+- painpoint면 "누가 무엇에 막히는지"(예: "기획자, AI 자료조사 반복작업에 시간 낭비").
+- usecase면 "누가 무엇을 AI로 어떻게 했는지"(예: "마케터, 광고 카피 A/B안 생성을 GPT로 반나절→30분").
+- prompt면 "무슨 업무용 프롬프트인지"(예: "회의록을 결정·미결·액션아이템으로 정리하는 프롬프트").
+
+[essence] 버킷별 상세를 아래 키로. 원문에서 근거를 못 찾으면 빈 문자열(지어내지 말 것 → 그런 씨앗은 감점).
+- service: {"what":"무엇을 하는 서비스","feature":"핵심 기능","category":"도구 카테고리(예: 코드/글쓰기/이미지/리서치/자동화)","useCase":"누가 어떤 업무를 할 때 효율을 높여주는지 한 줄"}
+- trend: {"whyNow":"왜 지금 중요한지 한 줄","implication":"이 트렌드가 현재 AI 전체 흐름에서 의미하는 바·시사점(해석) 한두 줄"}
+- painpoint: {"who":"대상 직무","pain":"핵심 페인 한 줄","suggest":"그래서 어떤 서비스/기능이 이들에게 필요한지 → 케이스랩이 콘텐츠로 제안할 방향 한 줄"}
+- usecase: {"who":"누가(직무·팀)","task":"무슨 업무","how":"어떤 도구·절차로","result":"전후 변화(시간·품질·비용). 원문에 수치가 있으면 그대로"}
+- prompt: {"purpose":"무슨 목적의 프롬프트","who":"대상 직무","model":"어느 도구·모델에서 쓰는지","gain":"결과가 어떻게 달라지는지, 또는 토큰·왕복을 얼마나 아끼는지"}
+- etc: {}
+
+응답은 아래 JSON 객체 하나만 반환하세요(설명 없이):
+{ "bucket": "${[...BUCKETS.map((b) => b.key), 'etc'].join('|')}", "score": 0-100정수, "reason": "점수 근거 한 줄", "suggestedAngle": "콘텐츠화 각도 한 줄", "headline": "한 줄 핵심", "essence": { } }`;
+
+/** 씨앗 1개를 채점(버킷 분류 + 0~100). 로컬 작업장 전제. */
+export async function scoreSeed(input: { title: string; rawText?: string; sourceType?: string }): Promise<SeedScore> {
+  const src = sourceProfile(input.sourceType);
+  const sourceHint = src
+    ? `\n[출처] ${src.label} — ${src.criteria}${src.bucketHint ? ` (보통 '${src.bucketHint}' 버킷 소재)` : ''}` +
+      (src.qualitySignal
+        ? `\n[이 출처의 품질 신호] ${src.qualitySignal}\n→ 이 신호가 원문에 없으면 trust·practical을 낮게 매기세요(원문 근거 없는 얇은 씨앗은 감점).`
+        : '')
+    : '';
+  const userPrompt = `제목: ${input.title}\n원문: ${(input.rawText ?? '').slice(0, 4000)}${sourceHint}\n\n위 씨앗을 평가해 JSON만 반환하세요.`;
+  // 채점은 주어진 원문을 분류·점수 매기는 작업 → 웹서치 불필요(웹툴 제거로 속도↑) + 가벼운 모델.
+  const raw = await callModel(SCORE_SYSTEM, userPrompt, { allowedTools: [], model: 'sonnet', timeoutMs: 60_000, humanTone: false });
+
+  try {
+    const parsed = (parseModelJson(raw) ?? {}) as Record<string, unknown>;
+    const bucket = isSeedBucket(parsed.bucket) ? parsed.bucket : 'etc';
+    const n = typeof parsed.score === 'number' ? Math.round(parsed.score) : Number(parsed.score);
+    const score = Number.isFinite(n) ? Math.min(100, Math.max(0, n)) : 0;
+    // essence: 문자열 값만 추려 담는다(버킷별 키는 프롬프트가 결정).
+    const essence: Record<string, string> = {};
+    if (parsed.essence && typeof parsed.essence === 'object') {
+      for (const [k, v] of Object.entries(parsed.essence as Record<string, unknown>)) {
+        if (typeof v === 'string' && v.trim()) essence[k] = v.trim();
+      }
+    }
+    return {
+      bucket,
+      score,
+      reason: typeof parsed.reason === 'string' ? parsed.reason : '',
+      suggestedAngle: typeof parsed.suggestedAngle === 'string' ? parsed.suggestedAngle : '',
+      headline: typeof parsed.headline === 'string' ? parsed.headline.trim() : '',
+      essence,
+    };
+  } catch {
+    // 파싱 실패 → 보수적으로 etc/저점 처리(운영자가 재분석 가능)
+    return { bucket: 'etc', score: 0, reason: '자동 채점 실패(재분석 필요)', suggestedAngle: '', headline: '', essence: {} };
+  }
+}
+
+// ─────────────── 씨앗 원문 재가공(source_url 기반 enrichment) ───────────────
+
+export interface SeedEnrichResult {
+  /** 원문에서 재가공하면 씨앗이 유의미하게 풍부해지는가 */
+  recommend: boolean;
+  /** 판단 근거 한 줄(운영자에게 그대로 노출) */
+  reason: string;
+  /** recommend=true이고 apply 모드일 때만: 재가공된 raw_text(빈 줄로 문단 구분) */
+  enrichedRawText?: string;
+}
+
+const ENRICH_SYSTEM = `당신은 케이스랩(Caselab)의 콘텐츠 큐레이터입니다. 독자는 AI를 실무에 쓰려는 비개발자 직무인입니다.
+
+수집 봇이 만든 "씨앗 요약(raw_text)"과 그 출처 원문 전문을 비교합니다.
+씨앗의 품질 기준: 읽고 바로 따라 할 수 있어야 한다(구체 절차·복붙 가능한 지시문·실측 수치). 방향성·원칙 요약만 있으면 미달.
+
+판단(recommend):
+- 원문에 씨앗 요약에 빠진 구체 방법·예시·수치·복붙 가능한 내용이 있으면 true.
+- 씨앗 요약이 이미 원문의 실행 가능한 알맹이를 다 담았거나, 원문 자체가 개념·홍보 글이라 더 뽑을 게 없으면 false.
+
+재가공(enrichedRawText — recommend가 true일 때만):
+- 원문에서 실행 가능한 기법·절차·예시를 뽑아 한국어로 다시 쓴다. 문단은 빈 줄로 구분(카드 슬라이드 매핑 단위).
+- 원문에 없는 사실·수치를 지어내지 말 것. 원문에 복붙 가능한 프롬프트·지시문이 있으면 그대로 살린다.
+- 800~1500자 내외.
+
+응답은 JSON 객체 하나만(설명 없이):
+{ "recommend": true|false, "reason": "판단 근거 한 줄", "enrichedRawText": "재가공 전문(권장 아닐 땐 빈 문자열)" }`;
+
+/**
+ * 씨앗 raw_text와 source_url 원문 전문을 비교해 "원문 재가공"이 가치 있는지 판단하고,
+ * mode='apply'면 재가공된 raw_text까지 생성한다. 로컬 작업장 전제(Claude CLI).
+ */
+export async function enrichSeedFromSource(input: {
+  title: string;
+  rawText: string;
+  sourceText: string;
+  mode: 'check' | 'apply';
+}): Promise<SeedEnrichResult> {
+  const checkOnly = input.mode === 'check';
+  const userPrompt = `제목: ${input.title}
+
+[씨앗 요약(raw_text)]
+${input.rawText.slice(0, 6000)}
+
+[출처 원문 전문]
+${input.sourceText.slice(0, 16000)}
+
+${checkOnly ? '지금은 판단만 필요합니다. enrichedRawText는 빈 문자열로 두고 recommend·reason만 채우세요.' : 'recommend가 true면 enrichedRawText까지 완성하세요.'}
+JSON만 반환하세요.`;
+  const raw = await callModel(ENRICH_SYSTEM, userPrompt, {
+    allowedTools: [],
+    model: 'sonnet',
+    timeoutMs: checkOnly ? 60_000 : 180_000,
+  });
+  const parsed = (parseModelJson(raw) ?? {}) as Record<string, unknown>;
+  const recommend = parsed.recommend === true;
+  const enriched = typeof parsed.enrichedRawText === 'string' ? parsed.enrichedRawText.trim() : '';
+  return {
+    recommend,
+    reason: typeof parsed.reason === 'string' ? parsed.reason : '',
+    enrichedRawText: recommend && enriched ? enriched : undefined,
+  };
+}
+
+// ─────────────── 인라인 부분 수정 제안(편집 표면) ───────────────
+
+export interface RefineInput {
+  /** 수정 대상 텍스트(드래그 선택 구간 또는 필드 전체 값). rich면 인라인 마크다운 마커(**굵게** ==형광펜== [텍스트](url)) 포함 가능. */
+  text: string;
+  /** 운영자가 적은 '수정 각도'(예: "더 간결하게", "구체 사례 추가"). */
+  instruction: string;
+  /** 편집 중인 위치 힌트(예: "실전 케이스 · 문단", "도구 소개"). 선택. */
+  context?: string;
+  /** rich 필드면 인라인 마크다운 마커를 유지·활용해도 된다. */
+  rich?: boolean;
+  /** 운영자가 첨부한 추가 참고자료(.md 등) — 각도를 바꾸는 info. 선택. */
+  reference?: string;
+  /** 반환할 후보 수(기본 3, 1~4). */
+  count?: number;
+  /** 'draft'면 빈 문단 초안 생성 — text 없이 방향(instruction)·참고자료(reference)로 새로 쓴다. 기본 'refine'. */
+  mode?: 'refine' | 'draft';
+  /** 분량 하드 상한(공백 포함 자수). "절반 수준으로" 같은 말만으론 모델이 문장만 다듬고 내용을 안 버려서
+   *  실제로 줄지 않는다 — 자수 상한을 못박고, 초과 후보는 1회 재압축한다. refine 모드 전용. */
+  maxChars?: number;
+}
+
+/**
+ * 편집 표면(ContentPreview/ToolPreview)에서 지정한 텍스트를 '수정 각도'대로 다시 쓴 후보 2~4개를 반환.
+ * 재작성 작업이라 웹서치 불필요 + 가벼운 모델(sonnet). 실패 시 빈 배열(운영자가 직접 수정).
+ */
+/** 후보 하나 — 어떤 방향인지 짧은 라벨 + 실제 값(text kind는 문자열). */
+export interface RefineCandidate<T = string> {
+  /** 이 후보의 방향을 8자 내외로(예: "간결 강조형", "사례 추가형"). 선택 시 차이를 한눈에. */
+  label: string;
+  value: T;
+}
+
+export async function refineText(input: RefineInput): Promise<{ candidates: RefineCandidate<string>[] }> {
+  const draft = input.mode === 'draft';
+  const text = input.text?.trim();
+  const instruction = input.instruction?.trim();
+  const reference = input.reference?.trim();
+  // refine: 대상 텍스트+각도 필수. draft: 방향 또는 참고자료 중 하나면 된다.
+  if (draft ? !instruction && !reference : !text || !instruction) return { candidates: [] };
+  const count = Math.min(4, Math.max(1, input.count ?? 3));
+
+  const markerRule = input.rich
+    ? draft
+      ? '필요하면 인라인 서식 마커를 써도 됩니다: **굵게**, ==형광펜==. URL·링크는 참고자료에 있는 것만 쓰세요.'
+      : '원문은 인라인 서식 마커를 쓸 수 있습니다: **굵게**, ==형광펜==, [텍스트](URL). 필요하면 후보에도 같은 마커를 쓰되, 새 URL은 지어내지 말고 원문에 있던 링크만 유지하세요.'
+    : '일반 텍스트로만 답하세요(마크다운 서식 기호 금지).';
+
+  const system = draft
+    ? `당신은 케이스랩(Caselab)의 콘텐츠 에디터입니다. 운영자가 적은 "방향"과(또는) 첨부한 "참고자료"를 바탕으로 새 문단 초안 후보를 제안합니다.
+
+[규칙]
+- 방향·참고자료에 없는 사실·수치·이름·URL을 지어내지 마세요. 근거가 부족하면 일반론으로 채우지 말고 방향에 적힌 내용만 풀어 쓰세요.
+- 참고자료가 있으면 그 내용을 재료로 쓰되, 통째로 베끼지 말고 문단 흐름에 맞게 소화해서 쓰세요.
+- 한국어, 케이스랩의 담백한 1인칭 운영자 톤. 본문에 이모지를 넣지 마세요.
+- 방향이 분량을 명시하지 않으면 한 문단(2~5문장)으로 쓰세요.
+- 서로 뚜렷이 다른 방향의 후보 ${count}개를 만드세요(같은 문장 재탕 금지).
+- 각 후보에 그 방향을 요약한 짧은 label을 붙이세요(8자 내외, 예: "핵심 요약형", "경험 도입형", "질문 도입형"). 후보끼리 서로 다르게.
+- ${markerRule}
+
+응답은 아래 JSON 객체 하나만 반환하세요(설명 없이):
+{ "candidates": [ { "label": "핵심 요약형", "value": "새 문단 초안" }, ... ] }`
+    : `당신은 케이스랩(Caselab)의 콘텐츠 에디터입니다. 운영자가 지정한 "대상 텍스트"를 "수정 각도"에 맞게 다시 쓴 후보를 제안합니다.
+
+[규칙]
+- 대상 텍스트의 핵심 의미·사실은 보존하고, 수정 각도가 요구하는 변화만 반영하세요.
+- 사실·수치·이름·URL을 새로 지어내지 마세요(원문에 있던 것만 사용).
+- 한국어, 케이스랩의 담백한 1인칭 운영자 톤. 본문에 이모지를 넣지 마세요.
+${
+        input.maxChars
+          ? `- [분량 상한 — 최우선 규칙] 각 후보는 공백 포함 ${input.maxChars}자 이내여야 합니다. 문장을 다듬어 줄이는 것으론 부족합니다 — 덜 중요한 세부·예시·수식어·부연을 통째로 버리고 핵심만 남기세요. 상한을 넘는 후보는 무효입니다.`
+          : '- 수정 각도가 길이를 명시하지 않으면 원문과 비슷한 분량을 유지하세요.'
+      }
+- 서로 뚜렷이 다른 방향의 후보 ${count}개를 만드세요(같은 문장 재탕 금지).
+- 각 후보에 그 방향을 요약한 짧은 label을 붙이세요(8자 내외, 예: "간결 강조형", "사례 추가형", "질문 도입형"). 후보끼리 서로 다르게.
+- ${markerRule}
+
+응답은 아래 JSON 객체 하나만 반환하세요(설명 없이):
+{ "candidates": [ { "label": "간결 강조형", "value": "다시 쓴 텍스트" }, ... ] }`;
+
+  const ctx = input.context?.trim() ? `[편집 위치] ${input.context.trim()}\n` : '';
+  const ref = reference
+    ? `\n\n[${draft ? '참고자료 — 이 내용을 재료로 초안을 쓰세요' : '추가 참고자료 — 이 정보를 반영해 각도를 잡으세요'}]\n${reference.slice(0, 8000)}`
+    : '';
+  const userPrompt = draft
+    ? `${ctx}[방향] ${instruction || '(방향 없음 — 참고자료의 핵심을 한 문단으로 소화해 쓰세요)'}${ref}\n\n위 방향·참고자료로 새 문단 초안 후보 ${count}개를 JSON으로 반환하세요(각 후보에 label 포함).`
+    : `${ctx}[수정 각도] ${instruction}${ref}\n\n[대상 텍스트]\n${text!.slice(0, 8000)}\n\n위 대상 텍스트를 수정 각도대로 다시 쓴 후보 ${count}개를 JSON으로 반환하세요(각 후보에 label 포함).`;
+
+  const raw = await callModel(system, userPrompt, { allowedTools: [], model: 'sonnet', timeoutMs: 60_000 });
+  const parsed = (parseModelJson(raw) ?? {}) as Record<string, unknown>;
+  const candidates: RefineCandidate<string>[] = [];
+  if (Array.isArray(parsed.candidates)) {
+    for (const c of parsed.candidates) {
+      let label = '';
+      let value = '';
+      if (typeof c === 'string') value = c.trim(); // 하위호환(모델이 라벨 생략 시)
+      else if (c && typeof c === 'object') {
+        const o = c as Record<string, unknown>;
+        label = typeof o.label === 'string' ? o.label.trim() : '';
+        value = typeof o.value === 'string' ? o.value.trim() : '';
+      }
+      if (value) candidates.push({ label, value });
+      if (candidates.length >= count) break;
+    }
+  }
+
+  // 분량 상한 초과 후보 재압축(1회) — 상한을 줬는데도 넘겨 오면, 초과분만 모아 "내용을 버려서" 줄이게 한다.
+  // 재압축까지 실패한 후보는 그대로 반환(운영자가 보고 거른다).
+  const limit = !draft && input.maxChars ? input.maxChars : 0;
+  if (limit > 0 && candidates.some((c) => c.value.length > limit * 1.1)) {
+    const over = candidates
+      .map((c, i) => ({ ...c, i }))
+      .filter((c) => c.value.length > limit * 1.1);
+    const compressPrompt = `아래 후보들이 분량 상한(공백 포함 ${limit}자)을 넘었습니다. 각 후보를 ${limit}자 이내로 줄이세요.
+문장 다듬기가 아니라 덜 중요한 세부·예시·부연을 통째로 삭제해서 맞추세요. 핵심 의미·사실은 보존, 새 사실 금지. ${markerRule}
+
+${over.map((c) => `[후보 ${c.i}] (현재 ${c.value.length}자)\n${c.value}`).join('\n\n')}
+
+응답은 아래 JSON 객체 하나만 반환하세요(설명 없이, i는 위 후보 번호 그대로):
+{ "candidates": [ { "i": 0, "value": "압축한 텍스트" }, ... ] }`;
+    try {
+      const raw2 = await callModel(
+        `당신은 케이스랩(Caselab)의 콘텐츠 에디터입니다. 주어진 텍스트를 자수 상한에 맞게 압축합니다.`,
+        compressPrompt,
+        { allowedTools: [], model: 'sonnet', timeoutMs: 60_000 },
+      );
+      const parsed2 = (parseModelJson(raw2) ?? {}) as Record<string, unknown>;
+      if (Array.isArray(parsed2.candidates)) {
+        for (const c of parsed2.candidates) {
+          if (!c || typeof c !== 'object') continue;
+          const o = c as Record<string, unknown>;
+          const i = typeof o.i === 'number' ? o.i : -1;
+          const value = typeof o.value === 'string' ? o.value.trim() : '';
+          if (candidates[i] && value) candidates[i] = { ...candidates[i], value };
+        }
+      }
+    } catch {
+      // 재압축 실패 — 원 후보 그대로 둔다.
+    }
+  }
+
+  return { candidates };
+}
+
+// ─────────────── 섹션 통째 수정 제안(자유 재구성) ───────────────
+
+export interface RefineSectionInput {
+  /** content(케이스/트렌드)면 지정 → 후보를 전체 ContentBodySchema로 검증(무효 후보 제거). tool이면 생략(형태 가드만). */
+  track?: 'case' | 'trend';
+  /** 현재 전체 body — 섹션 후보를 끼워 스키마 검증. */
+  body: Record<string, unknown>;
+  /** body의 섹션 키(예: "forWho", "painPoints", "what"). */
+  sectionKey: string;
+  /**
+   * 화면에선 한 섹션인데 body 키가 여러 개인 복합 섹션(예: "좋았던 점·아쉬웠던 점" = pros + cons).
+   * 주면 현재 값·후보를 { pros:…, cons:… } 꼴의 객체로 다루고, 검증은 {...body, ...후보}로 한다.
+   * 이게 없어서 복합 섹션만 '섹션 수정' 버튼을 못 달고 있었다(2026-08-07).
+   */
+  sectionKeys?: string[];
+  /** 사람이 읽는 섹션 이름(예: "누구한테 중요해요"). */
+  sectionLabel: string;
+  instruction: string;
+  /** 추가 참고자료(.md 등). 선택. */
+  reference?: string;
+  count?: number;
+  /**
+   * 자유 섹션(body.sections[i].blocks) 전용. 고정 스펙 밖이라 sectionKey로 body에서 현재 값을
+   * 찾을 수 없으므로 currentValue로 직접 받고, 후보는 Block[]으로 검증한다.
+   */
+  freeBlocks?: boolean;
+  /** freeBlocks일 때의 현재 값(Block[]). 비면 '생성' 모드로 새 섹션을 쓴다. */
+  currentValue?: unknown;
+}
+
+/**
+ * 섹션(카드/항목 배열 또는 객체) 전체를 '수정 각도'대로 자유 재구성한 후보를 반환.
+ * 항목 추가·병합·분할·순서변경 허용. content면 {...body, [key]:후보}를 스키마 검증해 유효 후보만 남긴다(렌더 안전).
+ */
+export async function refineSection(
+  input: RefineSectionInput,
+): Promise<{ candidates: RefineCandidate<unknown>[]; note?: string }> {
+  const instruction = input.instruction?.trim();
+  // 복합 섹션(pros+cons처럼 키 여러 개)이면 키별 값을 한 객체로 묶어 다룬다.
+  const keys = input.sectionKeys?.length ? input.sectionKeys : null;
+  // 자유 섹션은 body에서 찾을 수 없으므로 currentValue를 쓴다. 고정 섹션은 생성 시 키가 아예 없을 수 있음(undefined).
+  const current = input.freeBlocks
+    ? input.currentValue
+    : keys
+      ? Object.fromEntries(keys.map((k) => [k, input.body?.[k]]))
+      : input.body?.[input.sectionKey];
+  if (!instruction) return { candidates: [] };
+  const count = Math.min(4, Math.max(1, input.count ?? 3));
+
+  // 빈 섹션(또는 키 없음)이면 "생성" 모드 — 섹션 정의(content-sections)의 예시를 형태 힌트로 삼아 새로 작성.
+  // 복합 섹션은 래퍼 객체가 항상 키를 갖고 있어 isEmptySection이 false가 되므로, 멤버가 모두 비었는지로 판단한다.
+  const empty = keys
+    ? keys.every((k) => isEmptySection(input.body?.[k]))
+    : isEmptySection(current);
+  const example = !empty
+    ? undefined
+    : input.freeBlocks
+      ? FREE_SECTION_EXAMPLE
+      : input.track
+        ? keys
+          ? Object.fromEntries(keys.map((k) => [k, sectionSpec(input.track!, k)?.example]))
+          : sectionSpec(input.track, input.sectionKey)?.example
+        : undefined;
+  const shapeRef = empty && example !== undefined ? example : current;
+  if (shapeRef === undefined || shapeRef === null) return { candidates: [] }; // 형태 힌트 없음(생성 불가)
+  const isArr = Array.isArray(shapeRef);
+  const shapeJson = JSON.stringify(shapeRef, null, 2);
+
+  const system = empty
+    ? `당신은 케이스랩(Caselab)의 콘텐츠 에디터입니다. 문서에 새로 추가할 한 섹션의 내용을, 운영자가 준 "핵심 내용·방향·주의사항"에 맞춰 새로 작성한 후보를 제안합니다.
+
+[규칙]
+- 아래 "형태 예시"와 같은 JSON 형태(${isArr ? '배열' : '객체'} + 같은 키 이름·타입)로 작성하세요. 항목 개수는 내용에 맞게 정하면 됩니다.
+- 키 이름/타입은 예시와 동일하게(새 키 발명 금지). 값은 예시 문구를 쓰지 말고 실제 내용으로 채우세요.
+- 운영자가 준 핵심 내용·참고자료에 있는 사실만 쓰고, 수치·이름·URL을 새로 지어내지 마세요.
+- [중요] 정보가 부족해 보여도 되묻지 말고 반드시 JSON으로 답하세요. 확인된 범위까지만 쓰고,
+  모르는 수치·이름·URL은 그 문장을 통째로 빼세요(빈칸·"미확인" 같은 표기도 쓰지 말 것).
+  운영자가 초안을 보고 채우는 구조라, 짧더라도 뼈대가 있는 편이 빈손보다 낫습니다.
+- 한국어, 담백한 1인칭 운영자 톤. 이모지 금지.
+- 서로 뚜렷이 다른 방향의 후보 ${count}개(구성 재탕 금지).
+- 각 후보에 방향을 요약한 짧은 label(8자 내외, 예: "핵심 압축형", "사례 중심형"). 후보끼리 다르게.
+
+응답은 아래 JSON만 반환(설명 없이). candidates의 각 원소는 { label, value } 이고 value는 이 섹션의 값(예시와 같은 형태):
+{ "candidates": [ { "label": "핵심 압축형", "value": <섹션 값> }, ... ] }`
+    : `당신은 케이스랩(Caselab)의 콘텐츠 에디터입니다. 문서의 한 섹션 전체를 "수정 각도"에 맞게 다시 구성한 후보를 제안합니다.
+
+[규칙]
+- 아래 "현재 섹션 JSON"과 같은 JSON 형태(${isArr ? '배열' : '객체'} + 같은 키 이름·타입)를 유지하세요. 단, 항목을 추가·병합·분할·순서변경해도 됩니다(자유 재구성).
+- 각 항목의 키 이름/타입은 현재와 동일하게(새 키 발명 금지). 텍스트 값만 새로 씁니다.
+- 사실·수치·이름·URL을 새로 지어내지 마세요(현재 내용/참고자료에 있는 것만).
+- 한국어, 담백한 1인칭 운영자 톤. 이모지 금지.
+- 서로 뚜렷이 다른 방향의 후보 ${count}개(같은 구성 재탕 금지).
+- 각 후보에 그 재구성 방향을 요약한 짧은 label을 붙이세요(8자 내외, 예: "카드 확장형", "핵심 압축형", "직무별 정리형"). 후보끼리 서로 다르게.
+
+응답은 아래 JSON만 반환(설명 없이). candidates의 각 원소는 { label, value } 이고 value는 이 섹션의 새 값(현재와 같은 형태):
+{ "candidates": [ { "label": "카드 확장형", "value": <섹션 값> }, ... ] }`;
+
+  const ref = input.reference?.trim() ? `\n\n[추가 참고자료 — 이 정보를 반영하세요]\n${input.reference.trim().slice(0, 8000)}` : '';
+  const userPrompt = empty
+    ? `[새 섹션] ${input.sectionLabel}\n[넣을 핵심 내용·방향·주의사항] ${instruction}${ref}\n\n[형태 예시]\n${shapeJson.slice(0, 12000)}\n\n위 요청 내용을 예시 형태로 담은 후보 ${count}개를 JSON으로 반환하세요(각 후보에 label 포함).`
+    : `[섹션] ${input.sectionLabel}\n[수정 각도] ${instruction}${ref}\n\n[현재 섹션 JSON]\n${shapeJson.slice(0, 12000)}\n\n위 섹션을 수정 각도대로 다시 구성한 후보 ${count}개를 JSON으로 반환하세요(각 후보에 label 포함).`;
+
+  // 섹션 통째 생성은 실측 50~60초라 90초는 여유가 거의 없다. 라우트 maxDuration(120초) 안에서 상한을 올린다.
+  const raw = await callModel(system, userPrompt, { allowedTools: [], model: 'sonnet', timeoutMs: 105_000 });
+  const parsed = (parseModelJson(raw) ?? {}) as Record<string, unknown>;
+  const list = Array.isArray(parsed.candidates) ? parsed.candidates : [];
+
+  // 전체 body 검증은 "원본 body가 이미 스키마를 통과할 때"만 후보 판별자로 쓴다.
+  // 원본이 이미 스키마 밖이면(예: 아직 스키마에 없는 신블록 포함) 전체 검증이 후보와 무관하게 늘 실패하므로,
+  // 그럴 땐 형태 가드(배열↔배열)만으로 통과시킨다(운영자가 검토 후 적용).
+  // 자유 섹션은 body 경로가 단순 키가 아니라 전체 body 검증을 못 쓴다 → Block[] 스키마로 직접 검증.
+  const strict = !input.freeBlocks && !!input.track && ContentBodySchema.safeParse(input.body).success;
+  const blockArr = z.array(BlockSchema);
+
+  const out: RefineCandidate<unknown>[] = [];
+  for (const c of list) {
+    // 모델이 {label, value}로 감쌌으면 풀고, 아니면 원소 자체를 섹션 값으로 본다.
+    let label = '';
+    let value: unknown = c;
+    if (c && typeof c === 'object' && !Array.isArray(c) && 'value' in (c as Record<string, unknown>)) {
+      const o = c as Record<string, unknown>;
+      label = typeof o.label === 'string' ? o.label.trim() : '';
+      value = o.value;
+    }
+    if (isArr !== Array.isArray(value)) continue; // 형태 가드
+    if (value === null || typeof value !== 'object') continue;
+    if (input.freeBlocks) {
+      const res = blockArr.safeParse(value);
+      if (!res.success || res.data.length === 0) continue;
+      out.push({ label, value: res.data });
+    } else if (strict) {
+      // 복합 섹션은 후보 객체를 body에 통째로 펼쳐 검증하고, 되돌려줄 때도 그 키들만 추려 담는다.
+      const merged = keys
+        ? { ...input.body, ...(value as Record<string, unknown>) }
+        : { ...input.body, [input.sectionKey]: value };
+      const res = ContentBodySchema.safeParse(merged);
+      if (!res.success) continue;
+      const parsedBody = res.data as Record<string, unknown>;
+      out.push({
+        label,
+        value: keys ? Object.fromEntries(keys.map((k) => [k, parsedBody[k]])) : parsedBody[input.sectionKey],
+      });
+    } else {
+      out.push({ label, value });
+    }
+    if (out.length >= count) break;
+  }
+
+  // 후보가 하나도 안 남았는데 모델이 산문으로 답했으면(예: "자료를 더 주세요" 되물음),
+  // 그 문장을 그대로 올려보낸다. 운영자에게 "각도를 바꿔보라"는 일반 안내보다
+  // 모델이 실제로 무엇을 요구하는지 보여주는 편이 다음 행동을 정해준다.
+  if (out.length === 0) {
+    const prose = raw.trim();
+    if (prose && !prose.startsWith('{') && !prose.startsWith('[')) {
+      return { candidates: [], note: prose.slice(0, 600) };
+    }
+  }
+  return { candidates: out };
+}
+
+// ─────────────── 문서 전체 수정 제안(모든 섹션 한 번에) ───────────────
+
+/** 전체 수정 대상 문서 종류 — 검증 스키마와 프롬프트 문구가 갈린다. */
+export type RefineDocKind = 'content' | 'tool' | 'prompt' | 'guide';
+
+export interface RefineDocumentInput {
+  /** 기본 'content'(케이스/트렌드). 자료실은 tool·prompt·guide. */
+  docKind?: RefineDocKind;
+  /** content 전용 — 케이스/트렌드 구분. */
+  track?: 'case' | 'trend';
+  /** 현재 전체 body(모든 섹션·항목). 후보도 같은 형태로 돌려받는다. */
+  body: Record<string, unknown>;
+  /** 제목·요약(자료실은 이름·설명) — 문맥으로 주고, 수정 각도가 요구할 때만 후보가 함께 바꾼다. */
+  title?: string;
+  summary?: string;
+  instruction: string;
+  reference?: string;
+  /** 기본 2(문서 하나가 통째로 나오므로 섹션 수정보다 적게), 긴 문서는 1. 1~3. */
+  count?: number;
+}
+
+/** 문서 전체 후보 — body는 항상, title·summary는 각도가 요구할 때만 채워진다. */
+export interface DocumentCandidate {
+  title?: string;
+  summary?: string;
+  body: Record<string, unknown>;
+}
+
+/**
+ * 문서(케이스/트렌드 body 전체)를 '수정 각도'대로 다시 쓴 후보를 반환 — 섹션별로 돌지 않고 한 번에.
+ * 톤·용어·호칭을 문서 전체에서 통일하는 게 목적이라 섹션 단위 수정으로는 대체되지 않는다.
+ * 모델이 통째로 빠뜨린 섹션은 원본 값으로 되메워(merge) '조용한 삭제'를 막는다.
+ */
+export async function refineDocument(
+  input: RefineDocumentInput,
+): Promise<{ candidates: RefineCandidate<DocumentCandidate>[]; note?: string }> {
+  const instruction = input.instruction?.trim();
+  if (!instruction || !input.body) return { candidates: [] };
+  const docKind = input.docKind ?? 'content';
+  // 문서 종류별 라벨 + 검증 스키마. 가이드는 고정 계약이 없어 형태 가드만 건다(섹션 수정과 같은 기준).
+  const docLabel =
+    docKind === 'content'
+      ? input.track === 'trend'
+        ? 'AI 트렌드'
+        : '실전 케이스'
+      : docKind === 'tool'
+        ? '자료실 도구 상세'
+        : docKind === 'prompt'
+          ? '자료실 프롬프트'
+          : '자료실 가이드';
+  const schema =
+    docKind === 'content' ? ContentBodySchema : docKind === 'tool' ? ToolBodySchema : docKind === 'prompt' ? PromptBodySchema : null;
+  const bodyJson = JSON.stringify(input.body, null, 2);
+  // 후보 수 = 시간. 실측: body 12k자 문서 × 후보 2개 = 224초(라우트 상한 300초에 근접).
+  // 더 긴 문서는 후보를 1개로 줄여 상한 안에 들어오게 한다(2개 받으려면 count로 명시).
+  const count = Math.min(3, Math.max(1, input.count ?? (bodyJson.length > 15000 ? 1 : 2)));
+
+  const system = `당신은 케이스랩(Caselab)의 콘텐츠 에디터입니다. 문서 "전체"를 운영자의 "수정 각도"에 맞게 다시 쓴 후보를 제안합니다.
+
+[규칙]
+- 아래 "현재 문서 JSON"과 같은 형태를 유지하세요: 최상위 키를 지우거나 새로 만들지 말고, 각 항목의 배열/객체 형태·키 이름·타입도 그대로 두세요.
+- 아래 키의 값은 절대 바꾸지 마세요(형식 판별자·분류라 바뀌면 화면이 깨집니다): "kind", "type", "level", "promptCategory", "href", "url", "sourceUrl".
+- 배열 안 항목은 추가·병합·분할·순서변경해도 됩니다. 다만 수정 각도가 명시적으로 요구하지 않는 한, 내용이 있던 항목을 통째로 비우지 마세요.
+- 모든 키를 빠짐없이 포함하세요(안 고칠 부분도 현재 값 그대로 다시 적어야 합니다).
+- 사실·수치·이름·URL을 새로 지어내지 마세요(현재 내용/참고자료에 있는 것만).
+- [전체 수정의 목적] 문서 전체에서 톤·용어·호칭·문장 길이·표기를 일관되게 맞추세요. 부분마다 따로 노는 문장을 남기지 마세요.
+- 한국어, 담백한 1인칭 운영자 톤. 이모지 금지.
+- 수정 각도가 제목(이름)·요약(설명)도 손대라고 하면 title·summary를 함께 반환하고, 그렇지 않으면 두 필드를 생략하세요.
+- 서로 뚜렷이 다른 방향의 후보 ${count}개(같은 구성 재탕 금지).
+- 각 후보에 그 방향을 요약한 짧은 label을 붙이세요(8자 내외, 예: "톤 통일형", "핵심 압축형"). 후보끼리 서로 다르게.
+
+응답은 아래 JSON만 반환(설명·코드펜스 없이). value.body는 문서 body 전체입니다:
+{ "candidates": [ { "label": "톤 통일형", "value": { "body": <문서 body 전체> } }, ... ] }`;
+
+  const ref = input.reference?.trim()
+    ? `\n\n[추가 참고자료 — 이 정보를 반영하세요]\n${input.reference.trim().slice(0, 8000)}`
+    : '';
+  const meta = `[문서] ${docLabel}${input.title?.trim() ? ` · ${input.title.trim()}` : ''}${
+    input.summary?.trim() ? `\n[요약] ${input.summary.trim()}` : ''
+  }`;
+  const userPrompt = `${meta}\n[수정 각도] ${instruction}${ref}\n\n[현재 문서 JSON]\n${bodyJson.slice(0, 40000)}\n\n위 문서 전체를 수정 각도대로 다시 쓴 후보 ${count}개를 JSON으로 반환하세요(각 후보에 label 포함, 모든 키 포함).`;
+
+  // 문서 하나가 통째로 출력되므로 섹션 수정(105초)보다 넉넉히 — 라우트 maxDuration(300초) 안에서 상한.
+  const raw = await callModel(system, userPrompt, { allowedTools: [], model: 'sonnet', timeoutMs: 280_000 });
+  const parsed = (parseModelJson(raw) ?? {}) as Record<string, unknown>;
+  const list = Array.isArray(parsed.candidates) ? parsed.candidates : [];
+
+  // 섹션 수정과 같은 기준 — 원본이 이미 스키마를 통과할 때만 스키마 검증을 후보 판별자로 쓴다.
+  const strict = !!schema && schema.safeParse(input.body).success;
+
+  const out: RefineCandidate<DocumentCandidate>[] = [];
+  for (const c of list) {
+    if (!c || typeof c !== 'object' || Array.isArray(c)) continue;
+    const o = c as Record<string, unknown>;
+    const label = typeof o.label === 'string' ? o.label.trim() : '';
+    const v = (o.value ?? o) as Record<string, unknown>;
+    // body를 감싸지 않고 body 자체를 value로 준 경우도 받아준다(모델이 래핑을 자주 생략).
+    const rawBody = (v.body && typeof v.body === 'object' && !Array.isArray(v.body) ? v.body : v) as Record<string, unknown>;
+    if (!rawBody || typeof rawBody !== 'object' || Array.isArray(rawBody)) continue;
+    // 빠뜨린 부분은 원본으로 되메운다. 콘텐츠 body의 kind는 원본 값을 강제(트랙이 바뀌면 렌더가 깨진다).
+    // 자료실 body에는 kind가 없다 — 없는데 넣으면 .strict() 스키마가 '모르는 키'로 튕긴다.
+    const merged = { ...input.body, ...rawBody };
+    if ('kind' in input.body) merged.kind = input.body.kind;
+    else delete merged.kind;
+    if (JSON.stringify(merged) === JSON.stringify(input.body)) continue; // 아무것도 안 바뀐 후보는 버린다
+    let body: Record<string, unknown> = merged;
+    if (strict && schema) {
+      const res = schema.safeParse(merged);
+      if (!res.success) continue;
+      body = res.data as Record<string, unknown>;
+    }
+    const title = typeof v.title === 'string' && v.title.trim() ? v.title.trim() : undefined;
+    const summary = typeof v.summary === 'string' && v.summary.trim() ? v.summary.trim() : undefined;
+    out.push({ label, value: { title, summary, body } });
+    if (out.length >= count) break;
+  }
+
+  // 후보 0개인데 모델이 산문으로 답했으면(되물음 등) 그 문장을 그대로 올려보낸다 — 섹션 수정과 동일.
+  if (out.length === 0) {
+    const prose = raw.trim();
+    if (prose && !prose.startsWith('{') && !prose.startsWith('[')) {
+      return { candidates: [], note: prose.slice(0, 600) };
+    }
+  }
+  return { candidates: out };
+}

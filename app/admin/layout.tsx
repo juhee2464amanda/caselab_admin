@@ -1,6 +1,6 @@
-import { AdminSidebar } from '@/components/admin/AdminSidebar';
-import { AdminTopBar } from '@/components/admin/AdminTopBar';
-import { SectionTabs } from '@/components/admin/SectionTabs';
+import { AdminSidebar } from '@/components/admin/layout/AdminSidebar';
+import { AdminTopBar } from '@/components/admin/layout/AdminTopBar';
+import { SectionTabs } from '@/components/admin/content/SectionTabs';
 
 export const dynamic = 'force-dynamic';
 

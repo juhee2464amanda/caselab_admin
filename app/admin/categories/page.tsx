@@ -1,5 +1,5 @@
 import { createSupabaseServerClient, isSupabaseConfigured } from '@/lib/supabase/server';
-import { CategoryManager, type Category, type Tag } from '@/components/admin/CategoryManager';
+import { CategoryManager, type Category, type Tag } from '@/components/admin/content/CategoryManager';
 
 // /admin/categories — 피드백 #4: '관심사(태그) 분석' 중심으로 재정의.
 //   1) 메뉴별 태그·수  2) 반응율 높은 태그(관심사)  3) 추천 태그(미등록 인기 검색어)

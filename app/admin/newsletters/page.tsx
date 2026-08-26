@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { createSupabaseServerClient, isSupabaseConfigured } from '@/lib/supabase/server';
 import { formatDate } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
-import { NewsletterDeleteButton } from '@/components/admin/NewsletterDeleteButton';
+import { NewsletterDeleteButton } from '@/components/admin/newsletters/NewsletterDeleteButton';
 
 // /admin/newsletters — 뉴스레터 캠페인 (D53). 작성 폼(초안 저장)까지. Brevo 실발송은 다음 레이어.
 type Campaign = {

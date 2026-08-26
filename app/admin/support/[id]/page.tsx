@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { createSupabaseServerClient, isSupabaseConfigured } from '@/lib/supabase/server';
 import { formatDate } from '@/lib/utils';
-import { SupportReplyForm } from '@/components/admin/SupportReplyForm';
+import { SupportReplyForm } from '@/components/admin/ops/SupportReplyForm';
 
 // /admin/support/[id] — 문의 상세 + 답변 발송 (피드백 #2)
 type Ticket = {

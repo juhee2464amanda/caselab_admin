@@ -1,6 +1,6 @@
 import { createSupabaseServerClient, isSupabaseConfigured } from '@/lib/supabase/server';
-import { CurationManager, type Slot, type RankItem, type Orphan } from '@/components/admin/CurationManager';
-import { CategoryQuickEdit } from '@/components/admin/CategoryQuickEdit';
+import { CurationManager, type Slot, type RankItem, type Orphan } from '@/components/admin/content/CurationManager';
+import { CategoryQuickEdit } from '@/components/admin/content/CategoryQuickEdit';
 import { SLOT_TYPE } from '@/lib/featured-slots';
 
 // /admin/contents/curation — 홈 히어로 큐레이션.

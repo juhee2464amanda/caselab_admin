@@ -1,9 +1,9 @@
 import Link from 'next/link';
 import { createSupabaseServerClient, isSupabaseConfigured } from '@/lib/supabase/server';
-import { BUCKETS, isSeedBucket, bucketFromSource, RETENTION_DAYS, MAX_UNUSED_SEEDS } from '@/lib/seed-curation';
+import { BUCKETS, isSeedBucket, bucketFromSource, RETENTION_DAYS, MAX_UNUSED_SEEDS } from '@/lib/seeds/seed-curation';
 import { cn } from '@/lib/utils';
-import { SeedPurgeButton } from '@/components/admin/SeedPurgeButton';
-import { SeedArchiveRow, type ArchiveSeed } from '@/components/admin/SeedArchiveRow';
+import { SeedPurgeButton } from '@/components/admin/seeds/SeedPurgeButton';
+import { SeedArchiveRow, type ArchiveSeed } from '@/components/admin/seeds/SeedArchiveRow';
 
 // /admin/studio/archive — 씨앗 아카이브. 유입된 모든 씨앗의 상태·출처·이력 관리 뷰.
 export const dynamic = 'force-dynamic';
