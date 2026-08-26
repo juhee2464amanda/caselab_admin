@@ -27,13 +27,15 @@ export async function POST(req: NextRequest) {
   const admin = createSupabaseAdminClient();
 
   if (body.meta) {
-    const { category, traits, utm_code } = body.meta;
+    const { category, traits, utm_code, own_comments, reposts } = body.meta;
     const { error } = await admin
       .from('instagram_posts')
       .update({
         category: category || null,
         traits: traits && Object.keys(traits).length ? traits : null,
         utm_code: utm_code || null,
+        own_comments: Number(own_comments) || 0,
+        reposts: Number(reposts) || 0,
       })
       .eq('ig_media_id', igMediaId);
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });

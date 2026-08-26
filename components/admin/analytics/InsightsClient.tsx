@@ -37,9 +37,11 @@ export type InsightPost = {
   reach: number;
   views: number;
   likes: number;
-  comments: number;
+  comments: number; // IG API 원값(내 댓글 포함)
+  ownComments: number; // 수기 입력 — 표시·참여율에서 차감
   saves: number;
   shares: number;
+  reposts: number; // 수기 입력 — IG API 미제공
   siteClicks: number | null; // utm_code 미지정이면 null(집계 불가)
   ad: AdRow | null;
   capturedOn: string | null;
@@ -51,8 +53,12 @@ function daysSince(dateStr: string): number {
   return Math.max(1, Math.round((Date.now() - new Date(dateStr).getTime()) / 864e5));
 }
 
+function netComments(p: InsightPost): number {
+  return Math.max(0, p.comments - p.ownComments);
+}
+
 function engagement(p: InsightPost): number {
-  return p.likes + p.comments + p.saves + p.shares;
+  return p.likes + netComments(p) + p.saves + p.shares + p.reposts;
 }
 
 function engagementRate(p: InsightPost): number {
@@ -70,7 +76,12 @@ function viewsPerDay(p: InsightPost): number {
 const COLUMNS = [
   { key: 'postedAt', label: '업로드', num: false, tip: '게시일과 경과일. 절대치 비교의 보정 기준.' },
   { key: 'reach', label: '도달', num: true, tip: '게시물을 본 계정 수 (중복 없음). 오가닉만 — 광고 도달은 별도.' },
-  { key: 'views', label: '조회', num: true, tip: '재생·노출 횟수 (같은 사람의 반복 시청 포함).' },
+  {
+    key: 'views',
+    label: '조회',
+    num: true,
+    tip: '재생·노출 횟수(반복 포함), 오가닉만 — 광고 조회 미포함. 인스타 앱 그리드의 눈 아이콘 숫자는 광고 조회까지 합산이라 광고 집행 게시물은 여기보다 크게 보인다(광고 없는 게시물은 일치).',
+  },
   {
     key: 'viewRatio',
     label: '조회/도달',
@@ -78,9 +89,15 @@ const COLUMNS = [
     tip: '조회 ÷ 도달. 1보다 클수록 같은 사람이 여러 번 본 소재 — 붙잡는 힘.',
   },
   { key: 'likes', label: '좋아요', num: true },
-  { key: 'comments', label: '댓글', num: true },
+  {
+    key: 'comments',
+    label: '댓글',
+    num: true,
+    tip: 'IG API 값에서 내 댓글([편집]에서 수기 입력)을 뺀 순수 댓글. 괄호는 내 댓글 수.',
+  },
   { key: 'saves', label: '저장', num: true },
   { key: 'shares', label: '공유', num: true },
+  { key: 'reposts', label: '리포스트', num: true, tip: 'IG API 미제공 지표 — 앱 인사이트 값을 [편집]에서 수기 입력.' },
   {
     key: 'engRate',
     label: '참여율',
@@ -108,6 +125,8 @@ function sortValue(p: InsightPost, key: SortKey): number | string {
       return conversionRate(p) ?? -1;
     case 'viewsPerDay':
       return viewsPerDay(p);
+    case 'comments':
+      return netComments(p);
     case 'postedAt':
       return p.postedAt;
     default:
@@ -144,9 +163,10 @@ export function InsightsClient({ posts: input }: { posts: InsightPost[] }) {
     const eng = sum(engagement);
     const factors = [
       { label: '좋아요', value: sum((p) => p.likes) },
-      { label: '댓글', value: sum((p) => p.comments) },
+      { label: '댓글(순)', value: sum(netComments) },
       { label: '저장', value: sum((p) => p.saves) },
       { label: '공유', value: sum((p) => p.shares) },
+      { label: '리포스트', value: sum((p) => p.reposts) },
     ];
     const follows = sum((p) => p.ad?.follows ?? 0);
     const spend = sum((p) => p.ad?.spend ?? 0);
@@ -454,9 +474,13 @@ function PostRows({
           {p.reach > 0 ? `${(p.views / p.reach).toFixed(2)}배` : '—'}
         </td>
         <Num v={p.likes} />
-        <Num v={p.comments} />
+        <td className="px-3 py-3 text-right tabular-nums text-ink/70 whitespace-nowrap">
+          {nf.format(netComments(p))}
+          {p.ownComments > 0 && <span className="text-ink/35 text-xs"> (내 {p.ownComments})</span>}
+        </td>
         <Num v={p.saves} />
         <Num v={p.shares} />
+        <Num v={p.reposts} />
         <td className="px-3 py-3 text-right tabular-nums font-medium">{(engagementRate(p) * 100).toFixed(1)}%</td>
         <td className="px-3 py-3 text-right tabular-nums whitespace-nowrap">
           {conv === null ? (
@@ -533,6 +557,8 @@ function RowEditor({ post: p, onSaved }: { post: InsightPost; onSaved: () => voi
     커버: p.traits?.['커버'] ?? '',
   });
   const [utmCode, setUtmCode] = useState(p.utmCode ?? '');
+  const [ownComments, setOwnComments] = useState(p.ownComments);
+  const [reposts, setReposts] = useState(p.reposts);
   const [hasAd, setHasAd] = useState(!!p.ad);
   const [ad, setAd] = useState({
     status: p.ad?.status ?? 'running',
@@ -556,7 +582,13 @@ function RowEditor({ post: p, onSaved }: { post: InsightPost; onSaved: () => voi
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           ig_media_id: p.igMediaId,
-          meta: { category: category.trim(), traits: cleanTraits, utm_code: utmCode.trim() },
+          meta: {
+            category: category.trim(),
+            traits: cleanTraits,
+            utm_code: utmCode.trim(),
+            own_comments: ownComments,
+            reposts,
+          },
           ...(hasAd ? { ad } : {}),
         }),
       });
@@ -573,7 +605,7 @@ function RowEditor({ post: p, onSaved }: { post: InsightPost; onSaved: () => voi
   const input = 'px-2 py-1.5 rounded border border-border bg-white text-sm w-full';
   return (
     <div className="space-y-3 max-w-3xl">
-      <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
+      <div className="grid grid-cols-4 sm:grid-cols-8 gap-2">
         <Field label="분류">
           <input className={input} value={category} onChange={(e) => setCategory(e.target.value)} placeholder="AI 트렌드" />
         </Field>
@@ -584,6 +616,12 @@ function RowEditor({ post: p, onSaved }: { post: InsightPost; onSaved: () => voi
         ))}
         <Field label="utm_code">
           <input className={input} value={utmCode} onChange={(e) => setUtmCode(e.target.value)} placeholder="prompt11" />
+        </Field>
+        <Field label="내 댓글 수">
+          <input type="number" className={input} value={ownComments} onChange={(e) => setOwnComments(Number(e.target.value))} />
+        </Field>
+        <Field label="리포스트">
+          <input type="number" className={input} value={reposts} onChange={(e) => setReposts(Number(e.target.value))} />
         </Field>
       </div>
       <label className="flex items-center gap-2 text-xs text-ink/60">
