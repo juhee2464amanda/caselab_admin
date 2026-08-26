@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { createSupabaseAdminClient } from '@/lib/supabase/admin';
 
@@ -23,14 +23,32 @@ const METRICS = 'reach,views,likes,comments,saved,shares,total_interactions';
 
 type Insight = { name: string; values?: { value?: number }[] };
 
-export async function POST() {
+// 실행 = Vercel Cron(GET + Authorization: Bearer CRON_SECRET, 매일 KST 00:00) 또는
+//        admin 수동(POST, /admin/insights [동기화] 버튼). seeds/purge와 동일 패턴.
+async function authorize(req: NextRequest): Promise<boolean> {
+  const cronSecret = process.env.CRON_SECRET;
+  const auth = req.headers.get('authorization');
+  if (cronSecret && auth === `Bearer ${cronSecret}`) return true;
+
   const supabase = await createSupabaseServerClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
+  if (!user) return false;
   const { data: profile } = await supabase.from('profiles').select('role').eq('id', user.id).maybeSingle();
-  if (profile?.role !== 'admin') return NextResponse.json({ error: 'forbidden' }, { status: 403 });
+  return profile?.role === 'admin';
+}
+
+export async function GET(req: NextRequest) {
+  return handle(req);
+}
+
+export async function POST(req: NextRequest) {
+  return handle(req);
+}
+
+async function handle(req: NextRequest) {
+  if (!(await authorize(req))) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
 
   const userId = process.env.INSTAGRAM_USER_ID;
   const token = process.env.INSTAGRAM_ACCESS_TOKEN;

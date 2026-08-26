@@ -3,6 +3,10 @@
     {
       "path": "/api/seeds/purge",
       "schedule": "0 3 * * *"
+    },
+    {
+      "path": "/api/instagram/insights-sync",
+      "schedule": "0 15 * * *"
     }
   ]
 }
