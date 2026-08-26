@@ -41,6 +41,7 @@ export const SECTIONS: Section[] = [
     href: '/admin',
     tabs: [
       { href: '/admin', label: '개요', exact: true },
+      { href: '/admin/insights', label: '콘텐츠 인사이트' },
       { href: '/admin/analytics', label: '상세 분석' },
       { href: '/admin/analytics/search', label: '검색 키워드' },
       { href: '/admin/tools', label: '프롬프트 순위', exact: true },
