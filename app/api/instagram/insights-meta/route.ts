@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { createSupabaseAdminClient } from '@/lib/supabase/admin';
+import { INSIGHT_CATEGORIES } from '@/lib/analytics/insight-category';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -28,6 +29,10 @@ export async function POST(req: NextRequest) {
 
   if (body.meta) {
     const { category, traits, utm_code, own_comments, reposts } = body.meta;
+    // 분류는 본가 상세 메뉴에서 온 값만 — 자유 텍스트 시절의 오태깅을 서버에서도 막는다
+    if (category && !INSIGHT_CATEGORIES.includes(category)) {
+      return NextResponse.json({ error: `분류는 ${INSIGHT_CATEGORIES.join('·')} 중 하나여야 해요` }, { status: 400 });
+    }
     const { error } = await admin
       .from('instagram_posts')
       .update({

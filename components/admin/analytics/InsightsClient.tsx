@@ -3,6 +3,7 @@
 import { useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { ChevronDown, ChevronUp, Info, Megaphone, Pencil, RefreshCw } from 'lucide-react';
+import { INSIGHT_CATEGORIES } from '@/lib/analytics/insight-category';
 
 /**
  * /admin/insights 클라이언트 — 정렬 테이블·동기화·태깅/광고 편집.
@@ -178,7 +179,14 @@ function sortValue(p: InsightPost, key: SortKey): number | string {
 
 const nf = new Intl.NumberFormat('ko-KR');
 
-export function InsightsClient({ posts: input }: { posts: InsightPost[] }) {
+export function InsightsClient({
+  posts: input,
+  utmCategories = {},
+}: {
+  posts: InsightPost[];
+  /** utm_code → 본가 상세 메뉴에서 도출한 분류 (편집 폼 자동 채움용) */
+  utmCategories?: Record<string, string>;
+}) {
   const router = useRouter();
   const [sortKey, setSortKey] = useState<SortKey>('viewsPerDay');
   const [sortDesc, setSortDesc] = useState(true);
@@ -401,6 +409,7 @@ export function InsightsClient({ posts: input }: { posts: InsightPost[] }) {
                     onToggleAd={() => setOpenRow(openRow === p.igMediaId ? null : p.igMediaId)}
                     editOpen={editRow === p.igMediaId}
                     onToggleEdit={() => setEditRow(editRow === p.igMediaId ? null : p.igMediaId)}
+                    utmCategories={utmCategories}
                     onSaved={() => {
                       setEditRow(null);
                       router.refresh();
@@ -466,6 +475,7 @@ function PostRows({
   editOpen,
   onToggleEdit,
   onSaved,
+  utmCategories,
 }: {
   post: InsightPost;
   adOpen: boolean;
@@ -473,6 +483,7 @@ function PostRows({
   editOpen: boolean;
   onToggleEdit: () => void;
   onSaved: () => void;
+  utmCategories: Record<string, string>;
 }) {
   const conv = conversionRate(p);
   const colCount = COLUMNS.length + 3;
@@ -593,7 +604,7 @@ function PostRows({
       {editOpen && (
         <tr className="bg-muted/40">
           <td colSpan={colCount} className="px-4 py-4">
-            <RowEditor post={p} onSaved={onSaved} />
+            <RowEditor post={p} onSaved={onSaved} utmCategories={utmCategories} />
           </td>
         </tr>
       )}
@@ -602,7 +613,15 @@ function PostRows({
 }
 
 /** 태깅(분류·특성·utm_code) + 광고 보정 입력 폼(자동 적재 값 덮어쓰기 가능) — 한 번의 저장으로 둘 다 upsert */
-function RowEditor({ post: p, onSaved }: { post: InsightPost; onSaved: () => void }) {
+function RowEditor({
+  post: p,
+  onSaved,
+  utmCategories,
+}: {
+  post: InsightPost;
+  onSaved: () => void;
+  utmCategories: Record<string, string>;
+}) {
   const [category, setCategory] = useState(p.category ?? '');
   const [traits, setTraits] = useState<Record<string, string>>({
     훅: p.traits?.['훅'] ?? '',
@@ -630,6 +649,15 @@ function RowEditor({ post: p, onSaved }: { post: InsightPost; onSaved: () => voi
   });
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+
+  // utm이 붙으면 분류는 손이 아니라 본가 목적지가 정한다 — 그래야 프롬프트/자료실처럼
+  // 캡션만으로 구분 안 되는 값이 틀리지 않는다.
+  const derived = utmCode.trim() ? (utmCategories[utmCode.trim()] ?? null) : null;
+  const setUtm = (code: string) => {
+    setUtmCode(code);
+    const auto = utmCategories[code.trim()];
+    if (auto) setCategory(auto);
+  };
 
   const save = async () => {
     setSaving(true);
@@ -665,8 +693,20 @@ function RowEditor({ post: p, onSaved }: { post: InsightPost; onSaved: () => voi
   return (
     <div className="space-y-3 max-w-3xl">
       <div className="grid grid-cols-4 sm:grid-cols-8 gap-2">
-        <Field label="분류">
-          <input className={input} value={category} onChange={(e) => setCategory(e.target.value)} placeholder="AI 트렌드" />
+        <Field label={derived ? '분류 (utm 자동)' : '분류'}>
+          <select
+            className={input}
+            value={category}
+            onChange={(e) => setCategory(e.target.value)}
+            title={derived ? `utm_code "${utmCode}"의 본가 목적지에서 자동 도출됨` : '본가 상세 메뉴 기준'}
+          >
+            <option value="">(미지정)</option>
+            {INSIGHT_CATEGORIES.map((c) => (
+              <option key={c} value={c}>
+                {c}
+              </option>
+            ))}
+          </select>
         </Field>
         {TRAIT_TYPES.map((t) => (
           <Field key={t} label={t}>
@@ -674,7 +714,7 @@ function RowEditor({ post: p, onSaved }: { post: InsightPost; onSaved: () => voi
           </Field>
         ))}
         <Field label="utm_code">
-          <input className={input} value={utmCode} onChange={(e) => setUtmCode(e.target.value)} placeholder="prompt11" />
+          <input className={input} value={utmCode} onChange={(e) => setUtm(e.target.value)} placeholder="prompt11" />
         </Field>
         <Field label="내 댓글 수">
           <input type="number" className={input} value={ownComments} onChange={(e) => setOwnComments(Number(e.target.value))} />

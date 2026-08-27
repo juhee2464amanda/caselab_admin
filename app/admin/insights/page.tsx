@@ -1,6 +1,7 @@
 import { createSupabaseServerClient, isSupabaseConfigured } from '@/lib/supabase/server';
 import { createSupabaseAdminClient } from '@/lib/supabase/admin';
 import { InsightsClient, type InsightPost, type AdRow } from '@/components/admin/analytics/InsightsClient';
+import { categoryFromUrl } from '@/lib/analytics/insight-category';
 
 /**
  * /admin/insights — 인스타 콘텐츠 인사이트 (대시보드 소메뉴)
@@ -31,7 +32,7 @@ export default async function AdminInsights() {
     admin.from('instagram_posts').select('*').order('posted_at', { ascending: false }),
     admin.from('instagram_metrics_daily').select('*').order('captured_on', { ascending: false }),
     admin.from('instagram_ads').select('*'),
-    admin.from('utm_links').select('id, code'),
+    admin.from('utm_links').select('id, code, target_url'),
   ]);
 
   // 게시물별 최신 스냅샷 (captured_on desc 정렬이라 첫 번째가 최신)
@@ -54,6 +55,13 @@ export default async function AdminInsights() {
   }
 
   const adByMedia = new Map((ads ?? []).map((a) => [a.ig_media_id, a as AdRow]));
+
+  // utm_code → 본가 상세 메뉴에서 도출한 분류. 편집 폼이 utm 입력 즉시 분류를 자동으로 채운다.
+  const utmCategories: Record<string, string> = {};
+  for (const l of links ?? []) {
+    const derived = categoryFromUrl(l.target_url);
+    if (derived) utmCategories[l.code] = derived;
+  }
 
   const rows: InsightPost[] = (posts ?? []).map((p) => {
     const m = latest.get(p.ig_media_id);
@@ -81,5 +89,5 @@ export default async function AdminInsights() {
     };
   });
 
-  return <InsightsClient posts={rows} />;
+  return <InsightsClient posts={rows} utmCategories={utmCategories} />;
 }
