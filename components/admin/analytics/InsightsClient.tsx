@@ -66,29 +66,27 @@ function engagement(p: InsightPost): number {
   return effLikes(p) + netComments(p) + effSaves(p) + effShares(p) + p.reposts;
 }
 
-/** API insights는 도달·참여 모두 오가닉만 반환한다(실측: 광고 게시물 저장 1 vs 앱 합계 15).
- *  광고 게시물은 앱 광고 인사이트의 합계(수기)를 분자·분모 양쪽에 쓴다. */
+/** IG API insights는 도달·참여 모두 오가닉만 반환한다(실측: 광고 게시물 저장 1 vs 앱 합계 15).
+ *  instagram_ads의 reach·total_*은 Marketing API에서 자동 적재되는 광고분(광고 전달에서 발생한 몫)이라
+ *  오가닉 + 광고분을 합산하면 앱 표시 합계와 일치한다(실측: 저장 1+14=15). */
 function effectiveReach(p: InsightPost): number {
   return p.reach + (p.ad?.reach ?? 0);
 }
 
-/** 수기 합계가 있으면 합계(광고 포함), 없으면 API 오가닉 값 */
 function effLikes(p: InsightPost): number {
-  return p.ad && p.ad.total_likes > 0 ? p.ad.total_likes : p.likes;
+  return p.likes + (p.ad?.total_likes ?? 0);
 }
 function effRawComments(p: InsightPost): number {
-  return p.ad && p.ad.total_comments > 0 ? p.ad.total_comments : p.comments;
+  return p.comments + (p.ad?.total_comments ?? 0);
 }
 function effSaves(p: InsightPost): number {
-  return p.ad && p.ad.total_saves > 0 ? p.ad.total_saves : p.saves;
+  return p.saves + (p.ad?.total_saves ?? 0);
 }
 function effShares(p: InsightPost): number {
-  return p.ad && p.ad.total_shares > 0 ? p.ad.total_shares : p.shares;
+  return p.shares + (p.ad?.total_shares ?? 0);
 }
 function adInputMissing(p: InsightPost): boolean {
-  if (!p.ad) return false;
-  const noTotals = p.ad.total_likes + p.ad.total_comments + p.ad.total_shares + p.ad.total_saves === 0;
-  return !p.ad.reach || noTotals;
+  return !!p.ad && !p.ad.reach;
 }
 
 function engagementRate(p: InsightPost): number {
@@ -125,7 +123,7 @@ const COLUMNS = [
     key: 'likes',
     label: '좋아요',
     num: true,
-    tip: '광고 게시물은 앱 광고 인사이트 합계(수기 입력, 광고 포함), 그 외는 API 오가닉 값. 저장·공유도 동일.',
+    tip: '오가닉(API) + 광고분(Marketing API 자동 적재) 합산. 저장·공유도 동일.',
   },
   {
     key: 'comments',
@@ -140,7 +138,7 @@ const COLUMNS = [
     key: 'engRate',
     label: '참여율',
     num: true,
-    tip: '(좋아요+순댓글+저장+공유+리포스트) ÷ (오가닉 도달+광고 도달). 참여 카운트는 광고를 보고 누른 것도 합산되므로 분모에도 광고 도달(수기)을 더해 과대평가를 막는다. 광고 도달 미입력이면 오가닉 도달만으로 나눠 높게 보인다(※ 표시).',
+    tip: '(좋아요+순댓글+저장+공유+리포스트) ÷ (오가닉 도달+광고 도달). 참여·도달 모두 오가닉(IG API)+광고분(Marketing API 자동 적재) 합산. 광고 도달 미적재면 오가닉 도달만으로 나눠 높게 보인다(※ 표시).',
   },
   {
     key: 'convRate',
@@ -357,7 +355,7 @@ export function InsightsClient({ posts: input }: { posts: InsightPost[] }) {
             <section className="card p-4 border-amber-200 bg-amber-50/30">
               <h2 className="text-xs font-semibold uppercase tracking-wider text-amber-700/70 mb-3 flex items-center gap-1">
                 <Megaphone size={12} />
-                광고 성과 ({totals.adCount}건 합산 · 수기 기록)
+                광고 성과 ({totals.adCount}건 합산 · Marketing API 자동)
               </h2>
               <div className="grid grid-cols-3 gap-3">
                 <Stat label="지출" value={`₩${nf.format(totals.spend)}`} />
@@ -531,7 +529,7 @@ function PostRows({
           {adInputMissing(p) && (
             <span
               className="text-amber-500"
-              title="광고 도달·참여 합계 미입력 — 광고 인사이트 값을 [편집]에 넣기 전까지 이 비율은 부정확함"
+              title="광고 도달 미적재 — [동기화]를 누르거나 cron이 돌기 전까지 이 비율은 부정확함"
             >
               ※
             </span>
@@ -603,7 +601,7 @@ function PostRows({
   );
 }
 
-/** 태깅(분류·특성·utm_code) + 광고 수기 입력 폼 — 한 번의 저장으로 둘 다 upsert */
+/** 태깅(분류·특성·utm_code) + 광고 보정 입력 폼(자동 적재 값 덮어쓰기 가능) — 한 번의 저장으로 둘 다 upsert */
 function RowEditor({ post: p, onSaved }: { post: InsightPost; onSaved: () => void }) {
   const [category, setCategory] = useState(p.category ?? '');
   const [traits, setTraits] = useState<Record<string, string>>({
@@ -687,7 +685,7 @@ function RowEditor({ post: p, onSaved }: { post: InsightPost; onSaved: () => voi
       </div>
       <label className="flex items-center gap-2 text-xs text-ink/60">
         <input type="checkbox" checked={hasAd} onChange={(e) => setHasAd(e.target.checked)} />
-        광고 성과 기록 — 앱 광고 인사이트 값을 수기 입력 (합계 4종은 상단 아이콘 값, 광고 포함 총계)
+        광고 성과 기록 — [동기화] 시 Marketing API에서 자동 적재(광고분). 예산·프로필 방문·팔로우만 수기 보완
       </label>
       {hasAd && (
         <div className="grid grid-cols-4 sm:grid-cols-7 gap-2">
@@ -706,10 +704,10 @@ function RowEditor({ post: p, onSaved }: { post: InsightPost; onSaved: () => voi
               ['profile_visits', '프로필 방문'],
               ['follows', '팔로우'],
               ['link_clicks', '외부 링크'],
-              ['total_likes', '합계 좋아요'],
-              ['total_comments', '합계 댓글'],
-              ['total_shares', '합계 공유'],
-              ['total_saves', '합계 저장'],
+              ['total_likes', '광고 좋아요'],
+              ['total_comments', '광고 댓글'],
+              ['total_shares', '광고 공유'],
+              ['total_saves', '광고 저장'],
             ] as const
           ).map(([k, label]) => (
             <Field key={k} label={label}>
