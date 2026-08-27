@@ -685,7 +685,7 @@ function RowEditor({ post: p, onSaved }: { post: InsightPost; onSaved: () => voi
       </div>
       <label className="flex items-center gap-2 text-xs text-ink/60">
         <input type="checkbox" checked={hasAd} onChange={(e) => setHasAd(e.target.checked)} />
-        광고 성과 기록 — [동기화] 시 Marketing API에서 자동 적재(광고분). 예산·프로필 방문·팔로우만 수기 보완
+        광고 성과 기록 — [동기화] 시 Marketing API에서 자동 적재(광고분, 프로필 방문 포함). 예산·팔로우만 수기 보완
       </label>
       {hasAd && (
         <div className="grid grid-cols-4 sm:grid-cols-7 gap-2">

@@ -120,7 +120,13 @@ async function handle(req: NextRequest) {
   return NextResponse.json({ ok: errors.length === 0, synced, ads: adsResult, errors });
 }
 
-type AdInsight = { spend?: string; reach?: string; impressions?: string; actions?: { action_type: string; value: string }[] };
+type AdInsight = {
+  spend?: string;
+  reach?: string;
+  impressions?: string;
+  actions?: { action_type: string; value: string }[];
+  results?: { indicator: string; values?: { value?: string }[] }[];
+};
 type MarketingAd = {
   id: string;
   name?: string;
@@ -142,7 +148,7 @@ async function syncAds(admin: ReturnType<typeof createSupabaseAdminClient>, erro
   if (!adsToken || !adAccount) return { skipped: 'FB_ADS_TOKEN / FB_AD_ACCOUNT_ID 미설정' };
 
   const res = await fetch(
-    `https://graph.facebook.com/v21.0/${adAccount}/ads?fields=id,name,effective_status,insights.date_preset(maximum){spend,reach,impressions,actions}&limit=100&access_token=${encodeURIComponent(adsToken)}`
+    `https://graph.facebook.com/v21.0/${adAccount}/ads?fields=id,name,effective_status,insights.date_preset(maximum){spend,reach,impressions,actions,results}&limit=100&access_token=${encodeURIComponent(adsToken)}`
   );
   const json = await res.json();
   if (!res.ok || json.error) {
@@ -155,7 +161,7 @@ async function syncAds(admin: ReturnType<typeof createSupabaseAdminClient>, erro
   // 게시물별 광고분 합산
   const byMedia = new Map<
     string,
-    { status: string; spend: number; reach: number; views: number; link_clicks: number; total_likes: number; total_comments: number; total_shares: number; total_saves: number }
+    { status: string; spend: number; reach: number; views: number; link_clicks: number; profile_visits: number; total_likes: number; total_comments: number; total_shares: number; total_saves: number }
   >();
   let unmatched = 0;
 
@@ -172,7 +178,7 @@ async function syncAds(admin: ReturnType<typeof createSupabaseAdminClient>, erro
     const ins = ad.insights?.data?.[0];
     const act = (type: string) => Number(ins?.actions?.find((a) => a.action_type === type)?.value ?? 0);
     const cur = byMedia.get(post.ig_media_id) ?? {
-      status: 'ended', spend: 0, reach: 0, views: 0, link_clicks: 0,
+      status: 'ended', spend: 0, reach: 0, views: 0, link_clicks: 0, profile_visits: 0,
       total_likes: 0, total_comments: 0, total_shares: 0, total_saves: 0,
     };
     if (ad.effective_status === 'ACTIVE') cur.status = 'running';
@@ -180,6 +186,10 @@ async function syncAds(admin: ReturnType<typeof createSupabaseAdminClient>, erro
     cur.reach += Number(ins?.reach ?? 0);
     cur.views += Number(ins?.impressions ?? 0);
     cur.link_clicks += act('link_click');
+    // 부스트 목표가 프로필 방문이면 results가 profile_visit_view로 내려온다 (actions에는 없음)
+    cur.profile_visits += Number(
+      ins?.results?.find((r) => r.indicator === 'profile_visit_view')?.values?.[0]?.value ?? 0
+    );
     cur.total_likes += act('post_reaction');
     cur.total_comments += act('comment');
     cur.total_shares += act('onsite_conversion.post_share') + act('post_share');
