@@ -26,6 +26,7 @@ import {
   PHOTO_ALT,
   TEMPLATE_LABEL,
 } from '@/lib/cardpress/convert';
+import { SlideMotionPanel } from '@/components/admin/studio/SlideMotionPanel';
 import {
   CTA_ENDINGS,
   CTA_TYPE_HINTS,
@@ -1263,7 +1264,8 @@ function CardEditor({ card, sourceTitle }: { card: CardRow; sourceTitle?: string
       | 'coverArt'
       | 'artText'
       | 'artIcons'
-      | 'tone',
+      | 'tone'
+      | 'textScale',
     value: unknown
   ) {
     // 포인트색은 카드 전체의 색 — 한 장만 바꾸면 뒤 장들과 갈라진다(운영자 요청 2026-08-25).
@@ -1274,11 +1276,11 @@ function CardEditor({ card, sourceTitle }: { card: CardRow; sourceTitle?: string
           const p = { ...s.props } as Record<string, unknown>;
           if (value === undefined || value === '') delete p.accentColor;
           else p.accentColor = value;
-          // 형광펜 기본색은 hlColor ?? 포인트색 — hlColor가 박혀 있으면(팔레트 사용·v3에서
-          // 레이아웃 전환 시 STYLE_KEYS로 따라옴) 포인트색을 바꿔도 형광펜이 안 따라온다.
-          // 전체 색 변경의 의도는 "다 따라와라"이므로 v3(잠금 팔레트) 밖에서는 hlColor를 걷어낸다.
-          const v3 = s.template === 'C1' && p.coverLayout === 'v3';
-          if (!v3) delete p.hlColor;
+          // 형광펜 기본색은 hlColor ?? 포인트색 — hlColor가 박혀 있으면(팔레트 사용·레이아웃 전환 시
+          // STYLE_KEYS로 따라옴) 포인트색을 바꿔도 형광펜이 안 따라온다. 전체 색 변경의 의도는
+          // "다 따라와라"이므로 v3 커버 포함 전 장에서 hlColor를 걷어낸다(2026-08-30 —
+          // 보라를 골랐는데 커버만 파랑으로 남던 문제. v3 기본색은 이제 accentColor를 폴백으로 탄다).
+          delete p.hlColor;
           return { ...s, props: p };
         })
       );
@@ -1294,6 +1296,21 @@ function CardEditor({ card, sourceTitle }: { card: CardRow; sourceTitle?: string
     }
     patchPropsAt(selIdx, { [key]: value });
   }
+  /** 엔딩 카드 배경에 사진 배치 — 프리뷰에서 엔딩을 고른 상태면 트레이가 여기로 온다.
+   *  배경을 받는 엔딩은 댓글 참여형뿐이다(채널 안내형=고정 영상, 링크 유도형=합성 이미지). */
+  function assignImageToEnding(url: string) {
+    if (ctaType !== 'comment_dm') {
+      alert(
+        `${CTA_TYPE_LABELS[ctaType]} 엔딩은 배경 사진을 받지 않아요.\n` +
+          `(채널 안내형은 고정 영상, 링크 유도형은 미리 합성된 카드입니다)\n` +
+          `배경을 넣으려면 엔딩 유형을 [댓글→DM 참여형]으로 바꿔주세요.`
+      );
+      return;
+    }
+    setEndingProps({ ...(endingProps ?? {}), image: url });
+    setDirty(true);
+  }
+
   /**
    * 이미지 배치 — 사진 자리가 없는 템플릿이면 막지 않고 사진형으로 갈아탄다.
    * "이미지가 있는 경우가 더 중요한 장"을 살리기 위한 경로(운영자 요청 2026-08-15).
@@ -1772,11 +1789,11 @@ function CardEditor({ card, sourceTitle }: { card: CardRow; sourceTitle?: string
         <span className="font-semibold text-ink/70">{selIdx + 1}번 스타일</span>
         {isV3 ? (
           <>
-            <label className="flex items-center gap-1" title="v3 커버는 포인트색 대신 이 형광펜색만 씁니다">
+            <label className="flex items-center gap-1" title="비우면 포인트색(전체) → 톤 기본색(블루/라임) 순으로 따라갑니다">
               형광펜색
               <input
                 type="color"
-                value={(s.props.hlColor as string) ?? (v3Light ? '#C6F24E' : '#2F4BF0')}
+                value={(s.props.hlColor as string) ?? (s.props.accentColor as string) ?? (v3Light ? '#C6F24E' : '#2F4BF0')}
                 onChange={(e) => patchStyle('hlColor', e.target.value)}
                 className="h-5 w-7 cursor-pointer rounded border border-border p-0"
               />
@@ -1805,6 +1822,28 @@ function CardEditor({ card, sourceTitle }: { card: CardRow; sourceTitle?: string
             )}
           </>
         )}
+        {/* 글자 크기 — 이 장에만 적용. 템플릿의 기준 크기에 배율을 곱한다(분량 맞춤 템플릿은 넘치면 되줄어듦) */}
+        <label className="flex items-center gap-1" title="이 장의 글자 크기 (80~125%) · 우클릭하면 100%로">
+          글자
+          <input
+            type="range"
+            min={0.8}
+            max={1.25}
+            step={0.05}
+            value={(s.props.textScale as number) ?? 1}
+            onChange={(e) => patchStyle('textScale', parseFloat(e.target.value))}
+            onContextMenu={(e) => { e.preventDefault(); patchStyle('textScale', undefined); }}
+            className="w-20"
+          />
+          <span className="tabular-nums text-ink/50 w-8">
+            {Math.round((((s.props.textScale as number) ?? 1) as number) * 100)}%
+          </span>
+          {typeof s.props.textScale === 'number' && s.props.textScale !== 1 && (
+            <button onClick={() => patchStyle('textScale', undefined)} className="rounded px-1 py-0.5 bg-ink/5 hover:bg-ink/10">
+              ↺
+            </button>
+          )}
+        </label>
         {['C1', 'B4', 'C5'].includes(s.template) && typeof s.props.coverImage === 'string' && (
           <label className="flex items-center gap-1">
             어둡기
@@ -2198,8 +2237,8 @@ function CardEditor({ card, sourceTitle }: { card: CardRow; sourceTitle?: string
             card={card}
             coverSlide={slides[0]}
             onCoverArt={applyCoverArt}
-            targetIndex={selIdx}
-            onPick={(url) => assignImageAt(selIdx, url)}
+            targetLabel={endingSel ? '엔딩' : `${selIdx + 1}번 슬라이드`}
+            onPick={(url) => (endingSel ? assignImageToEnding(url) : assignImageAt(selIdx, url))}
             onCover={applyCover}
             onThreadsCover={(u) => { setThreadsCover(u); setDirty(true); }}
             onCredits={(entries) => setTrayCredits((prev) => {
@@ -3592,12 +3631,12 @@ function PhotoCreditPanel({
 // bright — 대표색이 밝아서 흰 글자가 죽을 수 있는 사진(Unsplash 라우트가 판정해 뒤로 민다)
 type TrayImage = { id: string; thumb: string; full: string; credit?: string; bright?: boolean };
 
-function ImageTray({ card, coverSlide, targetIndex, onCoverArt, onPick, onCover, onThreadsCover, onCredits }: {
+function ImageTray({ card, coverSlide, targetLabel, onCoverArt, onPick, onCover, onThreadsCover, onCredits }: {
   card: CardRow;
   /** 1번 슬라이드 — 커버 아트 미리보기·현재 적용 표시의 근거 */
   coverSlide?: CardSlide;
-  /** 지금 선택된 슬라이드 번호(0-base) — 검색 결과의 "N번 슬라이드에" 라벨용 */
-  targetIndex: number;
+  /** 지금 사진이 들어갈 자리 이름 — "3번 슬라이드" 또는 "엔딩". 트레이 버튼 라벨에 그대로 쓴다 */
+  targetLabel: string;
   onCoverArt: (art: string) => void;
   onPick: (url: string) => void;
   onCover: (url: string) => void;
@@ -3693,7 +3732,7 @@ function ImageTray({ card, coverSlide, targetIndex, onCoverArt, onPick, onCover,
         </span>
       )}
       <div className="absolute inset-0 hidden group-hover:flex flex-col items-center justify-center gap-1 bg-black/55 rounded-md">
-        <button onClick={() => onPick(url)} className="text-[10px] text-white bg-accent rounded px-1.5 py-0.5">{targetIndex + 1}번 슬라이드에 넣기</button>
+        <button onClick={() => onPick(url)} className="text-[10px] text-white bg-accent rounded px-1.5 py-0.5">{targetLabel}에 넣기</button>
         <button onClick={() => onThreadsCover(url)} className="text-[10px] text-white bg-white/20 rounded px-1.5 py-0.5">스레드 커버로</button>
       </div>
     </div>
@@ -3856,7 +3895,7 @@ function ImageTray({ card, coverSlide, targetIndex, onCoverArt, onPick, onCover,
               <Button size="sm" variant="outline" onClick={() => search(query)} disabled={searching}>{searching ? '검색 중…' : '검색'}</Button>
             </div>
             <p className="text-[11px] text-ink/40">
-              결과 사진에 마우스를 올려 [{targetIndex + 1}번 슬라이드에 넣기] — 커버가 아닌 본문 장에도 들어가고, 사진 자리가 없는
+              결과 사진에 마우스를 올려 [{targetLabel}에 넣기] — 커버가 아닌 본문 장에도 들어가고, 사진 자리가 없는
               템플릿이면 사진형으로 바꿀지 물어봅니다.
             </p>
             {(card.metaphor_queries?.length ?? 0) > 0 && (

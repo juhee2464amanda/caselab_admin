@@ -60,6 +60,18 @@ function stripMarks(text: string): string {
   return text.replace(/\*\*/g, '').replace(/==/g, '');
 }
 
+// ── 글자 크기 배율 (슬라이드 props.textScale) ───────────────────────
+// 왜 모듈 변수인가: 크기가 정해지는 자리가 180곳 가까이 되고(고정 fontSize + fitBlock 결과),
+// 템플릿마다 props를 타고 내려보내면 한 곳만 빠뜨려도 그 요소만 안 커지는 조용한 버그가 된다.
+// renderSlide가 한 장을 그리는 동안만 세워두고 끝나면 되돌린다 — JSX style 객체는 renderSlide
+// 호출 중에 즉시 평가되므로(지연 렌더 아님) 장 사이에 값이 새지 않는다.
+let TEXT_SCALE = 1;
+
+/** 기준 크기 → 실제 크기. 모든 fontSize는 이 함수를 통과한다(fitBlock은 내부에서 적용). */
+function fs(size: number): number {
+  return TEXT_SCALE === 1 ? size : Math.max(12, Math.round(size * TEXT_SCALE));
+}
+
 /** 텍스트의 em 폭 — 한글·한자·전각은 1em, 라틴·숫자·공백은 0.55em (Pretendard 실측 근사) */
 function emWidth(text: string): number {
   let w = 0;
@@ -96,8 +108,11 @@ function fitBlock(
   const textH = (f: number) =>
     texts.reduce((s, t) => s + lineCount(t, f, o.width) * f * o.lineHeight + extra, 0);
   const gaps = Math.max(0, texts.length - 1);
-  let size = o.min;
-  for (let f = Math.round(o.max); f >= Math.round(o.min); f -= 1) {
+  // 배율은 탐색 범위에만 건다 — 높이 제약은 그대로라, 키웠는데 안 들어가면 알아서 되줄어든다
+  const maxF = fs(o.max);
+  const minF = fs(o.min);
+  let size = minF;
+  for (let f = Math.round(maxF); f >= Math.round(minF); f -= 1) {
     if (textH(f) + f * o.gapRatio * gaps <= o.height) {
       size = f;
       break;
@@ -202,15 +217,45 @@ function em(text: string, accent: string, base: CSSProperties = {}): ReactNode[]
   return nodes;
 }
 
+// **·== 마커를 pre 스팬으로 파싱 — highlightLines 전용(em()과 달리 낱말 분해 없음, flex row 안 spans).
+// **강조**: emAccent 색(없으면 색 유지, 볼드만) · ==강조==: 항상 골드(PHOTO_ACCENT).
+// 마커를 안 먹는 필드에 편집기가 넣어도 별표가 화면에 그대로 나가지 않게 전 highlightLines가 통과한다.
+function emPre(text: string, keyPrefix: string, emAccent?: string): ReactNode[] {
+  return text.split(/(\*\*.+?\*\*|==.+?==)/g).flatMap((seg, i) => {
+    if (!seg) return [];
+    let content = seg;
+    const style: CSSProperties = { whiteSpace: 'pre' };
+    if (/^\*\*.+\*\*$/.test(seg)) {
+      content = seg.slice(2, -2);
+      style.fontWeight = 800;
+      if (emAccent) style.color = emAccent;
+    } else if (/^==.+==$/.test(seg)) {
+      content = seg.slice(2, -2);
+      style.fontWeight = 800;
+      style.color = PHOTO_ACCENT;
+    }
+    return [
+      <span key={`${keyPrefix}-${i}`} style={style}>
+        {content}
+      </span>,
+    ];
+  });
+}
+
 // '\n' 줄바꿈 + hl 부분 문자열 형광펜. 각 줄은 flex row(세그먼트 스팬)로 조립.
+// emAccent: 이 줄들 속 **강조**의 글자색(포인트색 추종용). 안 주면 볼드만 입힌다.
 function highlightLines(
   text: string,
   hl: string | undefined,
   lineStyle: CSSProperties,
-  hlStyle: CSSProperties
+  hlStyle: CSSProperties,
+  emAccent?: string
 ): ReactNode[] {
   return text.split('\n').map((line, li) => {
     const segs = hl && line.includes(hl) ? line.split(hl) : null;
+    // 줄은 기본 nowrap — 폭을 넘기면 꺾이지 않고 흘러 잘린다. 자동 줄바꿈이 필요한 템플릿은
+    // lineStyle에 flexWrap:'wrap'을 넘겨 켠다(P11 제목). 기본값으로 켜면 v3 커버처럼 자리가
+    // 고정된 잠금 규격의 글자 위치가 미세하게 밀려 픽셀 검수가 흔들린다 — 켤 곳만 켠다.
     return (
       <div key={li} style={{ display: 'flex', alignItems: 'center', ...lineStyle }}>
         {segs ? (
@@ -222,16 +267,11 @@ function highlightLines(
                   {hl}
                 </span>
               );
-            if (seg)
-              parts.push(
-                <span key={`s${si}`} style={{ whiteSpace: 'pre' }}>
-                  {seg}
-                </span>
-              );
+            if (seg) parts.push(...emPre(seg, `s${si}`, emAccent));
             return parts;
           })
         ) : (
-          <span style={{ whiteSpace: 'pre' }}>{line}</span>
+          emPre(line, 'l', emAccent)
         )}
       </div>
     );
@@ -249,9 +289,9 @@ function Topbar({
 }) {
   return (
     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-      <span style={{ fontSize: 28, fontWeight: 700, letterSpacing: '-0.01em', color }}>caselab</span>
+      <span style={{ fontSize: fs(28), fontWeight: 700, letterSpacing: '-0.01em', color }}>caselab</span>
       {right ? (
-        <span style={{ fontSize: 26, fontWeight: 600, color: MUTED, ...rightStyle }}>{right}</span>
+        <span style={{ fontSize: fs(26), fontWeight: 600, color: MUTED, ...rightStyle }}>{right}</span>
       ) : null}
     </div>
   );
@@ -384,6 +424,29 @@ const V3_WM_BOTTOM = 50;
 const V3_BLUE = '#2F4BF0';
 const V3_LIME = '#C6F24E';
 
+// v3 형광펜 기본색 — hlColor > 포인트색(전체, accentColor) > 톤 기본(블루/라임).
+// "포인트색(전체)"을 보라로 골랐는데 커버만 파랑으로 남던 문제 정정(운영자 2026-08-30).
+function v3Base(props: { hlColor?: string; accentColor?: string }, dark: boolean): string {
+  const fallback =
+    props.accentColor && /^#[0-9a-fA-F]{6}$/.test(props.accentColor)
+      ? props.accentColor
+      : dark
+        ? V3_BLUE
+        : V3_LIME;
+  return hlBg(props, fallback);
+}
+
+// 형광펜 박스 글자색은 톤이 아니라 **박스색의 밝기**로 — 라임엔 잉크, 블루·보라엔 흰색.
+// (기존 dark 톤 기준은 라이트 톤 + 어두운 커스텀색 조합에서 잉크 글자가 안 읽혔다)
+function relLum(hex: string): number {
+  const n = parseInt(hex.slice(1), 16);
+  const f = (v: number) => {
+    const c = v / 255;
+    return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+  };
+  return 0.2126 * f((n >> 16) & 255) + 0.7152 * f((n >> 8) & 255) + 0.0722 * f(n & 255);
+}
+
 const V3_SCRIM: Record<'dark' | 'light', string> = {
   dark: 'linear-gradient(to top, rgba(6,8,12,0.94) 22%, rgba(6,8,12,0.72) 46%, rgba(6,8,12,0) 100%)',
   light:
@@ -416,7 +479,7 @@ function ArtTerm({ text }: { text?: string }) {
         flexDirection: 'column',
         background: '#0C0E13',
         padding: `${97}px ${V3_PAD}px`,
-        fontSize: 37,
+        fontSize: fs(37),
         color: '#D6DEE8',
       })}
     >
@@ -474,7 +537,7 @@ function ArtStudio() {
           left: x + w - 200,
           top: y + Math.round(h / 2) - 44,
           display: 'flex',
-          fontSize: 65,
+          fontSize: fs(65),
           fontWeight: 800,
           color: 'rgba(255,255,255,0.28)',
         }}
@@ -519,7 +582,7 @@ function ArtMacro() {
         <div
           style={{
             display: 'flex',
-            fontSize: 58,
+            fontSize: fs(58),
             fontWeight: 700,
             letterSpacing: '0.28em',
             paddingLeft: 16,
@@ -544,7 +607,7 @@ function ArtQuote({ text }: { text?: string }) {
           left: V3_PAD,
           top: 30,
           display: 'flex',
-          fontSize: 281,
+          fontSize: fs(281),
           fontWeight: 800,
           color: V3_LIME,
         }}
@@ -559,7 +622,7 @@ function ArtQuote({ text }: { text?: string }) {
           width: CARD_W - 152,
           display: 'flex',
           flexDirection: 'column',
-          fontSize: 151,
+          fontSize: fs(151),
           fontWeight: 800,
           letterSpacing: '-0.06em',
           color: 'rgba(255,255,255,0.14)',
@@ -623,7 +686,7 @@ function ArtData({ text }: { text?: string }) {
             left: 86,
             top: 150,
             display: 'flex',
-            fontSize: 40,
+            fontSize: fs(40),
             fontWeight: 700,
             color: '#8A92A3',
           }}
@@ -717,7 +780,7 @@ function ArtLogos({ icons }: { icons?: string[] }) {
             width: gap,
             display: 'flex',
             justifyContent: 'center',
-            fontSize: 58,
+            fontSize: fs(58),
             fontWeight: 700,
             color: 'rgba(255,255,255,0.42)',
           }}
@@ -763,7 +826,7 @@ function ArtMask({ icons }: { icons?: string[] }) {
               borderRadius: 55,
               background: 'rgba(255,255,255,0.06)',
               border: '2px solid rgba(255,255,255,0.10)',
-              fontSize: 104,
+              fontSize: fs(104),
               fontWeight: 800,
               color: 'rgba(255,255,255,0.30)',
             }}
@@ -823,10 +886,10 @@ function ArtNumbers({ text }: { text?: string }) {
     <div style={fill({ flexDirection: 'column', background: 'linear-gradient(160deg,#121826 0%,#07090E 68%)', padding: `120px ${V3_PAD}px` })}>
       {rows.map((r, i) => (
         <div key={i} style={{ display: 'flex', flexDirection: 'column', marginBottom: 56 }}>
-          <div style={{ display: 'flex', fontSize: 146, fontWeight: 800, letterSpacing: '-0.05em', color: i === 0 ? '#C6F24E' : '#FFFFFF' }}>
+          <div style={{ display: 'flex', fontSize: fs(146), fontWeight: 800, letterSpacing: '-0.05em', color: i === 0 ? '#C6F24E' : '#FFFFFF' }}>
             {r.value}
           </div>
-          <div style={{ display: 'flex', fontSize: 38, fontWeight: 600, color: 'rgba(255,255,255,0.5)', marginTop: 6 }}>
+          <div style={{ display: 'flex', fontSize: fs(38), fontWeight: 600, color: 'rgba(255,255,255,0.5)', marginTop: 6 }}>
             {r.label}
           </div>
         </div>
@@ -879,7 +942,7 @@ const WIDE_SCALE = WIDE_ART_W / CARD_W; // 0.5
 function C1V3Wide({ accent, props }: C1Input) {
   const tone = v3Tone(props);
   const dark = tone === 'dark';
-  const base = hlBg(props, dark ? V3_BLUE : V3_LIME);
+  const base = v3Base(props, dark);
   const eyebrow = props.kicker ?? props.tag ?? DEFAULT_TAGS[accent];
   const panelBg = dark ? '#07090E' : '#F3F4F6';
   const artX = THUMB_W - WIDE_ART_W;
@@ -973,7 +1036,7 @@ function C1V3Wide({ accent, props }: C1Input) {
         <div
           style={{
             display: 'flex',
-            fontSize: 22,
+            fontSize: fs(22),
             fontWeight: 700,
             marginBottom: 16,
             color: dark ? 'rgba(255,255,255,0.66)' : '#6B7382',
@@ -985,7 +1048,7 @@ function C1V3Wide({ accent, props }: C1Input) {
           style={{
             display: 'flex',
             flexDirection: 'column',
-            fontSize: 46,
+            fontSize: fs(46),
             fontWeight: 800,
             letterSpacing: '-0.052em',
             color: dark ? '#fff' : INK,
@@ -998,7 +1061,7 @@ function C1V3Wide({ accent, props }: C1Input) {
         <div
           style={{
             display: 'flex',
-            fontSize: 18,
+            fontSize: fs(18),
             fontWeight: 800,
             letterSpacing: '0.42em',
             color: dark ? 'rgba(255,255,255,0.5)' : 'rgba(10,12,17,0.38)',
@@ -1015,13 +1078,13 @@ function C1V3Wide({ accent, props }: C1Input) {
 function v3Hl(props: C1Input['props'], base: string, dark: boolean): CSSProperties {
   const s = hlSpan(props, base, dark);
   if (props.hlStyle && props.hlStyle !== 'box') return s;
-  return { ...s, background: base, color: dark ? '#fff' : INK };
+  return { ...s, background: base, color: relLum(base) > 0.55 ? INK : '#fff' };
 }
 
 function C1V3({ accent, props }: C1Input) {
   const tone = v3Tone(props);
   const dark = tone === 'dark';
-  const base = hlBg(props, dark ? V3_BLUE : V3_LIME);
+  const base = v3Base(props, dark);
   const eyebrow = props.kicker ?? props.tag ?? DEFAULT_TAGS[accent];
   return (
     <div style={{ ...cardBase, background: dark ? '#07090E' : '#F3F4F6', color: dark ? '#fff' : INK }}>
@@ -1050,7 +1113,7 @@ function C1V3({ accent, props }: C1Input) {
         <div
           style={{
             display: 'flex',
-            fontSize: V3_EYEBROW,
+            fontSize: fs(V3_EYEBROW),
             fontWeight: 700,
             marginBottom: 26,
             color: dark ? 'rgba(255,255,255,0.66)' : '#6B7382',
@@ -1062,13 +1125,13 @@ function C1V3({ accent, props }: C1Input) {
           style={{
             display: 'flex',
             flexDirection: 'column',
-            fontSize: V3_HEADLINE,
+            fontSize: fs(V3_HEADLINE),
             fontWeight: 800,
             letterSpacing: '-0.052em',
             color: dark ? '#fff' : INK,
           }}
         >
-          {highlightLines(props.title, props.hl, { minHeight: Math.round(V3_HEADLINE * 1.24) }, v3Hl(props, base, dark))}
+          {highlightLines(props.title, props.hl, { minHeight: Math.round(fs(V3_HEADLINE) * 1.24) }, v3Hl(props, base, dark))}
         </div>
       </div>
       <div
@@ -1084,7 +1147,7 @@ function C1V3({ accent, props }: C1Input) {
         <div
           style={{
             display: 'flex',
-            fontSize: V3_WM,
+            fontSize: fs(V3_WM),
             fontWeight: 800,
             letterSpacing: '0.42em',
             paddingLeft: 11, // 자간이 마지막 글자 뒤에도 붙어서 그만큼 왼쪽으로 밀린다
@@ -1117,7 +1180,7 @@ function C1Bottom({ accent, props }: C1Input) {
           color="#fff"
           right={props.tag ?? DEFAULT_TAGS[accent]}
           rightStyle={{
-            fontSize: 28,
+            fontSize: fs(28),
             color: '#fff',
             opacity: 0.9,
             borderBottom: '2px solid rgba(255,255,255,0.7)',
@@ -1139,7 +1202,7 @@ function C1Bottom({ accent, props }: C1Input) {
             <div
               style={{
                 display: 'flex',
-                fontSize: 32,
+                fontSize: fs(32),
                 fontWeight: 700,
                 color: 'rgba(255,255,255,0.88)',
                 marginBottom: 22,
@@ -1152,7 +1215,7 @@ function C1Bottom({ accent, props }: C1Input) {
             style={{
               display: 'flex',
               flexDirection: 'column',
-              fontSize: 80,
+              fontSize: fs(80),
               fontWeight: 800,
               letterSpacing: '-0.04em',
               textShadow: '0 2px 24px rgba(0,0,0,0.4)',
@@ -1161,7 +1224,7 @@ function C1Bottom({ accent, props }: C1Input) {
             {highlightLines(props.title, props.hl, { minHeight: 100 }, hlSpan(props, color, true))}
           </div>
           {props.sub ? (
-            <div style={{ fontSize: 34, fontWeight: 600, opacity: 0.92, marginTop: 24 }}>
+            <div style={{ fontSize: fs(34), fontWeight: 600, opacity: 0.92, marginTop: 24 }}>
               {props.sub}
             </div>
           ) : null}
@@ -1169,7 +1232,7 @@ function C1Bottom({ accent, props }: C1Input) {
             <div
               style={{
                 display: 'flex',
-                fontSize: 24,
+                fontSize: fs(24),
                 fontWeight: 700,
                 letterSpacing: '0.12em',
                 color: 'rgba(255,255,255,0.62)',
@@ -1222,7 +1285,7 @@ function C1Center({ accent, props }: C1Input) {
         <div
           style={{
             display: 'flex',
-            fontSize: 26,
+            fontSize: fs(26),
             fontWeight: 700,
             letterSpacing: '0.1em', // 한글은 0.2em을 주면 낱글자로 흩어져 읽힌다
             color: 'rgba(255,255,255,0.82)',
@@ -1243,7 +1306,7 @@ function C1Center({ accent, props }: C1Input) {
             <div
               style={{
                 display: 'flex',
-                fontSize: 32,
+                fontSize: fs(32),
                 fontWeight: 700,
                 color: 'rgba(255,255,255,0.88)',
                 marginBottom: 24,
@@ -1257,7 +1320,7 @@ function C1Center({ accent, props }: C1Input) {
               display: 'flex',
               flexDirection: 'column',
               alignItems: 'center',
-              fontSize: 78,
+              fontSize: fs(78),
               fontWeight: 800,
               letterSpacing: '-0.04em',
               textAlign: 'center',
@@ -1275,7 +1338,7 @@ function C1Center({ accent, props }: C1Input) {
             <div
               style={{
                 display: 'flex',
-                fontSize: 33,
+                fontSize: fs(33),
                 fontWeight: 600,
                 opacity: 0.9,
                 marginTop: 26,
@@ -1291,7 +1354,7 @@ function C1Center({ accent, props }: C1Input) {
             <div
               style={{
                 display: 'flex',
-                fontSize: 24,
+                fontSize: fs(24),
                 fontWeight: 700,
                 letterSpacing: '0.12em',
                 color: 'rgba(255,255,255,0.62)',
@@ -1360,7 +1423,7 @@ function C1Band({ accent, props }: C1Input) {
             border: '2px solid rgba(255,255,255,0.5)',
             borderRadius: 999,
             padding: '8px 22px',
-            fontSize: 25,
+            fontSize: fs(25),
             fontWeight: 700,
             letterSpacing: '0.04em',
             color: 'rgba(255,255,255,0.94)',
@@ -1390,7 +1453,7 @@ function C1Band({ accent, props }: C1Input) {
             style={{
               display: 'flex',
               marginTop: 22,
-              fontSize: 31,
+              fontSize: fs(31),
               fontWeight: 600,
               color: 'rgba(255,255,255,0.72)',
             }}
@@ -1448,14 +1511,14 @@ function C1Giant({ accent, props }: C1Input) {
         <Topbar
           color="#fff"
           right={props.tag ?? DEFAULT_TAGS[accent]}
-          rightStyle={{ fontSize: 26, color: 'rgba(255,255,255,0.78)', letterSpacing: '0.06em' }}
+          rightStyle={{ fontSize: fs(26), color: 'rgba(255,255,255,0.78)', letterSpacing: '0.06em' }}
         />
         <div style={{ display: 'flex', flexDirection: 'column', marginTop: 'auto' }}>
           {props.kicker ? (
             <div
               style={{
                 display: 'flex',
-                fontSize: 30,
+                fontSize: fs(30),
                 fontWeight: 700,
                 letterSpacing: '0.04em',
                 color: 'rgba(255,255,255,0.86)',
@@ -1485,7 +1548,7 @@ function C1Giant({ accent, props }: C1Input) {
             <div
               style={{
                 display: 'flex',
-                fontSize: 32,
+                fontSize: fs(32),
                 fontWeight: 600,
                 color: 'rgba(255,255,255,0.8)',
                 marginTop: 22,
@@ -1515,7 +1578,7 @@ function C5({ accent, props }: Extract<RenderSlideInput, { template: 'C5' }>) {
           padding: 72,
         }}
       >
-        <Topbar color="#fff" right={DEFAULT_TAGS[accent]} rightStyle={{ color: 'rgba(255,255,255,0.6)', fontSize: 26 }} />
+        <Topbar color="#fff" right={DEFAULT_TAGS[accent]} rightStyle={{ color: 'rgba(255,255,255,0.6)', fontSize: fs(26) }} />
         <div
           style={{
             display: 'flex',
@@ -1525,7 +1588,7 @@ function C5({ accent, props }: Extract<RenderSlideInput, { template: 'C5' }>) {
           }}
         >
           {props.kicker ? (
-            <div style={{ display: 'flex', fontSize: 34, fontWeight: 600, color: 'rgba(255,255,255,0.85)' }}>
+            <div style={{ display: 'flex', fontSize: fs(34), fontWeight: 600, color: 'rgba(255,255,255,0.85)' }}>
               {props.kicker}
             </div>
           ) : null}
@@ -1533,7 +1596,7 @@ function C5({ accent, props }: Extract<RenderSlideInput, { template: 'C5' }>) {
             style={{
               display: 'flex',
               marginTop: 24,
-              fontSize: 190,
+              fontSize: fs(190),
               fontWeight: 800,
               lineHeight: 1.02,
               letterSpacing: '-0.045em',
@@ -1547,7 +1610,7 @@ function C5({ accent, props }: Extract<RenderSlideInput, { template: 'C5' }>) {
               display: 'flex',
               flexDirection: 'column',
               marginTop: 30,
-              fontSize: 44,
+              fontSize: fs(44),
               fontWeight: 800,
               letterSpacing: '-0.02em',
               lineHeight: 1.35,
@@ -1564,7 +1627,7 @@ function C5({ accent, props }: Extract<RenderSlideInput, { template: 'C5' }>) {
           <div
             style={{
               display: 'flex',
-              fontSize: 24,
+              fontSize: fs(24),
               fontWeight: 700,
               letterSpacing: '0.12em',
               color: 'rgba(255,255,255,0.58)',
@@ -1582,7 +1645,8 @@ function C5({ accent, props }: Extract<RenderSlideInput, { template: 'C5' }>) {
 // 개요 모드: 이 장에서 가장 중요한 사실 한 줄(lead)이 큰 패널로 먼저 서고, 나머지는 번호 목록으로
 // 뒷받침한다. 오버뷰 슬라이드가 모두 같은 굵기의 불릿이면 "무엇이 중요한지"가 안 보이기 때문.
 const B2_BANNER = 48;
-const B2_BANNER_H = Math.round(B2_BANNER * 1.3) + 26; // 상하 패딩 13*2
+// 배너 높이는 글자 크기를 따라가야 한다 — 상수로 굳혀두면 textScale을 올렸을 때 글자가 배너를 넘는다
+const b2BannerH = () => Math.round(fs(B2_BANNER) * 1.3) + 26; // 상하 패딩 13*2
 
 function B2({ accent, props }: Extract<RenderSlideInput, { template: 'B2' }>) {
   const color = accentOf(accent, props);
@@ -1590,7 +1654,7 @@ function B2({ accent, props }: Extract<RenderSlideInput, { template: 'B2' }>) {
   const mediaH = props.media ? 372 : 0;
 
   // 세로 예산 — 패딩·톱바·이미지·배너를 뺀 나머지를 lead → 불릿 순으로 나눠 쓴다
-  let rest = CARD_H - PAD_Y * 2 - TOPBAR_H - (mediaH ? mediaH + 40 : 0) - (40 + B2_BANNER_H) - 52;
+  let rest = CARD_H - PAD_Y * 2 - TOPBAR_H - (mediaH ? mediaH + 40 : 0) - (40 + b2BannerH()) - 52;
   const leadFit = lead
     ? fitBlock([lead], {
         width: BODY_W - 96, // 좌측 바 8 + 좌우 패딩 44
@@ -1656,7 +1720,7 @@ function B2({ accent, props }: Extract<RenderSlideInput, { template: 'B2' }>) {
             style={{
               background: color,
               color: '#fff',
-              fontSize: B2_BANNER,
+              fontSize: fs(B2_BANNER),
               fontWeight: 800,
               letterSpacing: '-0.02em',
               lineHeight: 1.3,
@@ -1778,13 +1842,13 @@ function ToneLabel({ ko, en, color }: { ko: string; en: string; color: string })
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
       <div style={{ display: 'flex', width: 30, height: 4, backgroundColor: color }} />
-      <div style={{ display: 'flex', fontSize: 32, fontWeight: 800, color, letterSpacing: '-0.01em' }}>
+      <div style={{ display: 'flex', fontSize: fs(32), fontWeight: 800, color, letterSpacing: '-0.01em' }}>
         {ko}
       </div>
       <div
         style={{
           display: 'flex',
-          fontSize: 19,
+          fontSize: fs(19),
           fontWeight: 700,
           letterSpacing: '0.18em',
           color: B5_LABEL_EN,
@@ -1843,12 +1907,12 @@ function B5({ props }: Extract<RenderSlideInput, { template: 'B5' }>) {
       <div style={{ display: 'flex', flexDirection: 'column', width: colW }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 6 }}>
           <div style={{ display: 'flex', width: 26, height: 4, backgroundColor: color }} />
-          <div style={{ display: 'flex', fontSize: 30, fontWeight: 800, color }}>{label}</div>
+          <div style={{ display: 'flex', fontSize: fs(30), fontWeight: 800, color }}>{label}</div>
         </div>
         <div
           style={{
             display: 'flex',
-            fontSize: 18,
+            fontSize: fs(18),
             fontWeight: 700,
             letterSpacing: '0.18em',
             color: B5_LABEL_EN,
@@ -1872,7 +1936,7 @@ function B5({ props }: Extract<RenderSlideInput, { template: 'B5' }>) {
         <div
           style={{
             display: 'flex',
-            fontSize: 58,
+            fontSize: fs(58),
             fontWeight: 800,
             color: '#fff',
             letterSpacing: '-0.03em',
@@ -1884,7 +1948,7 @@ function B5({ props }: Extract<RenderSlideInput, { template: 'B5' }>) {
         <div
           style={{
             display: 'flex',
-            fontSize: 25,
+            fontSize: fs(25),
             fontWeight: 700,
             letterSpacing: '0.2em',
             color: B5_LABEL_EN,
@@ -1936,7 +2000,7 @@ function B5({ props }: Extract<RenderSlideInput, { template: 'B5' }>) {
           left: B5_PAD,
           top: 74,
           display: 'flex',
-          fontSize: 27,
+          fontSize: fs(27),
           fontWeight: 700,
           letterSpacing: '0.22em',
           color: '#fff',
@@ -1987,7 +2051,7 @@ function pillStyle(): CSSProperties {
     border: '1.5px solid rgba(255,255,255,0.28)',
     borderRadius: 999,
     padding: '9px 20px',
-    fontSize: 25,
+    fontSize: fs(25),
     fontWeight: 600,
     color: '#fff',
   };
@@ -2016,7 +2080,7 @@ function C2({ accent, props }: Extract<RenderSlideInput, { template: 'C2' }>) {
           <div
             style={{
               display: 'flex',
-              fontSize: 30,
+              fontSize: fs(30),
               fontWeight: 600,
               color: 'rgba(255,255,255,0.78)',
               marginBottom: 24,
@@ -2029,7 +2093,7 @@ function C2({ accent, props }: Extract<RenderSlideInput, { template: 'C2' }>) {
           style={{
             display: 'flex',
             flexDirection: 'column',
-            fontSize: 66,
+            fontSize: fs(66),
             fontWeight: 800,
             letterSpacing: '-0.035em',
           }}
@@ -2043,7 +2107,7 @@ function C2({ accent, props }: Extract<RenderSlideInput, { template: 'C2' }>) {
         </div>
       </div>
       {props.sub ? (
-        <div style={{ display: 'flex', fontSize: 36, lineHeight: 1.55, color: 'rgba(255,255,255,0.72)' }}>
+        <div style={{ display: 'flex', fontSize: fs(36), lineHeight: 1.55, color: 'rgba(255,255,255,0.72)' }}>
           {props.sub}
         </div>
       ) : null}
@@ -2077,7 +2141,7 @@ function C3({ accent, props }: Extract<RenderSlideInput, { template: 'C3' }>) {
               borderRadius: 40,
               background: 'rgba(255,255,255,0.08)',
               border: '1.5px solid rgba(255,255,255,0.18)',
-              fontSize: 64,
+              fontSize: fs(64),
               fontWeight: 800,
               marginBottom: 44,
             }}
@@ -2090,7 +2154,7 @@ function C3({ accent, props }: Extract<RenderSlideInput, { template: 'C3' }>) {
             display: 'flex',
             flexDirection: 'column',
             alignItems: 'center',
-            fontSize: 66,
+            fontSize: fs(66),
             fontWeight: 800,
             letterSpacing: '-0.035em',
             textAlign: 'center',
@@ -2109,7 +2173,7 @@ function C3({ accent, props }: Extract<RenderSlideInput, { template: 'C3' }>) {
           style={{
             display: 'flex',
             justifyContent: 'center',
-            fontSize: 36,
+            fontSize: fs(36),
             lineHeight: 1.55,
             color: 'rgba(255,255,255,0.72)',
           }}
@@ -2152,7 +2216,7 @@ function C4({ accent, props }: Extract<RenderSlideInput, { template: 'C4' }>) {
             style={{
               display: 'flex',
               justifyContent: 'center',
-              fontSize: 30,
+              fontSize: fs(30),
               fontWeight: 600,
               color: 'rgba(255,255,255,0.78)',
               marginBottom: 40,
@@ -2164,7 +2228,7 @@ function C4({ accent, props }: Extract<RenderSlideInput, { template: 'C4' }>) {
         <div style={{ display: 'flex', alignItems: 'center', gap: 36 }}>
           {[props.vsA, null, props.vsB].map((side, i) =>
             side === null ? (
-              <span key={i} style={{ fontSize: 48, fontWeight: 800, color }}>
+              <span key={i} style={{ fontSize: fs(48), fontWeight: 800, color }}>
                 VS
               </span>
             ) : (
@@ -2174,7 +2238,7 @@ function C4({ accent, props }: Extract<RenderSlideInput, { template: 'C4' }>) {
                     display: 'flex',
                     flexDirection: 'column',
                     alignItems: 'center',
-                    fontSize: 52,
+                    fontSize: fs(52),
                     fontWeight: 800,
                     letterSpacing: '-0.02em',
                     textAlign: 'center',
@@ -2185,7 +2249,7 @@ function C4({ accent, props }: Extract<RenderSlideInput, { template: 'C4' }>) {
                   ))}
                 </div>
                 {side.by ? (
-                  <div style={{ fontSize: 30, color: 'rgba(255,255,255,0.7)', marginTop: 10 }}>
+                  <div style={{ fontSize: fs(30), color: 'rgba(255,255,255,0.7)', marginTop: 10 }}>
                     {side.by}
                   </div>
                 ) : null}
@@ -2199,7 +2263,7 @@ function C4({ accent, props }: Extract<RenderSlideInput, { template: 'C4' }>) {
           style={{
             display: 'flex',
             justifyContent: 'center',
-            fontSize: 36,
+            fontSize: fs(36),
             lineHeight: 1.55,
             color: 'rgba(255,255,255,0.72)',
           }}
@@ -2237,7 +2301,7 @@ function B1({ accent, props }: Extract<RenderSlideInput, { template: 'B1' }>) {
             display: 'flex',
             flexWrap: 'wrap',
             marginTop: 0,
-            fontSize: 34,
+            fontSize: fs(34),
             lineHeight: 1.55,
             color: MUTED,
           }}
@@ -2250,7 +2314,7 @@ function B1({ accent, props }: Extract<RenderSlideInput, { template: 'B1' }>) {
           display: 'flex',
           flexDirection: 'column',
           marginTop: 36,
-          fontSize: 60,
+          fontSize: fs(60),
           fontWeight: 800,
           letterSpacing: '-0.035em',
         }}
@@ -2299,8 +2363,8 @@ function B1({ accent, props }: Extract<RenderSlideInput, { template: 'B1' }>) {
                 flexShrink: 0,
               }}
             />
-            <span style={{ fontSize: 44, fontWeight: 800, letterSpacing: '-0.02em' }}>{r.term}</span>
-            {r.desc ? <span style={{ fontSize: 32, color: MUTED }}>{r.desc}</span> : null}
+            <span style={{ fontSize: fs(44), fontWeight: 800, letterSpacing: '-0.02em' }}>{r.term}</span>
+            {r.desc ? <span style={{ fontSize: fs(32), color: MUTED }}>{r.desc}</span> : null}
           </div>
         ))}
       </div>
@@ -2328,7 +2392,7 @@ function B3({ accent, props }: Extract<RenderSlideInput, { template: 'B3' }>) {
             style={{
               background: color,
               color: '#fff',
-              fontSize: 26,
+              fontSize: fs(26),
               fontWeight: 800,
               letterSpacing: '0.06em',
               padding: '10px 22px',
@@ -2341,7 +2405,7 @@ function B3({ accent, props }: Extract<RenderSlideInput, { template: 'B3' }>) {
         <div
           style={{
             display: 'flex',
-            fontSize: 96,
+            fontSize: fs(96),
             fontWeight: 800,
             letterSpacing: '-0.04em',
             lineHeight: 1.05,
@@ -2352,7 +2416,7 @@ function B3({ accent, props }: Extract<RenderSlideInput, { template: 'B3' }>) {
           {props.term}
         </div>
         {props.termEn ? (
-          <div style={{ display: 'flex', fontSize: 36, color: MUTED, marginTop: 12 }}>
+          <div style={{ display: 'flex', fontSize: fs(36), color: MUTED, marginTop: 12 }}>
             {props.termEn}
           </div>
         ) : null}
@@ -2370,7 +2434,7 @@ function B3({ accent, props }: Extract<RenderSlideInput, { template: 'B3' }>) {
         <div
           style={{
             display: 'flex',
-            fontSize: 50,
+            fontSize: fs(50),
             fontWeight: 800,
             lineHeight: 1.35,
             letterSpacing: '-0.02em',
@@ -2385,7 +2449,7 @@ function B3({ accent, props }: Extract<RenderSlideInput, { template: 'B3' }>) {
               display: 'flex',
               flexWrap: 'wrap',
               marginTop: 30,
-              fontSize: 36,
+              fontSize: fs(36),
               lineHeight: 1.6,
               color: BODY_TEXT,
             }}
@@ -2420,7 +2484,7 @@ function B4({ accent, props }: Extract<RenderSlideInput, { template: 'B4' }>) {
             display: 'flex',
             flexDirection: 'column',
             alignItems: 'center',
-            fontSize: 60,
+            fontSize: fs(60),
             fontWeight: 800,
             lineHeight: 1.22,
             letterSpacing: '-0.035em',
@@ -2436,7 +2500,7 @@ function B4({ accent, props }: Extract<RenderSlideInput, { template: 'B4' }>) {
           )}
         </div>
         {props.attribution ? (
-          <div style={{ display: 'flex', fontSize: 34, fontWeight: 600, opacity: 0.8, marginTop: 36 }}>
+          <div style={{ display: 'flex', fontSize: fs(34), fontWeight: 600, opacity: 0.8, marginTop: 36 }}>
             {props.attribution}
           </div>
         ) : null}
@@ -2459,7 +2523,7 @@ function B6({ accent, props }: Extract<RenderSlideInput, { template: 'B6' }>) {
         style={{
           display: 'flex',
           flexDirection: 'column',
-          fontSize: 54,
+          fontSize: fs(54),
           fontWeight: 800,
           letterSpacing: '-0.035em',
         }}
@@ -2501,7 +2565,7 @@ function B6({ accent, props }: Extract<RenderSlideInput, { template: 'B6' }>) {
                 borderRadius: 20,
                 background: color,
                 color: '#fff',
-                fontSize: 38,
+                fontSize: fs(38),
                 fontWeight: 800,
                 flexShrink: 0,
               }}
@@ -2509,11 +2573,11 @@ function B6({ accent, props }: Extract<RenderSlideInput, { template: 'B6' }>) {
               {i + 1}
             </div>
             <div style={{ display: 'flex', flexDirection: 'column' }}>
-              <span style={{ fontSize: 42, fontWeight: 800, letterSpacing: '-0.02em' }}>
+              <span style={{ fontSize: fs(42), fontWeight: 800, letterSpacing: '-0.02em' }}>
                 {s.title}
               </span>
               {s.desc ? (
-                <span style={{ fontSize: 31, color: BODY_TEXT, marginTop: 8 }}>{s.desc}</span>
+                <span style={{ fontSize: fs(31), color: BODY_TEXT, marginTop: 8 }}>{s.desc}</span>
               ) : null}
             </div>
           </div>
@@ -2539,12 +2603,12 @@ function B7({ props }: Extract<RenderSlideInput, { template: 'B7' }>) {
       >
         <div style={{ display: 'flex', alignItems: 'baseline' }}>
           <span
-            style={{ fontSize: 220, fontWeight: 800, lineHeight: 1, letterSpacing: '-0.05em', color: DARK_KW }}
+            style={{ fontSize: fs(220), fontWeight: 800, lineHeight: 1, letterSpacing: '-0.05em', color: DARK_KW }}
           >
             {props.big}
           </span>
           {props.unit ? (
-            <span style={{ fontSize: 90, fontWeight: 800, color: DARK_KW }}>{props.unit}</span>
+            <span style={{ fontSize: fs(90), fontWeight: 800, color: DARK_KW }}>{props.unit}</span>
           ) : null}
         </div>
         <div
@@ -2552,7 +2616,7 @@ function B7({ props }: Extract<RenderSlideInput, { template: 'B7' }>) {
             display: 'flex',
             flexDirection: 'column',
             marginTop: 20,
-            fontSize: 44,
+            fontSize: fs(44),
             fontWeight: 800,
             letterSpacing: '-0.02em',
             lineHeight: 1.35,
@@ -2569,7 +2633,7 @@ function B7({ props }: Extract<RenderSlideInput, { template: 'B7' }>) {
             style={{
               display: 'flex',
               marginTop: 18,
-              fontSize: 34,
+              fontSize: fs(34),
               lineHeight: 1.55,
               color: 'rgba(255,255,255,0.8)',
             }}
@@ -2657,7 +2721,7 @@ function B8({ accent, props }: Extract<RenderSlideInput, { template: 'B8' }>) {
       borderRadius: 23,
       borderTop: '1px solid rgba(255,255,255,0.09)',
       padding: '34px 40px',
-      fontSize: 30,
+      fontSize: fs(30),
       lineHeight: 1.75,
     };
     // 배경 오브 — 변형마다 위치·색이 달라 연속 장이 같은 판박이로 안 보인다
@@ -2682,7 +2746,7 @@ function B8({ accent, props }: Extract<RenderSlideInput, { template: 'B8' }>) {
               background: hexA(color, 0.14),
               border: `1px solid ${hexA(color, 0.45)}`,
               color,
-              fontSize: 23,
+              fontSize: fs(23),
               fontWeight: 800,
               letterSpacing: '0.14em',
               padding: '10px 24px',
@@ -2699,7 +2763,7 @@ function B8({ accent, props }: Extract<RenderSlideInput, { template: 'B8' }>) {
               style={{
                 display: 'flex',
                 flexWrap: 'wrap',
-                fontSize: 58,
+                fontSize: fs(58),
                 fontWeight: 800,
                 letterSpacing: '-0.02em',
                 lineHeight: 1.12,
@@ -2707,7 +2771,7 @@ function B8({ accent, props }: Extract<RenderSlideInput, { template: 'B8' }>) {
             >
               {props.patternEn}
             </div>
-            <div style={{ display: 'flex', marginTop: 14, fontSize: 35, fontWeight: 700, color: 'rgba(244,246,251,0.66)' }}>
+            <div style={{ display: 'flex', marginTop: 14, fontSize: fs(35), fontWeight: 700, color: 'rgba(244,246,251,0.66)' }}>
               {props.patternName}
             </div>
           </div>
@@ -2716,7 +2780,7 @@ function B8({ accent, props }: Extract<RenderSlideInput, { template: 'B8' }>) {
             style={{
               display: 'flex',
               marginTop: 30,
-              fontSize: 64,
+              fontSize: fs(64),
               fontWeight: 800,
               letterSpacing: '-0.035em',
               lineHeight: 1.15,
@@ -2726,7 +2790,7 @@ function B8({ accent, props }: Extract<RenderSlideInput, { template: 'B8' }>) {
           </div>
         )}
         {props.when ? (
-          <div style={{ display: 'flex', marginTop: 20, fontSize: 33, lineHeight: 1.5, color: 'rgba(244,246,251,0.55)' }}>
+          <div style={{ display: 'flex', marginTop: 20, fontSize: fs(33), lineHeight: 1.5, color: 'rgba(244,246,251,0.55)' }}>
             <span>{`"${props.when}"`}</span>
           </div>
         ) : null}
@@ -2738,7 +2802,7 @@ function B8({ accent, props }: Extract<RenderSlideInput, { template: 'B8' }>) {
               alignItems: 'center',
               gap: 14,
               marginTop: 24,
-              fontSize: 33,
+              fontSize: fs(33),
               fontWeight: 700,
               color,
             }}
@@ -2772,13 +2836,13 @@ function B8({ accent, props }: Extract<RenderSlideInput, { template: 'B8' }>) {
               {['#FF5F57', '#FEBC2E', '#28C840'].map((c) => (
                 <div key={c} style={{ display: 'flex', width: 18, height: 18, borderRadius: 999, background: c }} />
               ))}
-              <span style={{ fontSize: 24, fontWeight: 600, letterSpacing: '0.08em', color: 'rgba(244,246,251,0.4)', marginLeft: 10 }}>
+              <span style={{ fontSize: fs(24), fontWeight: 600, letterSpacing: '0.08em', color: 'rgba(244,246,251,0.4)', marginLeft: 10 }}>
                 prompt.md
               </span>
             </div>
           ) : variant === 1 ? (
             <div style={{ display: 'flex', alignItems: 'center', padding: '18px 26px 14px' }}>
-              <span style={{ fontSize: 22, fontWeight: 700, letterSpacing: '0.22em', color: hexA(color, 0.85) }}>
+              <span style={{ fontSize: fs(22), fontWeight: 700, letterSpacing: '0.22em', color: hexA(color, 0.85) }}>
                 ACTUAL PROMPT
               </span>
             </div>
@@ -2801,7 +2865,7 @@ function B8({ accent, props }: Extract<RenderSlideInput, { template: 'B8' }>) {
                     style={{
                       display: 'flex',
                       flexWrap: 'wrap',
-                      fontSize: 23,
+                      fontSize: fs(23),
                       lineHeight: 1.5,
                       color: 'rgba(244,246,251,0.42)',
                       marginBottom: 14,
@@ -2827,7 +2891,7 @@ function B8({ accent, props }: Extract<RenderSlideInput, { template: 'B8' }>) {
               border: `2px solid ${hexA(color, 0.35)}`,
               borderRadius: 16,
               padding: '24px 30px',
-              fontSize: 31,
+              fontSize: fs(31),
               fontWeight: 700,
               color: '#F4F6FB',
             }}
@@ -2848,7 +2912,7 @@ function B8({ accent, props }: Extract<RenderSlideInput, { template: 'B8' }>) {
           display: 'flex',
           flexDirection: 'column',
           marginTop: 44,
-          fontSize: 52,
+          fontSize: fs(52),
           fontWeight: 800,
           letterSpacing: '-0.035em',
         }}
@@ -2867,7 +2931,7 @@ function B8({ accent, props }: Extract<RenderSlideInput, { template: 'B8' }>) {
           alignItems: 'center',
           gap: 14,
           marginTop: 26,
-          fontSize: 30,
+          fontSize: fs(30),
           fontWeight: 600,
           color,
         }}
@@ -2900,7 +2964,7 @@ function B9({ accent, props }: Extract<RenderSlideInput, { template: 'B9' }>) {
             display: 'flex',
             flexWrap: 'wrap',
             marginTop: 40,
-            fontSize: stripMarks(props.lead).length <= 16 ? 72 : 34,
+            fontSize: fs(stripMarks(props.lead).length <= 16 ? 72 : 34),
             fontWeight: stripMarks(props.lead).length <= 16 ? 800 : 400,
             lineHeight: stripMarks(props.lead).length <= 16 ? 1.26 : 1.55,
             letterSpacing: stripMarks(props.lead).length <= 16 ? '-0.03em' : '0',
@@ -2941,7 +3005,7 @@ function B9({ accent, props }: Extract<RenderSlideInput, { template: 'B9' }>) {
               display: 'flex',
               background: color,
               color: '#fff',
-              fontSize: 30,
+              fontSize: fs(30),
               fontWeight: 700,
               padding: '16px 24px',
               borderRadius: 14,
@@ -2969,9 +3033,9 @@ function B9({ accent, props }: Extract<RenderSlideInput, { template: 'B9' }>) {
 // scripts/cardpress-verify.mjs가 렌더 PNG의 글자/배경 대비를 실측해 4.5:1 미만이면 실패시킨다.
 // ============================================================
 
-// 골드 — 벤치마크 기본 강조색(카드당 1구절). P계열 **강조** 글자색은 포인트색(전체)과
-// 무관하게 항상 이 골드로 고정(운영자 요청 2026-08-25 — 전파가 본문 강조까지 물들이던 문제).
-// 숫자·괘선·빅넘버 등 구조 요소만 photoAccent(accentColor 오버라이드 허용)를 따른다.
+// 골드 — ==강조==의 고정색(둘째 강조 축, 썸네일 문법). **강조**는 P계열 포함 어디서나
+// accentOf(카테고리 기본색 ?? accentColor 오버라이드) = 편집기 툴바 "A 포인트색"과 일치
+// (운영자 요청 2026-08-30 — "포인트색을 눌러도 골드가 나옴" 정정. 골드 고정은 ==로 이관).
 const PHOTO_ACCENT = '#E8B857';
 const P_TEXT = '#FFFFFF';
 const P_TEXT_2 = 'rgba(255,255,255,0.90)'; // 부본문 — 0.7대로 내리면 사진 위에서 대비가 무너진다
@@ -3114,7 +3178,7 @@ function Eyebrow({ text, centered, color }: { text: string; centered?: boolean; 
       <div
         style={{
           display: 'flex',
-          fontSize: 22,
+          fontSize: fs(22),
           fontWeight: 700,
           letterSpacing: '0.2em',
           color: color ?? P_TEXT_3,
@@ -3209,7 +3273,7 @@ function EditorialMini({
     gap: 26,
   };
   const para = (t: string, i: number) => (
-    <div key={i} style={{ display: 'flex', flexWrap: 'wrap', fontSize: twoCol ? 24 : 27, lineHeight: 1.8, color: bodyCol }}>
+    <div key={i} style={{ display: 'flex', flexWrap: 'wrap', fontSize: fs(twoCol ? 24 : 27), lineHeight: 1.8, color: bodyCol }}>
       {em(t, color)}
     </div>
   );
@@ -3227,7 +3291,7 @@ function EditorialMini({
     >
       <Topbar color={ink} right={props.page} />
       {props.eyebrow ? (
-        <div style={{ display: 'flex', marginTop: 56, fontSize: 22, fontWeight: 700, letterSpacing: '0.2em', color }}>
+        <div style={{ display: 'flex', marginTop: 56, fontSize: fs(22), fontWeight: 700, letterSpacing: '0.2em', color }}>
           {props.eyebrow}
         </div>
       ) : null}
@@ -3235,7 +3299,7 @@ function EditorialMini({
         {highlightLines(
           props.heading,
           props.hl,
-          { fontSize: 46, fontWeight: 800, lineHeight: 1.25 },
+          { fontSize: fs(46), fontWeight: 800, lineHeight: 1.25 },
           { whiteSpace: 'pre', color }
         )}
       </div>
@@ -3245,7 +3309,7 @@ function EditorialMini({
         {twoCol ? <div style={colStyle}>{paras.slice(half).map(para)}</div> : null}
       </div>
       {props.note ? (
-        <div style={{ display: 'flex', marginTop: 'auto', fontSize: 22, color: muted }}>{props.note}</div>
+        <div style={{ display: 'flex', marginTop: 'auto', fontSize: fs(22), color: muted }}>{props.note}</div>
       ) : null}
     </div>
   );
@@ -3268,7 +3332,7 @@ function B12({ accent, props }: Extract<RenderSlideInput, { template: 'B12' }>) 
         {highlightLines(
           props.heading,
           props.hl,
-          { fontSize: 52, fontWeight: 800, lineHeight: 1.25 },
+          { fontSize: fs(52), fontWeight: 800, lineHeight: 1.25 },
           { whiteSpace: 'pre', color }
         )}
       </div>
@@ -3301,14 +3365,14 @@ function B12({ accent, props }: Extract<RenderSlideInput, { template: 'B12' }>) 
                 }}
               />
             </div>
-            <div style={{ display: 'flex', flexWrap: 'wrap', fontSize: 31, lineHeight: 1.55, color: BODY_TEXT }}>
+            <div style={{ display: 'flex', flexWrap: 'wrap', fontSize: fs(31), lineHeight: 1.55, color: BODY_TEXT }}>
               {em(t, color)}
             </div>
           </div>
         ))}
       </div>
       {props.footer ? (
-        <div style={{ display: 'flex', marginTop: 'auto', fontSize: 24, color: MUTED }}>{props.footer}</div>
+        <div style={{ display: 'flex', marginTop: 'auto', fontSize: fs(24), color: MUTED }}>{props.footer}</div>
       ) : null}
     </div>
   );
@@ -3320,24 +3384,24 @@ function B13({ accent, props }: Extract<RenderSlideInput, { template: 'B13' }>) 
   return (
     <div style={{ ...cardBase, background: '#fff', color: INK, padding: '80px 72px' }}>
       <Topbar color={INK} right={props.page} />
-      <div style={{ display: 'flex', marginTop: 64, fontSize: 88, fontWeight: 800, color, lineHeight: 1 }}>Q.</div>
+      <div style={{ display: 'flex', marginTop: 64, fontSize: fs(88), fontWeight: 800, color, lineHeight: 1 }}>Q.</div>
       <div style={{ display: 'flex', flexDirection: 'column', marginTop: 24, letterSpacing: '-0.02em' }}>
         {highlightLines(
           props.question,
           props.hl,
-          { fontSize: 52, fontWeight: 800, lineHeight: 1.3 },
+          { fontSize: fs(52), fontWeight: 800, lineHeight: 1.3 },
           { whiteSpace: 'pre', color }
         )}
       </div>
       <div style={{ display: 'flex', marginTop: 48, height: 1, width: '100%', background: 'rgba(20,22,28,0.12)' }} />
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: 26, marginTop: 48 }}>
-        <div style={{ display: 'flex', fontSize: 44, fontWeight: 800, color: 'rgba(20,22,28,0.35)', lineHeight: 1 }}>A.</div>
-        <div style={{ display: 'flex', flexWrap: 'wrap', width: 850, fontSize: 30, lineHeight: 1.7, color: BODY_TEXT }}>
+        <div style={{ display: 'flex', fontSize: fs(44), fontWeight: 800, color: 'rgba(20,22,28,0.35)', lineHeight: 1 }}>A.</div>
+        <div style={{ display: 'flex', flexWrap: 'wrap', width: 850, fontSize: fs(30), lineHeight: 1.7, color: BODY_TEXT }}>
           {em(props.answer, color)}
         </div>
       </div>
       {props.note ? (
-        <div style={{ display: 'flex', marginTop: 'auto', fontSize: 24, color: MUTED }}>{props.note}</div>
+        <div style={{ display: 'flex', marginTop: 'auto', fontSize: fs(24), color: MUTED }}>{props.note}</div>
       ) : null}
     </div>
   );
@@ -3358,12 +3422,12 @@ function B14({ accent, props }: Extract<RenderSlideInput, { template: 'B14' }>) 
         padding: '38px 40px',
       }}
     >
-      <div style={{ display: 'flex', fontSize: 34, fontWeight: 800, color: tinted ? color : INK }}>{title}</div>
+      <div style={{ display: 'flex', fontSize: fs(34), fontWeight: 800, color: tinted ? color : INK }}>{title}</div>
       <div style={{ display: 'flex', flexDirection: 'column', marginTop: 26, gap: 20 }}>
         {items.map((t, i) => (
           <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 14 }}>
             <div style={{ display: 'flex', width: 8, height: 8, borderRadius: 999, background: tinted ? color : '#9AA1AD', marginTop: 15, flexShrink: 0 }} />
-            <div style={{ display: 'flex', flexWrap: 'wrap', fontSize: 26, lineHeight: 1.6, color: BODY_TEXT }}>{t}</div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', fontSize: fs(26), lineHeight: 1.6, color: BODY_TEXT }}>{t}</div>
           </div>
         ))}
       </div>
@@ -3373,7 +3437,7 @@ function B14({ accent, props }: Extract<RenderSlideInput, { template: 'B14' }>) 
     <div style={{ ...cardBase, background: '#fff', color: INK, padding: '80px 72px' }}>
       <Topbar color={INK} right={props.page} />
       {props.heading ? (
-        <div style={{ display: 'flex', flexWrap: 'wrap', marginTop: 56, fontSize: 48, fontWeight: 800, letterSpacing: '-0.02em', lineHeight: 1.25 }}>
+        <div style={{ display: 'flex', flexWrap: 'wrap', marginTop: 56, fontSize: fs(48), fontWeight: 800, letterSpacing: '-0.02em', lineHeight: 1.25 }}>
           {props.heading}
         </div>
       ) : null}
@@ -3399,24 +3463,24 @@ function B15({ accent, props }: Extract<RenderSlideInput, { template: 'B15' }>) 
       }}
     >
       <Topbar color="#F4F6FB" right={props.page} rightStyle={{ color: 'rgba(244,246,251,0.45)' }} />
-      <div style={{ display: 'flex', marginTop: 'auto', fontSize: 160, fontWeight: 800, color: hexA(color, 0.85), lineHeight: 0.6 }}>
+      <div style={{ display: 'flex', marginTop: 'auto', fontSize: fs(160), fontWeight: 800, color: hexA(color, 0.85), lineHeight: 0.6 }}>
         {'"'}
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', marginTop: 44, letterSpacing: '-0.02em' }}>
         {highlightLines(
           props.quote,
           props.hl,
-          { fontSize: 58, fontWeight: 800, lineHeight: 1.35 },
+          { fontSize: fs(58), fontWeight: 800, lineHeight: 1.35 },
           { whiteSpace: 'pre', color }
         )}
       </div>
       {props.attribution ? (
-        <div style={{ display: 'flex', marginTop: 40, fontSize: 29, fontWeight: 600, color: 'rgba(244,246,251,0.55)' }}>
+        <div style={{ display: 'flex', marginTop: 40, fontSize: fs(29), fontWeight: 600, color: 'rgba(244,246,251,0.55)' }}>
           {`— ${props.attribution}`}
         </div>
       ) : null}
       {props.context ? (
-        <div style={{ display: 'flex', flexWrap: 'wrap', marginTop: 20, fontSize: 25, lineHeight: 1.6, color: 'rgba(244,246,251,0.4)', marginBottom: 'auto' }}>
+        <div style={{ display: 'flex', flexWrap: 'wrap', marginTop: 20, fontSize: fs(25), lineHeight: 1.6, color: 'rgba(244,246,251,0.4)', marginBottom: 'auto' }}>
           {props.context}
         </div>
       ) : (
@@ -3439,7 +3503,7 @@ function B16({ accent, props }: Extract<RenderSlideInput, { template: 'B16' }>) 
           {highlightLines(
             props.heading,
             props.hl,
-            { fontSize: 48, fontWeight: 800, lineHeight: 1.25 },
+            { fontSize: fs(48), fontWeight: 800, lineHeight: 1.25 },
             { whiteSpace: 'pre', color }
           )}
         </div>
@@ -3460,21 +3524,21 @@ function B16({ accent, props }: Extract<RenderSlideInput, { template: 'B16' }>) 
             }}
           >
             <div style={{ display: 'flex', alignItems: 'flex-end' }}>
-              <span style={{ fontSize: n === 2 ? 96 : 76, fontWeight: 800, letterSpacing: '-0.03em', color: i === 0 ? color : INK, lineHeight: 1 }}>
+              <span style={{ fontSize: fs(n === 2 ? 96 : 76), fontWeight: 800, letterSpacing: '-0.03em', color: i === 0 ? color : INK, lineHeight: 1 }}>
                 {s.big}
               </span>
               {s.unit ? (
-                <span style={{ fontSize: 34, fontWeight: 700, color: MUTED, marginLeft: 6, marginBottom: 8 }}>{s.unit}</span>
+                <span style={{ fontSize: fs(34), fontWeight: 700, color: MUTED, marginLeft: 6, marginBottom: 8 }}>{s.unit}</span>
               ) : null}
             </div>
-            <div style={{ display: 'flex', flexWrap: 'wrap', marginTop: 'auto', fontSize: 25, lineHeight: 1.5, color: BODY_TEXT }}>
+            <div style={{ display: 'flex', flexWrap: 'wrap', marginTop: 'auto', fontSize: fs(25), lineHeight: 1.5, color: BODY_TEXT }}>
               {s.label}
             </div>
           </div>
         ))}
       </div>
       {props.footer ? (
-        <div style={{ display: 'flex', marginTop: 'auto', fontSize: 24, color: MUTED }}>{props.footer}</div>
+        <div style={{ display: 'flex', marginTop: 'auto', fontSize: fs(24), color: MUTED }}>{props.footer}</div>
       ) : null}
     </div>
   );
@@ -3491,7 +3555,7 @@ function B17({ accent, props }: Extract<RenderSlideInput, { template: 'B17' }>) 
         {highlightLines(
           props.heading,
           props.hl,
-          { fontSize: 50, fontWeight: 800, lineHeight: 1.25 },
+          { fontSize: fs(50), fontWeight: 800, lineHeight: 1.25 },
           { whiteSpace: 'pre', color }
         )}
       </div>
@@ -3505,9 +3569,9 @@ function B17({ accent, props }: Extract<RenderSlideInput, { template: 'B17' }>) 
               ) : null}
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', paddingBottom: i !== last ? 40 : 0 }}>
-              <div style={{ display: 'flex', flexWrap: 'wrap', fontSize: 33, fontWeight: 800 }}>{s.title}</div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', fontSize: fs(33), fontWeight: 800 }}>{s.title}</div>
               {s.desc ? (
-                <div style={{ display: 'flex', flexWrap: 'wrap', marginTop: 10, fontSize: 26, lineHeight: 1.6, color: BODY_TEXT }}>{s.desc}</div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', marginTop: 10, fontSize: fs(26), lineHeight: 1.6, color: BODY_TEXT }}>{s.desc}</div>
               ) : null}
             </div>
           </div>
@@ -3527,24 +3591,24 @@ function C6({ accent, props }: Extract<RenderSlideInput, { template: 'C6' }>) {
       <div style={{ display: 'flex', flexDirection: 'column', marginTop: 'auto', gap: 34 }}>
         {rule}
         {props.kicker ? (
-          <div style={{ display: 'flex', fontSize: 24, fontWeight: 700, letterSpacing: '0.22em', color }}>{props.kicker}</div>
+          <div style={{ display: 'flex', fontSize: fs(24), fontWeight: 700, letterSpacing: '0.22em', color }}>{props.kicker}</div>
         ) : null}
         <div style={{ display: 'flex', flexDirection: 'column', letterSpacing: '-0.03em' }}>
           {highlightLines(
             props.title,
             props.hl,
-            { fontSize: 84, fontWeight: 800, lineHeight: 1.18 },
+            { fontSize: fs(84), fontWeight: 800, lineHeight: 1.18 },
             { whiteSpace: 'pre', color }
           )}
         </div>
         {props.sub ? (
-          <div style={{ display: 'flex', flexWrap: 'wrap', fontSize: 31, lineHeight: 1.55, color: BODY_TEXT }}>{props.sub}</div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', fontSize: fs(31), lineHeight: 1.55, color: BODY_TEXT }}>{props.sub}</div>
         ) : null}
         {rule}
       </div>
       <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 'auto' }}>
-        <span style={{ fontSize: 24, fontWeight: 600, color: MUTED }}>{props.footer ?? ''}</span>
-        <span style={{ fontSize: 24, fontWeight: 700, color }}>caselab.kr</span>
+        <span style={{ fontSize: fs(24), fontWeight: 600, color: MUTED }}>{props.footer ?? ''}</span>
+        <span style={{ fontSize: fs(24), fontWeight: 700, color }}>caselab.kr</span>
       </div>
     </div>
   );
@@ -3556,21 +3620,21 @@ function C7({ accent, props }: Extract<RenderSlideInput, { template: 'C7' }>) {
   return (
     <div style={{ ...cardBase, flexDirection: 'row', background: '#050505' }}>
       <div style={{ display: 'flex', flexDirection: 'column', width: props.coverImage ? 620 : CARD_W, padding: '80px 56px 72px 64px', color: '#F4F6FB' }}>
-        <span style={{ fontSize: 28, fontWeight: 700, letterSpacing: '-0.01em' }}>caselab</span>
+        <span style={{ fontSize: fs(28), fontWeight: 700, letterSpacing: '-0.01em' }}>caselab</span>
         <div style={{ display: 'flex', flexDirection: 'column', marginTop: 'auto', marginBottom: 'auto', gap: 28 }}>
           {props.kicker ? (
-            <div style={{ display: 'flex', fontSize: 24, fontWeight: 700, letterSpacing: '0.18em', color }}>{props.kicker}</div>
+            <div style={{ display: 'flex', fontSize: fs(24), fontWeight: 700, letterSpacing: '0.18em', color }}>{props.kicker}</div>
           ) : null}
           <div style={{ display: 'flex', flexDirection: 'column', letterSpacing: '-0.02em' }}>
             {highlightLines(
               props.title,
               props.hl,
-              { fontSize: 62, fontWeight: 800, lineHeight: 1.22 },
+              { fontSize: fs(62), fontWeight: 800, lineHeight: 1.22 },
               { whiteSpace: 'pre', color }
             )}
           </div>
           {props.sub ? (
-            <div style={{ display: 'flex', flexWrap: 'wrap', fontSize: 27, lineHeight: 1.6, color: 'rgba(244,246,251,0.6)' }}>{props.sub}</div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', fontSize: fs(27), lineHeight: 1.6, color: 'rgba(244,246,251,0.6)' }}>{props.sub}</div>
           ) : null}
         </div>
       </div>
@@ -3611,7 +3675,7 @@ function P8({ accent, props }: Extract<RenderSlideInput, { template: 'P8' }>) {
           <div style={{ display: 'flex', width: 780, height: 760, borderRadius: 4, backgroundImage: 'linear-gradient(135deg, #E8E2D6 0%, #D6CFC0 100%)' }} />
         )}
         {props.caption ? (
-          <div style={{ display: 'flex', justifyContent: 'center', marginTop: 24, fontSize: 27, color: '#6B6357' }}>{props.caption}</div>
+          <div style={{ display: 'flex', justifyContent: 'center', marginTop: 24, fontSize: fs(27), color: '#6B6357' }}>{props.caption}</div>
         ) : null}
       </div>
       <div
@@ -3625,7 +3689,7 @@ function P8({ accent, props }: Extract<RenderSlideInput, { template: 'P8' }>) {
           maxWidth: 860,
         }}
       >
-        {em(props.lead, PHOTO_ACCENT, { fontSize: 46, fontWeight: 800, lineHeight: 1.35 })}
+        {em(props.lead, accentOf(accent, props), { fontSize: fs(46), fontWeight: 800, lineHeight: 1.35 })}
       </div>
     </div>
   );
@@ -3643,10 +3707,10 @@ function P9({ accent, props }: Extract<RenderSlideInput, { template: 'P9' }>) {
         <div style={{ display: 'flex', width: photoW, height: CARD_H, backgroundImage: 'linear-gradient(180deg, #1A1E28 0%, #05060A 100%)' }} />
       )}
       <div style={{ display: 'flex', flexDirection: 'column', flex: 1, padding: '76px 58px 72px', color: '#F4F6FB' }}>
-        <span style={{ fontSize: 26, fontWeight: 700 }}>caselab</span>
+        <span style={{ fontSize: fs(26), fontWeight: 700 }}>caselab</span>
         <div style={{ display: 'flex', flexDirection: 'column', marginTop: 'auto', marginBottom: 'auto' }}>
           {props.eyebrow ? (
-            <div style={{ display: 'flex', fontSize: 22, fontWeight: 700, letterSpacing: '0.2em', color: ac, marginBottom: 24 }}>
+            <div style={{ display: 'flex', fontSize: fs(22), fontWeight: 700, letterSpacing: '0.2em', color: ac, marginBottom: 24 }}>
               {props.eyebrow}
             </div>
           ) : null}
@@ -3654,15 +3718,15 @@ function P9({ accent, props }: Extract<RenderSlideInput, { template: 'P9' }>) {
             {highlightLines(
               props.heading,
               props.hl,
-              { fontSize: 50, fontWeight: 800, lineHeight: 1.28 },
+              { fontSize: fs(50), fontWeight: 800, lineHeight: 1.28 },
               { whiteSpace: 'pre', color: ac }
             )}
           </div>
-          <div style={{ display: 'flex', flexWrap: 'wrap', marginTop: 30, fontSize: 26, lineHeight: 1.75, color: 'rgba(244,246,251,0.66)' }}>
-            {em(props.body, PHOTO_ACCENT)}
+          <div style={{ display: 'flex', flexWrap: 'wrap', marginTop: 30, fontSize: fs(26), lineHeight: 1.75, color: 'rgba(244,246,251,0.66)' }}>
+            {em(props.body, accentOf(accent, props))}
           </div>
         </div>
-        <span style={{ fontSize: 24, fontWeight: 600, color: 'rgba(244,246,251,0.35)' }}>{props.page ?? ''}</span>
+        <span style={{ fontSize: fs(24), fontWeight: 600, color: 'rgba(244,246,251,0.35)' }}>{props.page ?? ''}</span>
       </div>
     </div>
   );
@@ -3690,7 +3754,7 @@ function P10({ accent, props }: Extract<RenderSlideInput, { template: 'P10' }>) 
           {['#FF5F57', '#FEBC2E', '#28C840'].map((c) => (
             <div key={c} style={{ display: 'flex', width: 16, height: 16, borderRadius: 999, background: c }} />
           ))}
-          <span style={{ fontSize: 22, fontWeight: 600, color: 'rgba(244,246,251,0.4)', marginLeft: 8 }}>
+          <span style={{ fontSize: fs(22), fontWeight: 600, color: 'rgba(244,246,251,0.4)', marginLeft: 8 }}>
             {props.frameLabel ?? 'localhost:3000'}
           </span>
         </div>
@@ -3701,10 +3765,10 @@ function P10({ accent, props }: Extract<RenderSlideInput, { template: 'P10' }>) 
         )}
       </div>
       <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', marginTop: 58, maxWidth: 900, letterSpacing: '-0.02em' }}>
-        {em(props.lead, PHOTO_ACCENT, { fontSize: 46, fontWeight: 800, color: P_TEXT, lineHeight: 1.32 })}
+        {em(props.lead, accentOf(accent, props), { fontSize: fs(46), fontWeight: 800, color: P_TEXT, lineHeight: 1.32 })}
       </div>
       {props.caption ? (
-        <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', marginTop: 22, fontSize: 26, lineHeight: 1.6, color: P_TEXT_3 }}>
+        <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', marginTop: 22, fontSize: fs(26), lineHeight: 1.6, color: P_TEXT_3 }}>
           {props.caption}
         </div>
       ) : null}
@@ -3722,7 +3786,7 @@ function B11({ accent, props }: Extract<RenderSlideInput, { template: 'B11' }>) 
         {highlightLines(
           props.heading,
           props.hl,
-          { fontSize: 46, fontWeight: 800, lineHeight: 1.25 },
+          { fontSize: fs(46), fontWeight: 800, lineHeight: 1.25 },
           { whiteSpace: 'pre', color }
         )}
       </div>
@@ -3741,14 +3805,14 @@ function B11({ accent, props }: Extract<RenderSlideInput, { template: 'B11' }>) 
               padding: '36px 38px',
             }}
           >
-            <div style={{ display: 'flex', fontSize: 24, fontWeight: 800, letterSpacing: '0.1em', color }}>
+            <div style={{ display: 'flex', fontSize: fs(24), fontWeight: 800, letterSpacing: '0.1em', color }}>
               {String(i + 1).padStart(2, '0')}
             </div>
-            <div style={{ display: 'flex', flexWrap: 'wrap', marginTop: 16, fontSize: 32, fontWeight: 800, lineHeight: 1.3 }}>
+            <div style={{ display: 'flex', flexWrap: 'wrap', marginTop: 16, fontSize: fs(32), fontWeight: 800, lineHeight: 1.3 }}>
               {c.title}
             </div>
             {c.desc ? (
-              <div style={{ display: 'flex', flexWrap: 'wrap', marginTop: 14, fontSize: 24, lineHeight: 1.65, color: BODY_TEXT }}>
+              <div style={{ display: 'flex', flexWrap: 'wrap', marginTop: 14, fontSize: fs(24), lineHeight: 1.65, color: BODY_TEXT }}>
                 {c.desc}
               </div>
             ) : null}
@@ -3816,7 +3880,7 @@ function P7({ accent, props }: Extract<RenderSlideInput, { template: 'P7' }>) {
             letterSpacing: '-0.02em',
           }}
         >
-          {em(props.lead, PHOTO_ACCENT, { fontSize: 52, fontWeight: 800, color: P_TEXT, lineHeight: 1.3 })}
+          {em(props.lead, accentOf(accent, props), { fontSize: fs(52), fontWeight: 800, color: P_TEXT, lineHeight: 1.3 })}
         </div>
         {props.caption ? (
           <div
@@ -3825,7 +3889,7 @@ function P7({ accent, props }: Extract<RenderSlideInput, { template: 'P7' }>) {
               flexWrap: 'wrap',
               justifyContent: 'center',
               marginTop: 26,
-              fontSize: 27,
+              fontSize: fs(27),
               lineHeight: 1.6,
               color: P_TEXT_3,
             }}
@@ -3840,8 +3904,19 @@ function P7({ accent, props }: Extract<RenderSlideInput, { template: 'P7' }>) {
 
 // ---------- P11 · 화이트 매거진 — 상단 풀폭 사진 + 흰 바탕 좌정렬 제목/문단 ----------
 // 레퍼런스: biscit.co.kr 캐러셀. 강조는 accent색이 아니라 볼드 검정 — 잡지 문법 유지.
-function P11({ props }: Extract<RenderSlideInput, { template: 'P11' }>) {
+function P11({ accent, props }: Extract<RenderSlideInput, { template: 'P11' }>) {
   const photoH = 720;
+  // **강조** = 포인트색(카테고리 기본색, accentColor 오버라이드) — 편집기 툴바의 "A 포인트색"과 일치
+  const emAc = accentOf(accent, props);
+  // 제목은 분량 맞춤 42–56 — 고정 44는 이웃 장(46~60)보다 작아 "8~9장만 글씨가 작다"로 보였다
+  const heading = fitBlock([props.heading], {
+    width: CARD_W - 128,
+    height: 200,
+    max: 56,
+    min: 42,
+    lineHeight: 1.28,
+    gapRatio: 0,
+  });
   return (
     <div style={{ ...cardBase, background: '#fff', color: INK }}>
       <div style={{ display: 'flex', position: 'relative', height: photoH, overflow: 'hidden' }}>
@@ -3857,7 +3932,7 @@ function P11({ props }: Extract<RenderSlideInput, { template: 'P11' }>) {
               position: 'absolute',
               top: 28,
               left: 32,
-              fontSize: 20,
+              fontSize: fs(20),
               color: 'rgba(255,255,255,0.75)',
             }}
           >
@@ -3870,18 +3945,18 @@ function P11({ props }: Extract<RenderSlideInput, { template: 'P11' }>) {
           {highlightLines(
             props.heading,
             props.hl,
-            { fontSize: 44, fontWeight: 800, lineHeight: 1.3 },
+            { fontSize: heading.size, fontWeight: 800, lineHeight: 1.28, flexWrap: 'wrap' },
             /* text-decoration은 Satori 지원이 불안정 — 형광펜은 옅은 옐로 박스로 */
-            { whiteSpace: 'pre', background: '#FFF3B0', padding: '0 6px', borderRadius: 6 }
+            { whiteSpace: 'pre', background: '#FFF3B0', padding: '0 6px', borderRadius: 6 },
+            emAc
           )}
         </div>
-        <div style={{ display: 'flex', flexWrap: 'wrap', marginTop: 30, fontSize: 30, lineHeight: 1.72, color: BODY_TEXT }}>
-          {/* **강조**는 볼드 검정(INK) — accent색을 쓰면 레퍼런스의 잡지 톤이 깨진다 */}
-          {em(props.body, INK)}
+        <div style={{ display: 'flex', flexWrap: 'wrap', marginTop: 28, fontSize: fs(33), lineHeight: 1.62, color: BODY_TEXT }}>
+          {em(props.body, emAc)}
         </div>
         <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 'auto' }}>
-          <span style={{ fontSize: 22, fontWeight: 700, color: 'rgba(20,22,28,0.4)' }}>caselab</span>
-          <span style={{ fontSize: 22, fontWeight: 600, color: 'rgba(20,22,28,0.35)' }}>{props.page ?? ''}</span>
+          <span style={{ fontSize: fs(22), fontWeight: 700, color: 'rgba(20,22,28,0.4)' }}>caselab</span>
+          <span style={{ fontSize: fs(22), fontWeight: 600, color: 'rgba(20,22,28,0.35)' }}>{props.page ?? ''}</span>
         </div>
       </div>
     </div>
@@ -3898,7 +3973,7 @@ function P1({ accent, props }: Extract<RenderSlideInput, { template: 'P1' }>) {
   const lead = fitBlock([props.lead], {
     width: P_W,
     height: Math.min(280, Math.round(inner * 0.44)),
-    max: 76,
+    max: 60, // 캐러셀 공용 스케일: 메인 문장 42–60 (2026-08-30 통일 — 장마다 44↔76 널뛰던 문제)
     min: 42,
     lineHeight: 1.26,
     gapRatio: 0,
@@ -3910,8 +3985,11 @@ function P1({ accent, props }: Extract<RenderSlideInput, { template: 'P1' }>) {
     max: 40,
     min: 25,
     lineHeight: 1.4,
-    gapRatio: 0.95,
-    gapMaxRatio: 1.7,
+    // 항목이 적으면 남는 세로 여백을 간격이 다 먹어서 3줄이 카드 전체에 흩뿌려진다
+    // (2026-08-30 운영자: "3가지 적을 때 사이가 너무 멀다"). 상한을 글자 크기 수준으로 묶어
+    // 목록이 한 덩어리로 읽히게 하고, 남는 공간은 가운데 정렬로 흘려보낸다.
+    gapRatio: 0.6,
+    gapMaxRatio: 0.9,
   });
   return (
     <div style={{ ...cardBase, backgroundColor: '#000' }}>
@@ -3941,7 +4019,7 @@ function P1({ accent, props }: Extract<RenderSlideInput, { template: 'P1' }>) {
             letterSpacing: '-0.02em',
           }}
         >
-          {em(props.lead, PHOTO_ACCENT, {
+          {em(props.lead, accentOf(accent, props), {
             fontSize: lead.size,
             fontWeight: 800,
             color: P_TEXT,
@@ -3966,7 +4044,7 @@ function P2({ accent, props }: Extract<RenderSlideInput, { template: 'P2' }>) {
   const heading = fitBlock([props.heading], {
     width: P_W,
     height: Math.min(260, Math.round(inner * 0.4)),
-    max: 66,
+    max: 60,
     min: 40,
     lineHeight: 1.28,
     gapRatio: 0,
@@ -4008,7 +4086,7 @@ function P2({ accent, props }: Extract<RenderSlideInput, { template: 'P2' }>) {
             letterSpacing: '-0.02em',
           }}
         >
-          {em(props.heading, PHOTO_ACCENT, {
+          {em(props.heading, accentOf(accent, props), {
             fontSize: heading.size,
             fontWeight: 800,
             color: P_TEXT,
@@ -4024,7 +4102,7 @@ function P2({ accent, props }: Extract<RenderSlideInput, { template: 'P2' }>) {
               marginTop: 26,
             }}
           >
-            {em(props.sub, PHOTO_ACCENT, {
+            {em(props.sub, accentOf(accent, props), {
               fontSize: Math.round(heading.size * 0.62),
               fontWeight: 700,
               color: P_TEXT_2,
@@ -4041,7 +4119,7 @@ function P2({ accent, props }: Extract<RenderSlideInput, { template: 'P2' }>) {
             textAlign: 'center',
           }}
         >
-          {em(props.body, PHOTO_ACCENT, {
+          {em(props.body, accentOf(accent, props), {
             fontSize: body.size,
             fontWeight: 500,
             color: P_TEXT_2,
@@ -4060,7 +4138,7 @@ function P3({ accent, props }: Extract<RenderSlideInput, { template: 'P3' }>) {
   const title = fitBlock([props.title], {
     width: P_W,
     height: 300,
-    max: 80,
+    max: 60,
     min: 46,
     lineHeight: 1.24,
     gapRatio: 0,
@@ -4104,7 +4182,7 @@ function P3({ accent, props }: Extract<RenderSlideInput, { template: 'P3' }>) {
           <Eyebrow text={props.label ?? DEFAULT_TAGS[accent]} />
         </div>
         <div style={{ display: 'flex', flexWrap: 'wrap', letterSpacing: '-0.02em' }}>
-          {em(props.title, PHOTO_ACCENT, {
+          {em(props.title, accentOf(accent, props), {
             fontSize: title.size,
             fontWeight: 800,
             color: P_TEXT,
@@ -4126,7 +4204,7 @@ function P3({ accent, props }: Extract<RenderSlideInput, { template: 'P3' }>) {
             <div style={{ display: 'flex', flexDirection: 'column', gap: item.gap }}>
               {items.map((t, i) => (
                 <div key={i} style={{ display: 'flex', flexWrap: 'wrap' }}>
-                  {em(t, PHOTO_ACCENT, {
+                  {em(t, accentOf(accent, props), {
                     fontSize: item.size,
                     fontWeight: 500,
                     color: P_TEXT_2,
@@ -4142,7 +4220,7 @@ function P3({ accent, props }: Extract<RenderSlideInput, { template: 'P3' }>) {
             style={{
               display: 'flex',
               marginTop: 34,
-              fontSize: 22,
+              fontSize: fs(22),
               fontWeight: 800,
               letterSpacing: '0.18em',
               color: 'rgba(255,255,255,0.5)',
@@ -4157,12 +4235,12 @@ function P3({ accent, props }: Extract<RenderSlideInput, { template: 'P3' }>) {
 }
 
 // ---------- P4 · 풀블리드 사진 + 인용 ----------
-function P4({ props }: Extract<RenderSlideInput, { template: 'P4' }>) {
+function P4({ accent, props }: Extract<RenderSlideInput, { template: 'P4' }>) {
   const ac = photoAccent(props);
   const quote = fitBlock([props.quote], {
     width: P_W,
     height: 520,
-    max: 76,
+    max: 60,
     min: 42,
     lineHeight: 1.36,
     gapRatio: 0,
@@ -4191,7 +4269,7 @@ function P4({ props }: Extract<RenderSlideInput, { template: 'P4' }>) {
         <div
           style={{
             display: 'flex',
-            fontSize: 96,
+            fontSize: fs(96),
             fontWeight: 800,
             color: ac,
             lineHeight: 1,
@@ -4201,7 +4279,7 @@ function P4({ props }: Extract<RenderSlideInput, { template: 'P4' }>) {
           “
         </div>
         <div style={{ display: 'flex', flexWrap: 'wrap', letterSpacing: '-0.02em' }}>
-          {em(props.quote, PHOTO_ACCENT, {
+          {em(props.quote, accentOf(accent, props), {
             fontSize: quote.size,
             fontWeight: 800,
             color: P_TEXT,
@@ -4213,7 +4291,7 @@ function P4({ props }: Extract<RenderSlideInput, { template: 'P4' }>) {
             style={{
               display: 'flex',
               marginTop: 40,
-              fontSize: 30,
+              fontSize: fs(30),
               fontWeight: 600,
               color: P_TEXT_2,
             }}
@@ -4233,7 +4311,7 @@ function P5({ accent, props }: Extract<RenderSlideInput, { template: 'P5' }>) {
   const lead = fitBlock([props.lead], {
     width: P_W,
     height: 300,
-    max: 94,
+    max: 76, // 타이포가 주인공인 블랙 폴백만 예외로 크게
     min: 52,
     lineHeight: 1.2,
     gapRatio: 0,
@@ -4244,8 +4322,9 @@ function P5({ accent, props }: Extract<RenderSlideInput, { template: 'P5' }>) {
     max: 40,
     min: 26,
     lineHeight: 1.4,
-    gapRatio: 1.0,
-    gapMaxRatio: 1.5,
+    // P1과 같은 규칙 — 목록 간격은 템플릿마다 달라 보이면 안 된다
+    gapRatio: 0.6,
+    gapMaxRatio: 0.9,
   });
   return (
     <div style={{ ...cardBase, backgroundColor: DARK_BG }}>
@@ -4271,7 +4350,7 @@ function P5({ accent, props }: Extract<RenderSlideInput, { template: 'P5' }>) {
         <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 44 }}>
           {props.index ? (
             <div
-              style={{ display: 'flex', fontSize: 25, fontWeight: 800, letterSpacing: '0.1em', color: ac }}
+              style={{ display: 'flex', fontSize: fs(25), fontWeight: 800, letterSpacing: '0.1em', color: ac }}
             >
               {props.index}
             </div>
@@ -4279,7 +4358,7 @@ function P5({ accent, props }: Extract<RenderSlideInput, { template: 'P5' }>) {
           <Eyebrow text={props.eyebrow ?? DEFAULT_TAGS[accent]} />
         </div>
         <div style={{ display: 'flex', flexWrap: 'wrap', letterSpacing: '-0.025em', marginBottom: 48 }}>
-          {em(props.lead, PHOTO_ACCENT, { fontSize: lead.size, fontWeight: 800, color: P_TEXT, lineHeight: 1.2 })}
+          {em(props.lead, accentOf(accent, props), { fontSize: lead.size, fontWeight: 800, color: P_TEXT, lineHeight: 1.2 })}
         </div>
         <RuleList items={props.items} size={item.size} gap={item.gap} accent={ac} />
       </div>
@@ -4290,7 +4369,7 @@ function P5({ accent, props }: Extract<RenderSlideInput, { template: 'P5' }>) {
             left: P_PAD,
             bottom: 76,
             display: 'flex',
-            fontSize: 22,
+            fontSize: fs(22),
             fontWeight: 800,
             letterSpacing: '0.18em',
             color: 'rgba(255,255,255,0.45)',
@@ -4351,6 +4430,22 @@ function P6({ accent, props }: Extract<RenderSlideInput, { template: 'P6' }>) {
             <Eyebrow text={props.kicker} centered />
           </div>
         ) : null}
+        {/* 문장 앞머리 — 라벨이 아니라 문장의 일부라, resolve와 같은 조판으로 맞춘다.
+            이게 있으면 "앞머리 / 키워드 / 뒷말"이 한 문장으로 읽히도록 상하 간격을 좁힌다. */}
+        {props.leadIn ? (
+          <div
+            style={{
+              display: 'flex',
+              fontSize: resolve.size,
+              fontWeight: 600,
+              color: P_TEXT_2,
+              lineHeight: 1.44,
+              marginBottom: 10,
+            }}
+          >
+            {props.leadIn}
+          </div>
+        ) : null}
         <div
           style={{
             display: 'flex',
@@ -4359,7 +4454,7 @@ function P6({ accent, props }: Extract<RenderSlideInput, { template: 'P6' }>) {
             color: ac,
             lineHeight: 1.02,
             letterSpacing: '-0.04em',
-            marginBottom: 44,
+            marginBottom: props.leadIn ? 10 : 44,
           }}
         >
           {props.big}
@@ -4372,7 +4467,7 @@ function P6({ accent, props }: Extract<RenderSlideInput, { template: 'P6' }>) {
             textAlign: 'center',
           }}
         >
-          {em(props.resolve, PHOTO_ACCENT, {
+          {em(props.resolve, accentOf(accent, props), {
             fontSize: resolve.size,
             fontWeight: 600,
             color: P_TEXT_2,
@@ -4387,7 +4482,7 @@ function P6({ accent, props }: Extract<RenderSlideInput, { template: 'P6' }>) {
             left: P_PAD,
             bottom: 76,
             display: 'flex',
-            fontSize: 22,
+            fontSize: fs(22),
             fontWeight: 800,
             letterSpacing: '0.18em',
             color: 'rgba(255,255,255,0.45)',
@@ -4401,79 +4496,93 @@ function P6({ accent, props }: Extract<RenderSlideInput, { template: 'P6' }>) {
 }
 
 export function renderSlide(input: RenderSlideInput): ReactNode {
+  const scale = (input.props as { textScale?: number }).textScale;
+  TEXT_SCALE = typeof scale === 'number' && scale >= 0.8 && scale <= 1.25 ? scale : 1;
+  try {
+    return renderSlideInner(input);
+  } finally {
+    // 다음 장이 이 장의 배율을 물려받지 않게 반드시 되돌린다
+    TEXT_SCALE = 1;
+  }
+}
+
+// ⚠️ 여기서는 템플릿을 <P11 {...input}/> 같은 JSX 요소로 만들면 안 된다 — 요소는 함수 본문을
+// 바로 실행하지 않아서, 크기가 정해지는 시점이 renderSlide가 TEXT_SCALE을 되돌린 뒤(Satori가
+// 그릴 때)로 밀린다. 함수를 직접 호출해 style 객체를 그 자리에서 평가시킨다.
+function renderSlideInner(input: RenderSlideInput): ReactNode {
   switch (input.template) {
     case 'P1':
-      return <P1 {...input} />;
+      return P1(input);
     case 'P2':
-      return <P2 {...input} />;
+      return P2(input);
     case 'P3':
-      return <P3 {...input} />;
+      return P3(input);
     case 'P4':
-      return <P4 {...input} />;
+      return P4(input);
     case 'P5':
-      return <P5 {...input} />;
+      return P5(input);
     case 'P6':
-      return <P6 {...input} />;
+      return P6(input);
     case 'C1':
-      return <C1 {...input} />;
+      return C1(input);
     case 'C2':
-      return <C2 {...input} />;
+      return C2(input);
     case 'C3':
-      return <C3 {...input} />;
+      return C3(input);
     case 'C4':
-      return <C4 {...input} />;
+      return C4(input);
     case 'C5':
-      return <C5 {...input} />;
+      return C5(input);
     case 'B1':
-      return <B1 {...input} />;
+      return B1(input);
     case 'B2':
-      return <B2 {...input} />;
+      return B2(input);
     case 'B3':
-      return <B3 {...input} />;
+      return B3(input);
     case 'B4':
-      return <B4 {...input} />;
+      return B4(input);
     case 'B5':
-      return <B5 {...input} />;
+      return B5(input);
     case 'B6':
-      return <B6 {...input} />;
+      return B6(input);
     case 'B7':
-      return <B7 {...input} />;
+      return B7(input);
     case 'B8':
-      return <B8 {...input} />;
+      return B8(input);
     case 'B9':
-      return <B9 {...input} />;
+      return B9(input);
     case 'B10':
-      return <B10 {...input} />;
+      return B10(input);
     case 'B11':
-      return <B11 {...input} />;
+      return B11(input);
     case 'B12':
-      return <B12 {...input} />;
+      return B12(input);
     case 'B13':
-      return <B13 {...input} />;
+      return B13(input);
     case 'B14':
-      return <B14 {...input} />;
+      return B14(input);
     case 'B15':
-      return <B15 {...input} />;
+      return B15(input);
     case 'B16':
-      return <B16 {...input} />;
+      return B16(input);
     case 'B17':
-      return <B17 {...input} />;
+      return B17(input);
     case 'B18':
-      return <B18 {...input} />;
+      return B18(input);
     case 'C6':
-      return <C6 {...input} />;
+      return C6(input);
     case 'C7':
-      return <C7 {...input} />;
+      return C7(input);
     case 'P7':
-      return <P7 {...input} />;
+      return P7(input);
     case 'P8':
-      return <P8 {...input} />;
+      return P8(input);
     case 'P9':
-      return <P9 {...input} />;
+      return P9(input);
     case 'P10':
-      return <P10 {...input} />;
+      return P10(input);
     case 'P11':
-      return <P11 {...input} />;
+      return P11(input);
   }
 }
 

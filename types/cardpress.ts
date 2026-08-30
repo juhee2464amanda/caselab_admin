@@ -22,6 +22,9 @@ export const StyleOverrideFields = {
   // 형광펜 표현 — box(배경 박스·기본) / text(글자색만) / underline(밑줄).
   // 커버가 매번 같은 "색 박스"로만 나가면 시리즈가 한 장처럼 보인다(벤치마크 6종 중 박스는 1종뿐).
   hlStyle: z.enum(['box', 'text', 'underline']).optional(),
+  // 글자 크기 배율 — 템플릿의 기준 크기에 곱한다(1 = 기본). 분량 맞춤(fitBlock) 템플릿은
+  // 배율을 올려도 넘치면 자동으로 되줄어들지만, 고정 크기 템플릿은 그대로 커지므로 상한을 둔다.
+  textScale: z.number().min(0.8).max(1.25).optional(),
 };
 
 // C1 커버 유형 — 벤치마크(인스타 상위 계정 커버 6종) 분해 결과. 텍스트가 늘 좌하단에만 붙어 있으면
@@ -362,6 +365,9 @@ export const P6PropsSchema = z.object({
   kicker: z.string().optional(),
   big: z.string().min(1),                            // "70%", "10배", "FOCUS"
   bigMax: z.number().min(60).max(230).optional(),    // big 최대 폰트(px) 상한 — 엔딩 카드가 낮춰 쓴다
+  // big 바로 위에 붙는 문장 앞머리("댓글에"). 있으면 세 줄이 한 문장으로 읽히게 간격이 좁아진다.
+  // kicker(라벨 조판)와 다르다 — 라벨이 아니라 문장의 일부다.
+  leadIn: z.string().optional(),
   resolve: z.string().min(1),
   footer: z.string().optional(),
 });

@@ -150,7 +150,7 @@ export type Bag = {
 // coverLayout·coverArt 등 커버 전용 키도 함께 나른다 — C1이 아닌 템플릿에선 렌더 스키마가
 // 무시하지만 props에 남아 있어서, 다른 템플릿을 거쳐 C1으로 돌아와도 v3·아트 설정이 살아남는다.
 const STYLE_KEYS = [
-  'accentColor', 'overlay', 'coverPos', 'hlColor', 'titleAnchor', 'hlStyle',
+  'accentColor', 'overlay', 'coverPos', 'hlColor', 'titleAnchor', 'hlStyle', 'textScale',
   'coverLayout', 'coverArt', 'artText', 'artIcons', 'tone',
 ] as const;
 
