@@ -58,13 +58,18 @@ export async function POST(req: NextRequest) {
 
   try {
     // 1. 활성 슬라이드 일괄 렌더 → 공개 버킷 업로드
+    //    모션이 적용된 칸은 PNG 렌더를 건너뛰고 그 자리에 영상(공개 URL)을 넣는다.
+    const allSlides = card.slides as CardSlide[];
     const rendered = await renderEnabledSlides(
       card.id,
       card.accent as CardAccent,
-      card.slides as CardSlide[]
+      allSlides.map((s) => (s.motion?.url ? { ...s, enabled: false } : s))
     );
     const urls = await uploadSlides(admin, rendered);
-    const items: CarouselItem[] = urls.map((url) => ({ kind: 'image' as const, url }));
+    let ui = 0;
+    const items: CarouselItem[] = allSlides
+      .filter((s) => s.enabled)
+      .map((s) => (s.motion?.url ? { kind: 'video' as const, url: s.motion.url } : { kind: 'image' as const, url: urls[ui++] }));
 
     // 1-b. 엔딩 카드 — slides에 저장돼 있지 않고 cta_type에서 파생된다(lib/cardpress/endings.ts).
     //      채널 안내형은 영상, 나머지는 Satori 렌더 PNG. 영상은 이미 버킷에 있는 고정 자산.
@@ -118,7 +123,8 @@ export async function POST(req: NextRequest) {
     }
     if (channels.includes('threads')) {
       try {
-        const postId = await publishThreads(card.threads_text ?? '', card.threads_cover ?? urls[0]);
+        // 인스타와 같은 캐러셀(items — 모션 영상 칸·엔딩 포함)을 그대로 올린다
+        const postId = await publishThreads(card.threads_text ?? '', items);
         publishedTo.push({ channel: 'threads', post_id: postId, at: new Date().toISOString() });
       } catch (e) {
         errors.push(`threads: ${(e as Error).message}`);

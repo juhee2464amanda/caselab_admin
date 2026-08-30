@@ -1,0 +1,67 @@
+<!doctype html><html><head><meta charset="utf-8"><style>
+:root { --accent:#2F6BFF; --accent-bright:#D6E2FF; }
+/* 가격 낙차 스탬프 — 큰 가격표에 X가 쾅 찍혀 밀려나고, $4.99가 튀어올라 확정된다. 가격 반전 훅 카드용.
+   쓰는 법: 훅·가격표 숫자·확정가·반전/보증 카피만 바꿔서 html 모드로 렌더 (--duration 5) */
+@font-face { font-family: 'Pretendard'; font-weight: 400; src: url('../../../assets/fonts/Pretendard-Regular.woff') format('woff'); }
+@font-face { font-family: 'Pretendard'; font-weight: 800; src: url('../../../assets/fonts/Pretendard-ExtraBold.woff') format('woff'); }
+* { margin:0; box-sizing:border-box; }
+body { width:1080px; height:1350px; overflow:hidden; background:#12151F; font-family:'Pretendard',sans-serif; color:#D6DEE8; }
+
+/* 0~1s: 질문 훅 */
+.hook { position:absolute; left:0; top:180px; width:100%; text-align:center;
+        font-size:48px; font-weight:800; line-height:1.45;
+        animation: rise 0.7s cubic-bezier(0.16,1,0.3,1) 0.15s both; }
+.hook em { font-style:normal; color:var(--accent); }
+
+/* 1~3s: 가격표 무대(등장→스탬프→밀려남) */
+.stage { position:absolute; left:260px; top:400px; width:560px; height:360px;
+         animation: shove 0.8s cubic-bezier(0.55,0,0.85,0.35) 2.2s both; }
+@keyframes shove { from { transform: none; opacity:1; }
+                   to { transform: rotate(-8deg) translateX(-200%); opacity:0.9; } }
+.card { width:560px; height:360px; background:#1A2030; border-radius:24px;
+        display:flex; flex-direction:column; align-items:center; justify-content:center; gap:18px;
+        border:1px solid rgba(143,135,122,0.25);
+        animation: pop 0.7s cubic-bezier(0.34,1.56,0.64,1) 1s both, shake 0.36s linear 1.85s; }
+@keyframes pop { from { opacity:0; transform: scale(0.55); } to { opacity:1; transform: scale(1); } }
+@keyframes shake { 0%{transform:translateX(0)} 15%{transform:translateX(-8px)} 30%{transform:translateX(8px)}
+                   45%{transform:translateX(-8px)} 60%{transform:translateX(8px)} 80%{transform:translateX(-4px)} 100%{transform:translateX(0)} }
+.card .label { font-size:30px; color:#3A3F4A; letter-spacing:0.12em; }
+.card .won { font-size:110px; font-weight:800; letter-spacing:-0.03em; color:#7A828F; }
+/* 붉은 X 스탬프 — scale(3)에서 내리찍는 오버슈트 */
+.stamp { position:absolute; left:110px; top:10px; width:340px; height:340px; transform: rotate(-7deg);
+         animation: slam 0.35s cubic-bezier(0.34,1.56,0.64,1) 1.85s both; }
+@keyframes slam { from { opacity:0; transform: rotate(-7deg) scale(3); }
+                  to { opacity:1; transform: rotate(-7deg) scale(1); } }
+.stamp::before, .stamp::after { content:''; position:absolute; left:-30px; top:159px; width:400px; height:22px;
+                                border-radius:11px; background:#FF5F57; }
+.stamp::before { transform: rotate(45deg); }
+.stamp::after { transform: rotate(-45deg); }
+
+/* 3~3.8s: $4.99가 아래에서 튀어올라 골드로 확정 */
+.price { position:absolute; left:0; top:640px; width:100%; text-align:center;
+         font-size:170px; font-weight:800; letter-spacing:-0.02em; color:var(--accent);
+         animation: springup 0.8s cubic-bezier(0.34,1.56,0.64,1) 3s both; }
+@keyframes springup { 0% { opacity:0; transform: translateY(120px) scale(0.9); }
+                      70% { opacity:1; transform: translateY(-14px) scale(1.04); }
+                      100% { opacity:1; transform: translateY(0) scale(1); } }
+
+/* 반전 카피 · 보증 문구 rise-in */
+.twist { position:absolute; left:90px; top:900px; width:900px; text-align:center;
+         font-size:36px; line-height:1.5; animation: rise 0.8s cubic-bezier(0.16,1,0.3,1) 3.4s both; }
+.twist strong { font-weight:800; color:var(--accent-bright); }
+.assure { position:absolute; left:0; top:1120px; width:100%; text-align:center;
+          font-size:30px; color:#7A828F; animation: rise 0.8s cubic-bezier(0.16,1,0.3,1) 3.8s both; }
+@keyframes rise { from { opacity:0; transform: translateY(28px); } to { opacity:1; transform: translateY(0); } }
+</style></head><body>
+<div class="hook">오픈클로, hermes 를 쓰려고<br>꼭 <em>맥미니</em>를 사야 할까요?</div>
+<div class="stage">
+  <div class="card">
+    <div class="label">MAC MINI M4</div>
+    <div class="won">₩859,000</div>
+  </div>
+  <div class="stamp"></div>
+</div>
+<div class="price">$4.99</div>
+<div class="twist"><strong>NO.</strong> 덮개를 닫아도<br>에이전트 작업은 멈추지 않고 계속됩니다</div>
+<div class="assure">일회성 구매 · 14일 환불 보장</div>
+</body></html>

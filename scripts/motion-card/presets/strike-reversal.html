@@ -1,0 +1,51 @@
+<!doctype html><html><head><meta charset="utf-8"><style>
+:root { --accent:#2F6BFF; --accent-bright:#D6E2FF; }
+/* 취소선 반전 훅 — 통념 단어를 1.2초 믿게 한 뒤 골드 취소선으로 죽이고 실제 답이 튀어오른다. 반전(B4) 카드용.
+   쓰는 법: .kicker·.myth·.truth·.cta·.sub 텍스트만 바꿔서 html 모드로 렌더 (박자 바꾸려면 delay만 조정) */
+@font-face { font-family: 'Pretendard'; font-weight: 400; src: url('../../../assets/fonts/Pretendard-Regular.woff') format('woff'); }
+@font-face { font-family: 'Pretendard'; font-weight: 800; src: url('../../../assets/fonts/Pretendard-ExtraBold.woff') format('woff'); }
+* { margin:0; box-sizing:border-box; }
+body { width:1080px; height:1350px; overflow:hidden; background:#FFFFFF; font-family:'Pretendard',sans-serif; color:#14161C; }
+
+.kicker { position:absolute; left:96px; top:300px; font-size:34px; font-weight:800; letter-spacing:0.14em; color:var(--accent); }
+
+/* 통념 단어 — 1.2초간 진짜처럼 떠 있다가 취소선과 함께 회색으로 죽는다 */
+.myth { position:absolute; left:96px; top:420px; font-size:130px; font-weight:800; letter-spacing:-0.03em; line-height:1;
+        animation: die 0.5s ease-out 1.6s both; }
+@keyframes die { from { color:#14161C; } to { color:#7A828F; } }
+.myth::after { content:''; position:absolute; left:-8px; right:-8px; top:50%; height:12px; margin-top:-6px; border-radius:6px;
+        background:var(--accent); width:0; transform-origin:left;
+        animation: strike 0.6s cubic-bezier(0.16,1,0.3,1) 1.2s both; }
+@keyframes strike { from { width:0; } to { width:calc(100% + 16px); } }
+
+/* 실제 답 — 아래에서 overshoot로 튀어오른다 */
+.truth { position:absolute; left:96px; top:600px; font-size:130px; font-weight:800; letter-spacing:-0.03em; line-height:1; color:var(--accent);
+        animation: pop 0.8s cubic-bezier(0.34,1.56,0.64,1) 1.8s both; }
+.truth .tail { font-size:64px; color:#14161C; letter-spacing:-0.01em; }
+@keyframes pop { from { opacity:0; transform:translateY(40px) scale(1.15); } to { opacity:1; transform:translateY(0) scale(1); } }
+
+/* 우측 비용 게이지 — 반전과 동시에 아래→위로 차오른다 */
+.gauge-track { position:absolute; right:120px; top:420px; width:90px; height:520px; border-radius:16px; background:#E5E7EB; }
+.gauge-fill { position:absolute; right:120px; width:90px; height:0; bottom:410px; border-radius:16px;
+        background:linear-gradient(to top, #5B82FF, var(--accent));
+        animation: fill 2.4s cubic-bezier(0.16,1,0.3,1) 1.8s both; }
+@keyframes fill { from { height:0; } to { height:520px; } }
+.gauge-label { position:absolute; right:120px; top:958px; width:90px; text-align:center; font-size:28px; font-weight:800; color:#3A3F4A; }
+
+/* 하단 결론 — 게이지가 다 찬 뒤 rise-in */
+.cta { position:absolute; left:96px; top:1020px; font-size:40px; font-weight:800; line-height:1.5;
+        animation: rise 0.7s ease-out 4.2s both; }
+.cta em { font-style:normal; color:var(--accent); }
+.sub { position:absolute; left:96px; top:1110px; font-size:30px; line-height:1.55; color:#3A3F4A;
+        animation: rise 0.6s ease-out 4.4s both; }
+@keyframes rise { from { opacity:0; transform:translateY(28px); } to { opacity:1; transform:translateY(0); } }
+</style></head><body>
+<div class="kicker">모델이 좋아질수록</div>
+<div class="myth">몰라서</div>
+<div class="truth">놓쳐서<span class="tail">가 더 비싸다</span></div>
+<div class="gauge-track"></div>
+<div class="gauge-fill"></div>
+<div class="gauge-label">비용</div>
+<div class="cta"><em>블라인드스팟 패스</em> 한 줄이면 된다</div>
+<div class="sub">"모르는 줄도 모르는 것"을 찾아줘</div>
+</body></html>

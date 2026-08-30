@@ -60,7 +60,9 @@ export const SECTIONS: Section[] = [
       { href: '/admin/studio/import', label: 'MD로 시작' },
       { href: '/admin/studio/archive', label: '씨앗 아카이브' },
       // 발행 콘텐츠 → 인스타 캐러셀·캡션·스레드 3종 세트 검수·발행 (카드프레스, docs/09)
-      { href: '/admin/cardnews', label: '카드뉴스' },
+      { href: '/admin/cardnews', label: '카드뉴스', exact: true },
+      // 모션 카드 실험실 — 카드에 움직임(효과·템플릿·실영상 오버레이)을 얹어 MP4 생성, 로컬 전용
+      { href: '/admin/cardnews/motion', label: '모션 카드' },
       // 본가 /prompts·/guides(둘 다 tools 테이블)에 노출되는 자료의 등록·큐레이션 데스크
       { href: '/admin/prompts', label: '바로쓰는 프롬프트' },
       { href: '/admin/guides', label: '공식 가이드' },

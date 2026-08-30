@@ -1176,6 +1176,8 @@ function CardEditor({ card, sourceTitle }: { card: CardRow; sourceTitle?: string
   const [viewMode, setViewMode] = useState<'single' | 'grid'>('single');
   const [quickEdit, setQuickEdit] = useState(false);
   const [previewMode, setPreviewMode] = useState<'live' | 'png'>('live');
+  /** 모션이 적용된 슬라이드는 프리뷰에 영상을 우선 보여준다 — 정적 편집이 필요하면 끈다 */
+  const [motionPreview, setMotionPreview] = useState(true);
   const [liveEdit, setLiveEdit] = useState<{
     idx: number;
     key: string;
@@ -1195,6 +1197,7 @@ function CardEditor({ card, sourceTitle }: { card: CardRow; sourceTitle?: string
     setEndingSel(false);
     setLiveEdit(null);
     setSelPopup(null);
+    setMotionPreview(true); // 슬라이드를 바꾸면 모션 프리뷰 우선으로 복귀
   }
 
   // 엔딩을 일반 카드처럼 "선택"한다 — slides엔 없지만 프리뷰·나열에선 마지막 칸으로 취급
@@ -2160,6 +2163,7 @@ function CardEditor({ card, sourceTitle }: { card: CardRow; sourceTitle?: string
                     <span className={`text-sm truncate ${s.enabled ? '' : 'line-through text-ink/30'}`}>
                       {String((s.props as Record<string, unknown>).title ?? (s.props as Record<string, unknown>).heading ?? (s.props as Record<string, unknown>).banner ?? (s.props as Record<string, unknown>).term ?? (s.props as Record<string, unknown>).cap ?? '')}
                     </span>
+                    {s.motion?.url && <span className="text-[10px] shrink-0" title="모션 적용 — 발행 시 이 칸은 영상">🎬</span>}
                     {s.required && <span className="text-[10px] text-red-500 shrink-0" title={s.required}>필수</span>}
                   </button>
                   <div className="flex items-center gap-1 shrink-0 text-xs">
@@ -2346,8 +2350,26 @@ function CardEditor({ card, sourceTitle }: { card: CardRow; sourceTitle?: string
             </>
           ) : viewMode === 'single' ? (
             <>
-              {previewMode === 'live' && sel ? (
-                renderEditableCanvas(selIdx)
+              {sel?.motion?.url && motionPreview ? (
+                <div className="relative w-full rounded-lg overflow-hidden border border-emerald-300 bg-black" style={{ aspectRatio: '4 / 5' }}>
+                  {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
+                  <video key={sel.motion.url} src={sel.motion.url} autoPlay loop muted controls className="w-full h-full object-contain" />
+                  <button
+                    onClick={() => setMotionPreview(false)}
+                    className="absolute top-2 right-2 rounded bg-black/60 px-2 py-1 text-[11px] text-white hover:bg-black/80"
+                  >
+                    정적 카드 편집 보기
+                  </button>
+                </div>
+              ) : previewMode === 'live' && sel ? (
+                <div>
+                  {sel.motion?.url && (
+                    <button onClick={() => setMotionPreview(true)} className="mb-1 text-[11px] text-emerald-700 underline">
+                      🎬 모션 프리뷰 보기 (발행 시 이 칸은 영상)
+                    </button>
+                  )}
+                  {renderEditableCanvas(selIdx)}
+                </div>
               ) : (
                 <div className="relative w-full rounded-lg overflow-hidden border border-border bg-ink/5" style={{ aspectRatio: '4 / 5' }}>
                   {previewUrl && !previewErr && (
@@ -2362,6 +2384,24 @@ function CardEditor({ card, sourceTitle }: { card: CardRow; sourceTitle?: string
                 </div>
               )}
               {sel && !sel.enabled && <p className="text-xs text-amber-600 mt-2">이 슬라이드는 제외 상태예요.</p>}
+              {/* 모션 효과 — 이 슬라이드의 이미지를 영상(스크롤·깜빡임·줌)으로. 로컬 전용, 결과는 파일로 */}
+              {sel && (
+                <SlideMotionPanel
+                  key={`motion-${selIdx}`}
+                  slideNo={selIdx + 1}
+                  accent={card.accent}
+                  motionUrl={sel.motion?.url ?? null}
+                  slide={{ template: sel.template, props: sel.props as Record<string, unknown> }}
+                  onAttach={(url) =>
+                    patch((prev) => prev.map((x, k) => (k === selIdx ? { ...x, motion: url ? { url } : null } : x)))
+                  }
+                  imageUrl={(() => {
+                    const k = IMAGE_KEY[sel.template];
+                    const v = k ? (sel.props as Record<string, unknown>)[k] : null;
+                    return typeof v === 'string' && v.startsWith('http') ? v : null;
+                  })()}
+                />
+              )}
               {/* 프리뷰 빠른 수정 — 적용하면 위 프리뷰가 바로 재렌더 */}
               {quickEdit && sel && (
                 <SlideForm

@@ -1,0 +1,56 @@
+<!doctype html><html><head><meta charset="utf-8"><style>
+:root { --accent:#2F6BFF; --accent-bright:#D6E2FF; }
+/* 터미널 라이브 — 스크린샷 대신 실제 설치 흐름이 쳐지고 출력이 순서대로 올라온다.
+   멀모터미널 카드 7번(P2 '지금 시작하려면') 대체용. 명령·출력·체크리스트만 교체해 재사용 */
+@font-face { font-family: 'Pretendard'; font-weight: 400; src: url('../../../assets/fonts/Pretendard-Regular.woff') format('woff'); }
+@font-face { font-family: 'Pretendard'; font-weight: 800; src: url('../../../assets/fonts/Pretendard-ExtraBold.woff') format('woff'); }
+* { margin:0; box-sizing:border-box; }
+body { width:1080px; height:1350px; overflow:hidden; background:#FFFFFF; font-family:'Pretendard',sans-serif; }
+.eyebrow { position:absolute; left:96px; top:180px; font-size:30px; font-weight:800; letter-spacing:0.14em; color:var(--accent); }
+.title { position:absolute; left:96px; top:240px; font-size:68px; font-weight:800; color:#14161C; }
+.win { position:absolute; left:96px; right:96px; top:400px; height:560px; background:#12151F; border-radius:24px;
+       box-shadow:0 24px 60px rgba(43,38,32,0.25); padding:84px 44px 44px; }
+.dots { position:absolute; top:28px; left:32px; display:flex; gap:12px; }
+.dots i { width:18px; height:18px; border-radius:50%; }
+.term { font-family:'Menlo',monospace; font-size:29px; line-height:2.0; color:#D6DEE8; }
+/* 명령이 실제로 쳐진다 — steps() 타이핑 + 커서 */
+.cmd { display:inline-block; overflow:hidden; white-space:nowrap; vertical-align:bottom; animation: typing 2.0s steps(24) 0.6s both; }
+@keyframes typing { from { width:0; } to { width:24ch; } }
+.cursor { display:inline-block; width:15px; height:33px; background:var(--accent); vertical-align:middle; margin-left:5px;
+          animation: blink 0.9s steps(1) infinite; }
+@keyframes blink { 0%, 100% { opacity:1; } 50% { opacity:0; } }
+/* 실제 설치 출력이 순서대로 올라온다 (install-clean.png 실출력 그대로) */
+.o1 { color:#7A828F; animation: appear 0.15s 3.0s both; }
+.o2 { color:#7A828F; animation: appear 0.15s 3.4s both; }
+.o3 { color:#D6DEE8; animation: appear 0.15s 3.9s both; }
+.y  { color:#7EE787; font-weight:700; animation: appear 0.15s 4.5s both; }
+.boot { color:var(--accent); animation: appear 0.15s 5.1s both; }
+@keyframes appear { from { opacity:0; } to { opacity:1; } }
+/* 준비물 체크 3줄 — 출력이 끝난 뒤 하나씩 */
+.check { position:absolute; left:96px; right:96px; top:1030px; }
+.check div { display:flex; align-items:center; gap:18px; font-size:33px; color:#14161C; line-height:1.5; margin-bottom:18px; }
+.check i { flex:none; width:36px; height:36px; border-radius:50%; background:var(--accent); color:#fff; font-style:normal;
+           font-size:22px; font-weight:800; display:flex; align-items:center; justify-content:center; }
+.c1 { animation: rise 0.6s ease-out 5.4s both; }
+.c2 { animation: rise 0.6s ease-out 5.7s both; }
+.c3 { animation: rise 0.6s ease-out 6.0s both; }
+@keyframes rise { from { opacity:0; transform:translateY(20px); } to { opacity:1; transform:translateY(0); } }
+</style></head><body>
+<div class="eyebrow">지금 시작하려면</div>
+<div class="title">설치는 이게 전부</div>
+<div class="win">
+  <div class="dots"><i style="background:#FF5F57"></i><i style="background:#FEBC2E"></i><i style="background:#28C840"></i></div>
+  <div class="term">
+    <span style="color:var(--accent)">~ %</span> <span class="cmd">npx mulmoterminal@latest</span><span class="cursor"></span><br>
+    <span class="o1">Need to install the following packages:</span><br>
+    <span class="o2">mulmoterminal@4.10.1</span><br>
+    <span class="o3">Ok to proceed? (y) <span class="y">y</span></span><br>
+    <span class="boot">▸ MulmoTerminal 실행 — 세션 그리드가 뜬다</span>
+  </div>
+</div>
+<div class="check">
+  <div class="c1"><i>1</i>Node.js 22.9+ · claude CLI 로그인</div>
+  <div class="c2"><i>2</i>터미널에 npx mulmoterminal@latest</div>
+  <div class="c3"><i>3</i>tmux 설치 권장 — 재시작 대비</div>
+</div>
+</body></html>

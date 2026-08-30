@@ -1,0 +1,32 @@
+<!doctype html><html><head><meta charset="utf-8"><style>
+:root { --accent:#2F6BFF; --accent-bright:#D6E2FF; }
+/* [오버레이] 실영상 위 취소선 반전 — 통념이 그어지고 실제 답이 올라온다.
+   쓰는 법: 텍스트만 교체 후 video 모드에 --overlay 로 전달. 배경은 반드시 투명 유지 */
+@font-face { font-family: 'Pretendard'; font-weight: 400; src: url('../../../assets/fonts/Pretendard-Regular.woff') format('woff'); }
+@font-face { font-family: 'Pretendard'; font-weight: 800; src: url('../../../assets/fonts/Pretendard-ExtraBold.woff') format('woff'); }
+* { margin:0; box-sizing:border-box; }
+body { width:1080px; height:1350px; overflow:hidden; background:transparent; font-family:'Pretendard',sans-serif; }
+.scrim { position:absolute; inset:0; background:rgba(0,0,0,0.38); }
+.wrap { position:absolute; left:72px; right:72px; top:420px; color:#fff; }
+.myth { position:relative; display:inline-block; font-size:84px; font-weight:800; line-height:1.25; letter-spacing:-0.02em;
+        text-shadow:0 2px 16px rgba(0,0,0,0.5); animation: rise 0.8s ease-out 0.3s both; }
+.myth::after { content:''; position:absolute; left:-8px; right:-8px; top:54%; height:10px; border-radius:5px; background:var(--accent);
+               transform-origin:left center; transform:scaleX(0); animation: strike 0.6s cubic-bezier(0.7,0,0.3,1) 1.5s both; }
+@keyframes strike { from { transform:scaleX(0); } to { transform:scaleX(1); } }
+.myth-dim { animation: dim 0.5s ease-out 2.0s both; }
+@keyframes dim { to { opacity:0.45; } }
+.truth { margin-top:36px; font-size:92px; font-weight:800; line-height:1.24; letter-spacing:-0.02em; color:var(--accent-bright);
+         text-shadow:0 2px 16px rgba(0,0,0,0.55); animation: pop 0.8s cubic-bezier(0.16,1,0.3,1) 2.3s both; }
+@keyframes pop { from { opacity:0; transform:translateY(40px) scale(0.96); } to { opacity:1; transform:translateY(0) scale(1); } }
+.tag { position:absolute; left:72px; bottom:110px; font-size:34px; font-weight:800; color:#fff; text-shadow:0 2px 10px rgba(0,0,0,0.5);
+       animation: rise 0.8s ease-out 3.0s both; }
+.tag b { color:var(--accent-bright); }
+@keyframes rise { from { opacity:0; transform:translateY(26px); } to { opacity:1; transform:translateY(0); } }
+</style></head><body>
+<div class="scrim"></div>
+<div class="wrap">
+  <div class="myth-dim"><span class="myth">맥미니, 사야 하나?</span></div>
+  <div class="truth">있는 맥북이면<br>됩니다</div>
+</div>
+<div class="tag">24시간 구동, <b>$4.99</b>면 끝</div>
+</body></html>

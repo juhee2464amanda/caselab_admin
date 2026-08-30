@@ -497,4 +497,6 @@ export type CardSlide = {
   props: Record<string, unknown>;
   sourceSection?: string;
   required?: string;
+  /** 모션 카드 — 있으면 발행 캐러셀에서 이 칸은 PNG 렌더 대신 이 영상(공개 URL)이 올라간다 */
+  motion?: { url: string } | null;
 };

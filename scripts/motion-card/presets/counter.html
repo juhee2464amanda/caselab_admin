@@ -1,0 +1,28 @@
+<!doctype html><html><head><meta charset="utf-8"><style>
+:root { --accent:#2F6BFF; --accent-bright:#D6E2FF; }
+/* 카운트업 — 숫자가 0→목표치로 올라간다. 수치 훅 카드용.
+   쓰는 법: 아래 --target·텍스트만 바꿔서 html 모드로 렌더 */
+@font-face { font-family: 'Pretendard'; font-weight: 400; src: url('../../../assets/fonts/Pretendard-Regular.woff') format('woff'); }
+@font-face { font-family: 'Pretendard'; font-weight: 800; src: url('../../../assets/fonts/Pretendard-ExtraBold.woff') format('woff'); }
+@property --n { syntax: '<integer>'; initial-value: 0; inherits: false; }
+* { margin:0; box-sizing:border-box; }
+body { width:1080px; height:1350px; overflow:hidden; background:#FFFFFF; font-family:'Pretendard',sans-serif; color:#14161C; }
+.kicker { position:absolute; left:96px; top:300px; font-size:34px; font-weight:800; letter-spacing:0.14em; color:var(--accent); }
+.num { position:absolute; left:96px; top:380px; font-size:280px; font-weight:800; letter-spacing:-0.04em; line-height:1;
+       animation: count 2.2s cubic-bezier(0.16,1,0.3,1) 0.3s both; counter-reset: n var(--n); }
+.num::before { content: counter(n); }
+.num::after { content: '%'; font-size:120px; color:var(--accent); }
+@keyframes count { from { --n: 0; } to { --n: 70; } }
+.bar { position:absolute; left:96px; top:760px; height:22px; border-radius:11px; background:var(--accent);
+       animation: grow 2.2s cubic-bezier(0.16,1,0.3,1) 0.3s both; }
+@keyframes grow { from { width:0; } to { width:620px; } }
+.sub { position:absolute; left:96px; top:830px; font-size:44px; font-weight:800; line-height:1.4; animation: rise 0.9s ease-out 1.6s both; }
+.desc { position:absolute; left:96px; top:960px; font-size:32px; line-height:1.55; color:#3A3F4A; animation: rise 0.9s ease-out 1.9s both; }
+@keyframes rise { from { opacity:0; transform:translateY(28px); } to { opacity:1; transform:translateY(0); } }
+</style></head><body>
+<div class="kicker">검수의 경제학</div>
+<div class="num"></div>
+<div class="bar"></div>
+<div class="sub">검수 시간이 이만큼 줄었다</div>
+<div class="desc">초안 40분 → 6분.<br>바뀐 건 도구가 아니라 순서였다.</div>
+</body></html>

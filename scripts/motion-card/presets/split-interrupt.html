@@ -1,0 +1,130 @@
+<!doctype html><html><head><meta charset="utf-8"><style>
+:root { --accent:#2F6BFF; --accent-bright:#D6E2FF; }
+/* 전/후 분할 인터럽트 리듬 — 왼쪽은 승인 팝업에 뚝뚝 끊기고, 오른쪽은 alias 고정 아래 로그가 연속 흐른다. 끊김 vs 흐름 대비 카드용.
+   쓰는 법: 타이틀·팝업 문구·alias 줄·로그 텍스트·결론만 바꿔서 html 모드로 렌더 (duration 6 권장) */
+@font-face { font-family: 'Pretendard'; font-weight: 400; src: url('../../../assets/fonts/Pretendard-Regular.woff') format('woff'); }
+@font-face { font-family: 'Pretendard'; font-weight: 800; src: url('../../../assets/fonts/Pretendard-ExtraBold.woff') format('woff'); }
+* { margin:0; box-sizing:border-box; }
+body { width:1080px; height:1350px; overflow:hidden; background:#12151F; font-family:'Pretendard',sans-serif; color:#D6DEE8; }
+
+/* 상단 타이틀 */
+.title { position:absolute; left:64px; top:88px; width:952px; font-size:58px; font-weight:800; line-height:1.32; letter-spacing:-0.02em; }
+.title em { font-style:normal; color:var(--accent); }
+
+/* 중앙 분할선 */
+.divider { position:absolute; left:539px; top:320px; width:2px; height:770px; background:var(--accent); opacity:0.85; }
+
+/* 터미널 반쪽 카드 */
+.term { position:absolute; top:320px; width:452px; height:770px; background:#1A2030; border-radius:20px; border:1px solid #232B3E; overflow:hidden; }
+.term.left { left:56px; }
+.term.right { left:572px; }
+.term-head { height:56px; display:flex; align-items:center; gap:10px; padding:0 22px; border-bottom:1px solid #232B3E; }
+.dot { width:14px; height:14px; border-radius:50%; }
+.dot.r { background:#E11D48; } .dot.y { background:var(--accent); } .dot.g { background:#7EE787; }
+.term-label { margin-left:auto; font-size:22px; font-weight:800; letter-spacing:0.12em; color:#3A3F4A; }
+.term-label.after { color:var(--accent); }
+
+/* 로그 공통 */
+.log { font-size:24px; line-height:1.9; color:#7A828F; white-space:pre; }
+
+/* 왼쪽(전): 로그는 팝업 주기마다 멎는다 */
+.left .log { padding:26px 26px 0; animation: stall 2.7s linear infinite; }
+@keyframes stall {
+  0%,10% { opacity:0.85; }
+  15%,55% { opacity:0.3; }   /* 팝업 떠 있는 동안 멈춤 프레임 */
+  62%,100% { opacity:0.85; }
+}
+
+/* 승인 팝업 — 등장(0-15%) → 클릭 눌림(40%) → 소멸(55%) infinite */
+.popup { position:absolute; left:36px; top:270px; width:380px; background:#FFFFFF; color:#14161C; border-radius:16px;
+         padding:26px 26px 22px; box-shadow:0 18px 44px rgba(0,0,0,0.55);
+         animation: popcycle 2.7s cubic-bezier(0.22,1,0.36,1) infinite; transform-origin:50% 60%; }
+@keyframes popcycle {
+  0%   { opacity:0; transform:scale(0.9); }
+  15%  { opacity:1; transform:scale(1); }
+  38%  { opacity:1; transform:scale(1); }
+  40%  { opacity:1; transform:scale(0.96); }  /* 클릭 눌림 */
+  46%  { opacity:1; transform:scale(1); }
+  55%  { opacity:0; transform:scale(0.94); }
+  100% { opacity:0; transform:scale(0.9); }
+}
+.popup .q { font-size:25px; font-weight:800; line-height:1.5; }
+.popup .btns { display:flex; gap:12px; margin-top:18px; }
+.popup .btn { font-size:22px; font-weight:800; padding:10px 22px; border-radius:10px; background:#14161C; color:#FFFFFF; }
+.popup .btn.ghost { background:transparent; color:#3A3F4A; border:1px solid #3A3F4A; }
+
+/* 오른쪽(후): alias 상단 고정 */
+.alias { padding:22px 26px; font-size:26px; line-height:1.5; font-weight:800; color:var(--accent-bright);
+         border-bottom:1px solid #232B3E; background:#1A2030; white-space:pre-wrap; word-break:break-all; }
+.alias .dollar { color:var(--accent); }
+
+/* 오른쪽 로그 — 2벌 복제 컨테이너를 translateY로 무한 스크롤 */
+.flow-clip { position:absolute; left:0; top:186px; right:0; bottom:0; overflow:hidden; }
+.flow { padding:10px 26px 0; animation: flowup 5s linear infinite; }
+@keyframes flowup { from { transform:translateY(0); } to { transform:translateY(-50%); } }
+.flow .ok { color:#7EE787; }
+
+/* 경고 배지 — 3.5초에 1회 플래시 */
+.warn { position:absolute; right:26px; bottom:24px; font-size:21px; font-weight:800; color:#5B82FF;
+        background:#20283A; border:1px solid #3A5BCC; border-radius:10px; padding:10px 16px;
+        animation: flash 1.1s ease-out 3.5s both; opacity:0; }
+@keyframes flash {
+  0% { opacity:0; box-shadow:0 0 0 0 rgba(217,160,63,0); }
+  25% { opacity:1; box-shadow:0 0 0 8px rgba(217,160,63,0.35); }
+  60% { opacity:1; box-shadow:0 0 0 2px rgba(217,160,63,0.12); }
+  100% { opacity:1; box-shadow:none; }
+}
+
+/* 하단 결론 */
+.outro { position:absolute; left:64px; top:1150px; width:952px; text-align:center; font-size:34px; font-weight:800; color:#D6DEE8; }
+.outro em { font-style:normal; color:var(--accent); }
+</style></head><body>
+
+<div class="title">혹시 매번 터미널에서<br><em>승인 버튼</em>을 누르고 시작하시나요?</div>
+
+<div class="divider"></div>
+
+<div class="term left">
+  <div class="term-head"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="term-label">BEFORE</span></div>
+  <div class="log">$ claude
+> 파일 수정 중...
+> 빌드 실행...
+■ 승인 대기
+> 테스트 실행...
+■ 승인 대기
+> 커밋 준비...
+■ 승인 대기
+> 또 멈춤...</div>
+  <div class="popup">
+    <div class="q">이 명령을 실행할까요?</div>
+    <div class="btns"><span class="btn">승인</span><span class="btn ghost">거부</span></div>
+  </div>
+</div>
+
+<div class="term right">
+  <div class="term-head"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="term-label after">AFTER</span></div>
+  <div class="alias"><span class="dollar">$</span> alias clauded="claude --dangerously-skip-permissions"</div>
+  <div class="flow-clip">
+    <div class="flow log">> 파일 수정 <span class="ok">done</span>
+> 빌드 실행 <span class="ok">done</span>
+> 테스트 12/12 <span class="ok">pass</span>
+> 린트 통과 <span class="ok">done</span>
+> 커밋 생성 <span class="ok">done</span>
+> 문서 갱신 <span class="ok">done</span>
+> 다음 작업 진행 중...
+> 리팩터 적용 <span class="ok">done</span>
+> 파일 수정 <span class="ok">done</span>
+> 빌드 실행 <span class="ok">done</span>
+> 테스트 12/12 <span class="ok">pass</span>
+> 린트 통과 <span class="ok">done</span>
+> 커밋 생성 <span class="ok">done</span>
+> 문서 갱신 <span class="ok">done</span>
+> 다음 작업 진행 중...
+> 리팩터 적용 <span class="ok">done</span></div>
+  </div>
+  <div class="warn">⚠ git 프로젝트에서만 권장</div>
+</div>
+
+<div class="outro">승인 인터럽트 없이 <em>연속 작업</em></div>
+
+</body></html>

@@ -1,0 +1,86 @@
+<!doctype html><html><head><meta charset="utf-8"><style>
+:root { --accent:#2F6BFF; --accent-bright:#D6E2FF; }
+/* 관문 통과 파이프라인 — 결제 칩이 6개 검사 게이트를 순차 통과, 마지막 '사람 승인'에서 멈췄다가 증명서로 변신. 구조 설명 카드용.
+   쓰는 법: 게이트 라벨(.g span)·타이틀·하단 카피만 바꿔서 html 모드 6초로 렌더. 게이트 수 바꾸면 chip keyframes의 y 간격(122px)도 맞출 것 */
+@font-face { font-family: 'Pretendard'; font-weight: 400; src: url('../../../assets/fonts/Pretendard-Regular.woff') format('woff'); }
+@font-face { font-family: 'Pretendard'; font-weight: 800; src: url('../../../assets/fonts/Pretendard-ExtraBold.woff') format('woff'); }
+* { margin:0; box-sizing:border-box; }
+body { width:1080px; height:1350px; overflow:hidden; background:#FFFFFF; font-family:'Pretendard',sans-serif; color:#14161C; }
+
+.title { position:absolute; left:96px; top:150px; font-size:60px; font-weight:800; letter-spacing:-0.02em; line-height:1.25; }
+.title b { color:var(--accent); font-weight:800; }
+
+/* 칩이 지나가는 세로 점선 레인 */
+.lane { position:absolute; left:866px; top:270px; width:0; height:880px; border-left:3px dashed #D9DCE2; }
+
+/* 게이트 7개 — 세로 파이프라인 */
+.g { position:absolute; left:140px; width:620px; height:96px; background:#FFFFFF; border-radius:14px;
+     border:2px solid #E5E7EB; display:flex; align-items:center; padding:0 28px; box-shadow:0 2px 8px rgba(43,38,32,0.05); }
+.g i { font-style:normal; font-size:22px; font-weight:800; color:var(--accent); width:44px; }
+.g span { font-size:28px; font-weight:400; color:#14161C; }
+.g .chk { position:absolute; right:24px; width:44px; height:44px; border-radius:50%; border:2.5px solid #D9DCE2;
+          display:flex; align-items:center; justify-content:center; font-size:26px; font-weight:800; color:transparent; }
+/* 체크 점등 — 골드 플래시 → 녹색 확정 */
+@keyframes confirm {
+  0%   { color:transparent; border-color:#D9DCE2; background:transparent; transform:scale(1); }
+  35%  { color:var(--accent); border-color:var(--accent); background:var(--accent-bright); transform:scale(1.2); }
+  100% { color:#FFFFFF; border-color:#2F9E5F; background:#2F9E5F; transform:scale(1); }
+}
+.g1 { top:300px; }  .g1 .chk { animation:confirm 0.6s ease-out 0.7s both; }
+.g2 { top:422px; }  .g2 .chk { animation:confirm 0.6s ease-out 1.2s both; }
+.g3 { top:544px; }  .g3 .chk { animation:confirm 0.6s ease-out 1.7s both; }
+.g4 { top:666px; }  .g4 .chk { animation:confirm 0.6s ease-out 2.2s both; }
+.g5 { top:788px; }  .g5 .chk { animation:confirm 0.6s ease-out 2.7s both; }
+.g6 { top:910px; }  .g6 .chk { animation:confirm 0.6s ease-out 3.2s both; }
+/* 마지막 게이트 — 사람 승인. 골드 테두리 + 칩 도착 시 pulse 2회, 승인 체크는 늦게 */
+.g7 { top:1032px; border:2px solid var(--accent); animation:pulse 0.55s ease-in-out 3.6s 2; }
+.g7 span { font-weight:800; }
+.g7 .chk { animation:confirm 0.6s ease-out 4.6s both; }
+@keyframes pulse {
+  0%,100% { box-shadow:0 2px 8px rgba(43,38,32,0.05); }
+  50%     { box-shadow:0 0 0 12px rgba(201,162,75,0.35); }
+}
+
+/* 결제 칩 — 계단식 translateY로 게이트마다 정지, 마지막에 증명서 배지로 변신 */
+.chip { position:absolute; left:824px; top:304px; width:88px; height:88px; border-radius:44px;
+        background:#12151F; border:3px solid var(--accent); display:flex; align-items:center; justify-content:center;
+        animation:travel 6s linear 0s both; }
+@keyframes travel {
+  0%   { transform:translateY(-160px); }
+  8%   { transform:translateY(0); }      /* g1 */
+  12%  { transform:translateY(0); }
+  16%  { transform:translateY(122px); }  /* g2 */
+  20%  { transform:translateY(122px); }
+  24%  { transform:translateY(244px); }  /* g3 */
+  28%  { transform:translateY(244px); }
+  33%  { transform:translateY(366px); }  /* g4 */
+  37%  { transform:translateY(366px); }
+  41%  { transform:translateY(488px); }  /* g5 */
+  45%  { transform:translateY(488px); }
+  50%  { transform:translateY(610px); }  /* g6 */
+  54%  { transform:translateY(610px); }
+  58%  { transform:translateY(732px); }  /* g7 사람 승인 — 정지 */
+  74%  { transform:translateY(732px); left:824px; width:88px; border-radius:44px; background:#12151F; border-color:var(--accent); }
+  84%  { transform:translateY(732px); left:790px; width:236px; border-radius:18px; background:var(--accent); border-color:var(--accent); }
+  100% { transform:translateY(732px); left:790px; width:236px; border-radius:18px; background:var(--accent); border-color:var(--accent); }
+}
+.chip .pay, .chip .cert { position:absolute; white-space:nowrap; font-weight:800; }
+.chip .pay  { font-size:38px; color:var(--accent); animation:payOut 0.3s linear 4.5s both; }
+.chip .cert { font-size:30px; color:#12151F; opacity:0; animation:certIn 0.4s linear 4.7s both; }
+@keyframes payOut { from { opacity:1; } to { opacity:0; } }
+@keyframes certIn { from { opacity:0; } to { opacity:1; } }
+
+.warn { position:absolute; left:140px; top:1180px; font-size:30px; line-height:1.55; color:#3A3F4A; }
+</style></head><body>
+<div class="title">AI 에이전트는<br>결제를 <b>못 합니다</b></div>
+<div class="lane"></div>
+<div class="g g1"><i>01</i><span>merchant 검사</span><div class="chk">✓</div></div>
+<div class="g g2"><i>02</i><span>금액 한도</span><div class="chk">✓</div></div>
+<div class="g g3"><i>03</i><span>유효기간</span><div class="chk">✓</div></div>
+<div class="g g4"><i>04</i><span>사용처 제한</span><div class="chk">✓</div></div>
+<div class="g g5"><i>05</i><span>서명 검증</span><div class="chk">✓</div></div>
+<div class="g g6"><i>06</i><span>감사 기록</span><div class="chk">✓</div></div>
+<div class="g g7"><i>07</i><span>사람 승인</span><div class="chk">✓</div></div>
+<div class="chip"><span class="pay">₩</span><span class="cert">결제 증명서</span></div>
+<div class="warn">통과 못하면 자료 요청 자체가 막힘 · 결제·감사 기록은 모델이 못 고침</div>
+</body></html>

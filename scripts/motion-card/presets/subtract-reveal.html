@@ -1,0 +1,125 @@
+<!doctype html><html><head><meta charset="utf-8"><style>
+:root { --accent:#2F6BFF; --accent-bright:#D6E2FF; }
+/* 덜어내기 리빌 — 문서 블록 더미가 쌓였다가 대부분 날아가고 골격 3줄+빅넘버 5만 남는다. Contrarian(다 넣기→최소 골격) 구조 전용.
+   쓰는 법: .hook·.keep 텍스트·.big-num 숫자·.desc만 바꿔서 html 모드로 렌더(권장 5초) */
+@font-face { font-family: 'Pretendard'; font-weight: 400; src: url('../../../assets/fonts/Pretendard-Regular.woff') format('woff'); }
+@font-face { font-family: 'Pretendard'; font-weight: 800; src: url('../../../assets/fonts/Pretendard-ExtraBold.woff') format('woff'); }
+* { margin:0; box-sizing:border-box; }
+body { width:1080px; height:1350px; overflow:hidden; background:#12151F; font-family:'Pretendard',sans-serif; color:#D6DEE8; }
+
+.hook { position:absolute; left:96px; top:140px; font-size:54px; font-weight:800; line-height:1.3;
+        animation: fadein 0.5s ease-out 0.1s both; }
+.hook em { font-style:normal; color:var(--accent); }
+@keyframes fadein { from { opacity:0; transform:translateY(-14px); } to { opacity:1; transform:translateY(0); } }
+
+/* ── 문서 블록 더미 (좌측) ── */
+.stack { position:absolute; left:96px; top:320px; width:600px; }
+.blk { border-radius:12px; background:#1C2436; border:2px solid #374151; margin-bottom:12px;
+       background-image:linear-gradient(#4B5563cc 24%, transparent 24%, transparent 62%, #4B5563cc 62%, #4B5563cc 86%, transparent 86%);
+       background-size:100% 100%; background-origin:content-box; padding:14px 22px;
+       opacity:0; animation: stackin 0.45s ease-out both; }
+@keyframes stackin { from { opacity:0; transform:translateY(-20px); } to { opacity:1; transform:translateY(0); } }
+/* 쌓임 스태거 0~1s */
+.blk:nth-child(1){ height:60px; width:560px; animation-delay:0.10s; }
+.blk:nth-child(2){ height:74px; width:520px; animation-delay:0.18s; }
+.blk:nth-child(3){ height:56px; width:580px; animation-delay:0.26s; }
+.blk:nth-child(4){ height:64px; width:490px; animation-delay:0.34s; }
+.blk:nth-child(5){ height:74px; width:600px; animation-delay:0.42s; }
+.blk:nth-child(6){ height:58px; width:540px; animation-delay:0.50s; }
+.blk:nth-child(7){ height:66px; width:570px; animation-delay:0.58s; }
+.blk:nth-child(8){ height:74px; width:510px; animation-delay:0.66s; }
+.blk:nth-child(9){ height:60px; width:590px; animation-delay:0.74s; }
+.blk:nth-child(10){ height:64px; width:550px; animation-delay:0.82s; }
+/* 날아감 — 방향 제각각, 1.5~2.2s 스태거. 쌓임과 콤마로 묶어 forwards 유지 */
+.fly1 { animation: stackin 0.45s ease-out 0.10s both, flyTL 0.7s cubic-bezier(0.5,0,0.9,0.4) 1.50s forwards; }
+.fly2 { animation: stackin 0.45s ease-out 0.26s both, flyR  0.7s cubic-bezier(0.5,0,0.9,0.4) 1.62s forwards; }
+.fly3 { animation: stackin 0.45s ease-out 0.34s both, flyBL 0.7s cubic-bezier(0.5,0,0.9,0.4) 1.74s forwards; }
+.fly4 { animation: stackin 0.45s ease-out 0.50s both, flyTR 0.7s cubic-bezier(0.5,0,0.9,0.4) 1.86s forwards; }
+.fly5 { animation: stackin 0.45s ease-out 0.58s both, flyL  0.7s cubic-bezier(0.5,0,0.9,0.4) 1.98s forwards; }
+.fly6 { animation: stackin 0.45s ease-out 0.74s both, flyBR 0.7s cubic-bezier(0.5,0,0.9,0.4) 2.10s forwards; }
+.fly7 { animation: stackin 0.45s ease-out 0.82s both, flyT  0.7s cubic-bezier(0.5,0,0.9,0.4) 2.22s forwards; }
+@keyframes flyTL { to { transform:translate(-460px,-360px) rotate(-18deg); opacity:0; } }
+@keyframes flyTR { to { transform:translate(480px,-320px) rotate(16deg); opacity:0; } }
+@keyframes flyBL { to { transform:translate(-420px,380px) rotate(14deg); opacity:0; } }
+@keyframes flyBR { to { transform:translate(440px,340px) rotate(-20deg); opacity:0; } }
+@keyframes flyL  { to { transform:translate(-520px,40px) rotate(-8deg); opacity:0; } }
+@keyframes flyR  { to { transform:translate(540px,-60px) rotate(10deg); opacity:0; } }
+@keyframes flyT  { to { transform:translate(60px,-480px) rotate(6deg); opacity:0; } }
+/* 잔존 골격 3줄 — 날아가지 않고 3s에 골드 테두리로 확정 */
+.keep { display:flex; align-items:center; font-size:30px; font-weight:800; color:var(--accent-bright);
+        background-image:none; }
+.keep:nth-child(2){ animation: stackin 0.45s ease-out 0.18s both, seal 0.5s ease-out 3.00s forwards; }
+.keep:nth-child(5){ animation: stackin 0.45s ease-out 0.42s both, seal 0.5s ease-out 3.12s forwards; }
+.keep:nth-child(8){ animation: stackin 0.45s ease-out 0.66s both, seal 0.5s ease-out 3.24s forwards; }
+@keyframes seal { to { border-color:var(--accent); background-color:#1A2030; } }
+.keep .no { color:var(--accent); margin-right:18px; }
+
+/* ── 우측: 파일 아이콘 15개 + 빅넘버 5 ── */
+.files { position:absolute; right:80px; top:520px; width:280px; display:flex; flex-wrap:wrap; gap:14px; }
+.doc { width:44px; height:54px; border-radius:6px; background:#20283A; border:2px solid #4B5563; position:relative;
+       opacity:0; animation: stackin 0.35s ease-out both; }
+.doc::after { content:''; position:absolute; left:8px; top:10px; width:24px; height:4px; background:#4B5563;
+              box-shadow:0 10px 0 #4B5563, 0 20px 0 #4B5563; }
+.doc:nth-child(1){ animation-delay:0.30s; } .doc:nth-child(2){ animation-delay:0.36s; }
+.doc:nth-child(3){ animation-delay:0.42s; } .doc:nth-child(4){ animation-delay:0.48s; }
+.doc:nth-child(5){ animation-delay:0.54s; } .doc:nth-child(6){ animation-delay:0.60s; }
+.doc:nth-child(7){ animation-delay:0.66s; } .doc:nth-child(8){ animation-delay:0.72s; }
+.doc:nth-child(9){ animation-delay:0.78s; } .doc:nth-child(10){ animation-delay:0.84s; }
+.doc:nth-child(11){ animation-delay:0.90s; } .doc:nth-child(12){ animation-delay:0.96s; }
+.doc:nth-child(13){ animation-delay:1.02s; } .doc:nth-child(14){ animation-delay:1.08s; }
+.doc:nth-child(15){ animation-delay:1.14s; }
+/* 15개 중 10개 날아감(2.0~2.6s), 5개 잔존 → 3.4s 골드 점등 */
+.doc.dfly1 { animation: stackin 0.35s ease-out 0.36s both, flyTR 0.6s cubic-bezier(0.5,0,0.9,0.4) 2.00s forwards; }
+.doc.dfly2 { animation: stackin 0.35s ease-out 0.42s both, flyR  0.6s cubic-bezier(0.5,0,0.9,0.4) 2.06s forwards; }
+.doc.dfly3 { animation: stackin 0.35s ease-out 0.54s both, flyBR 0.6s cubic-bezier(0.5,0,0.9,0.4) 2.12s forwards; }
+.doc.dfly4 { animation: stackin 0.35s ease-out 0.60s both, flyT  0.6s cubic-bezier(0.5,0,0.9,0.4) 2.18s forwards; }
+.doc.dfly5 { animation: stackin 0.35s ease-out 0.72s both, flyTL 0.6s cubic-bezier(0.5,0,0.9,0.4) 2.24s forwards; }
+.doc.dfly6 { animation: stackin 0.35s ease-out 0.78s both, flyBL 0.6s cubic-bezier(0.5,0,0.9,0.4) 2.30s forwards; }
+.doc.dfly7 { animation: stackin 0.35s ease-out 0.90s both, flyR  0.6s cubic-bezier(0.5,0,0.9,0.4) 2.36s forwards; }
+.doc.dfly8 { animation: stackin 0.35s ease-out 0.96s both, flyTR 0.6s cubic-bezier(0.5,0,0.9,0.4) 2.42s forwards; }
+.doc.dfly9 { animation: stackin 0.35s ease-out 1.08s both, flyBR 0.6s cubic-bezier(0.5,0,0.9,0.4) 2.48s forwards; }
+.doc.dfly10{ animation: stackin 0.35s ease-out 1.14s both, flyT  0.6s cubic-bezier(0.5,0,0.9,0.4) 2.54s forwards; }
+.doc.dkeep1 { animation: stackin 0.35s ease-out 0.30s both, docseal 0.4s ease-out 3.40s forwards; }
+.doc.dkeep2 { animation: stackin 0.35s ease-out 0.48s both, docseal 0.4s ease-out 3.46s forwards; }
+.doc.dkeep3 { animation: stackin 0.35s ease-out 0.66s both, docseal 0.4s ease-out 3.52s forwards; }
+.doc.dkeep4 { animation: stackin 0.35s ease-out 0.84s both, docseal 0.4s ease-out 3.58s forwards; }
+.doc.dkeep5 { animation: stackin 0.35s ease-out 1.02s both, docseal 0.4s ease-out 3.64s forwards; }
+@keyframes docseal { to { border-color:var(--accent); background:#1A2030; } }
+.big-num { position:absolute; right:118px; top:690px; font-size:160px; font-weight:800; line-height:1;
+           color:var(--accent); animation: stamp 0.5s cubic-bezier(0.34,1.56,0.64,1) 3.70s both; }
+.big-label { position:absolute; right:88px; top:870px; width:280px; font-size:26px; font-weight:800;
+             color:var(--accent-bright); text-align:center; animation: fadein 0.4s ease-out 3.95s both; }
+@keyframes stamp { from { opacity:0; transform:scale(2.2); } 60% { opacity:1; transform:scale(0.92); }
+                   to { opacity:1; transform:scale(1); } }
+
+.desc { position:absolute; left:96px; top:1100px; width:880px; font-size:34px; line-height:1.55; color:#7A828F;
+        animation: fadein 0.6s ease-out 3.30s both; }
+.desc b { color:#D6DEE8; }
+</style></head><body>
+<div class="hook">정답 프롬프트는 <em>없었습니다</em></div>
+
+<div class="stack">
+  <div class="blk fly1"></div>
+  <div class="blk keep"><span class="no">1</span>최소로 시작한다</div>
+  <div class="blk fly2"></div>
+  <div class="blk fly3"></div>
+  <div class="blk keep"><span class="no">2</span>실패 지점만 채운다</div>
+  <div class="blk fly4"></div>
+  <div class="blk fly5"></div>
+  <div class="blk keep"><span class="no">3</span>중복 출력은 버린다</div>
+  <div class="blk fly6"></div>
+  <div class="blk fly7"></div>
+</div>
+
+<div class="files">
+  <div class="doc dkeep1"></div><div class="doc dfly1"></div><div class="doc dfly2"></div>
+  <div class="doc dkeep2"></div><div class="doc dfly3"></div><div class="doc dfly4"></div>
+  <div class="doc dkeep3"></div><div class="doc dfly5"></div><div class="doc dfly6"></div>
+  <div class="doc dkeep4"></div><div class="doc dfly7"></div><div class="doc dfly8"></div>
+  <div class="doc dkeep5"></div><div class="doc dfly9"></div><div class="doc dfly10"></div>
+</div>
+<div class="big-num">5</div>
+<div class="big-label">최근 파일은 5개만 유지</div>
+
+<div class="desc"><b>다 넣지 않는다.</b> 컨텍스트 한계가 와도 최근 파일 5개는 유지하고,<br>중복 출력만 버린다 — 남는 건 골격 세 줄뿐.</div>
+</body></html>
