@@ -174,33 +174,72 @@ export async function publishInstagramCarousel(
 
 const THREADS_BASE = 'https://graph.threads.net/v1.0';
 
-export async function publishThreads(text: string, coverImageUrl?: string | null): Promise<string> {
-  const userId = process.env.THREADS_USER_ID;
-  const token = process.env.THREADS_ACCESS_TOKEN;
-  if (!userId || !token)
-    throw new Error('THREADS_USER_ID / THREADS_ACCESS_TOKEN 미설정 — Threads API 연결 후 env에 추가하세요');
-
-  const params: Record<string, string> = coverImageUrl
-    ? { media_type: 'IMAGE', image_url: coverImageUrl, text, access_token: token }
-    : { media_type: 'TEXT', text, access_token: token };
-
-  const res = await fetch(`${THREADS_BASE}/${userId}/threads`, {
+async function threadsPost(path: string, params: Record<string, string>): Promise<Record<string, string>> {
+  const res = await fetch(`${THREADS_BASE}/${path}`, {
     method: 'POST',
     headers: { 'content-type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams(params).toString(),
   });
-  const container = await res.json();
-  if (!res.ok || container.error) throw new Error(`Threads API: ${container.error?.message ?? res.status}`);
+  const data = await res.json();
+  if (!res.ok || data.error) throw new Error(`Threads API: ${data.error?.message ?? res.status}`);
+  return data;
+}
 
-  // 미디어 처리 대기 (Threads 권장 30s — 이미지면 짧게 폴링)
-  if (coverImageUrl) await new Promise((r) => setTimeout(r, 5000));
+/** 컨테이너 처리 대기 — IG의 waitContainer와 같은 이유(영상·다장 처리 지연) */
+async function waitThreadsContainer(id: string, token: string, attempts = 20): Promise<void> {
+  for (let i = 0; i < attempts; i++) {
+    const res = await fetch(`${THREADS_BASE}/${id}?fields=status,error_message&access_token=${token}`);
+    const data = await res.json();
+    if (data.status === 'FINISHED') return;
+    if (data.status === 'ERROR') throw new Error(`Threads 미디어 처리 실패${data.error_message ? ` — ${data.error_message}` : ''}`);
+    await new Promise((r) => setTimeout(r, 3000));
+  }
+  throw new Error(`Threads 미디어 처리 대기 초과(${attempts * 3}s)`);
+}
 
-  const pub = await fetch(`${THREADS_BASE}/${userId}/threads_publish`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({ creation_id: container.id, access_token: token }).toString(),
-  });
-  const data = await pub.json();
-  if (!pub.ok || data.error) throw new Error(`Threads publish: ${data.error?.message ?? pub.status}`);
+/** Threads 발행 — 인스타처럼 슬라이드 전체를 캐러셀로 올린다 (2장 이상이면 CAROUSEL, 1장은 단일, 0장은 텍스트) */
+export async function publishThreads(text: string, items: CarouselItem[] = []): Promise<string> {
+  const userId = process.env.THREADS_USER_ID;
+  const token = process.env.THREADS_ACCESS_TOKEN;
+  if (!userId || !token)
+    throw new Error('THREADS_USER_ID / THREADS_ACCESS_TOKEN 미설정 — Threads API 연결 후 env에 추가하세요');
+  // Threads 캐러셀 상한 20장 — IG(10장)보다 넉넉하지만 안전하게 자르지 않고 미리 알린다
+  if (items.length > 20) throw new Error(`Threads 캐러셀은 최대 20장인데 ${items.length}장입니다`);
+
+  let creationId: string;
+  if (items.length >= 2) {
+    const children: string[] = [];
+    for (const item of items) {
+      const c = await threadsPost(`${userId}/threads`, {
+        ...(item.kind === 'video' ? { media_type: 'VIDEO', video_url: item.url } : { media_type: 'IMAGE', image_url: item.url }),
+        is_carousel_item: 'true',
+        access_token: token,
+      });
+      children.push(c.id);
+    }
+    for (const [i, id] of children.entries()) await waitThreadsContainer(id, token, items[i].kind === 'video' ? 40 : 20);
+    const carousel = await threadsPost(`${userId}/threads`, {
+      media_type: 'CAROUSEL',
+      children: children.join(','),
+      text,
+      access_token: token,
+    });
+    creationId = carousel.id;
+    await waitThreadsContainer(creationId, token);
+  } else if (items.length === 1) {
+    const item = items[0];
+    const c = await threadsPost(`${userId}/threads`, {
+      ...(item.kind === 'video' ? { media_type: 'VIDEO', video_url: item.url } : { media_type: 'IMAGE', image_url: item.url }),
+      text,
+      access_token: token,
+    });
+    creationId = c.id;
+    await waitThreadsContainer(creationId, token, item.kind === 'video' ? 40 : 20);
+  } else {
+    const c = await threadsPost(`${userId}/threads`, { media_type: 'TEXT', text, access_token: token });
+    creationId = c.id;
+  }
+
+  const data = await threadsPost(`${userId}/threads_publish`, { creation_id: creationId, access_token: token });
   return data.id;
 }
