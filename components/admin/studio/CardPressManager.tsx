@@ -179,7 +179,6 @@ type FieldDef = { key: string; label: string; kind: FieldKind; hint?: string; pa
 
 const FIELDS: Record<CardTemplateId, FieldDef[]> = {
   C1: [
-    { key: 'kicker', label: '키커', kind: 'input', hint: '헤드라인 위 프레이밍 ("~의 경제학")' },
     { key: 'title', label: '제목', kind: 'textarea', hint: '줄바꿈 그대로 반영 · 줄당 ≤12자' },
     { key: 'hl', label: '형광펜 단어', kind: 'input', hint: '제목 속 부분 문자열' },
     { key: 'sub', label: '부제', kind: 'input' },

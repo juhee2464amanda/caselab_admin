@@ -761,7 +761,7 @@ export function convertProps(
 // 문구는 그대로 두면 티가 나도록 일부러 자리표시 어투로 적는다.
 
 export const SAMPLE_PROPS: Record<CardTemplateId, Record<string, unknown>> = {
-  C1: { kicker: '작은 프레이밍 한 줄', title: '커버 제목을\n여기에', hl: '커버 제목', sub: '읽는 데 5분 · 적용 30분', footer: '@CONCEPT' },
+  C1: { title: '커버 제목을\n여기에', hl: '커버 제목', sub: '읽는 데 5분 · 적용 30분', footer: '@CONCEPT' },
   C2: { eyebrow: '모두가 그렇다는데', title: '선언 문장을\n여기에', hl: '선언 문장', sub: '아래 한 줄 부연' },
   C3: { logoText: 'N', title: '도구 이름으로\n여는 커버', hl: '도구 이름', sub: '한 줄 소개' },
   C4: { eyebrow: '무엇이 더 나은가', vsA: { name: 'A 도구', by: '제작사' }, vsB: { name: 'B 도구', by: '제작사' }, sub: '비교 기준 한 줄' },

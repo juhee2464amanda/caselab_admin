@@ -943,7 +943,6 @@ function C1V3Wide({ accent, props }: C1Input) {
   const tone = v3Tone(props);
   const dark = tone === 'dark';
   const base = v3Base(props, dark);
-  const eyebrow = props.kicker ?? props.tag ?? DEFAULT_TAGS[accent];
   const panelBg = dark ? '#07090E' : '#F3F4F6';
   const artX = THUMB_W - WIDE_ART_W;
   const isPhoto = !props.coverArt || props.coverArt === 'photo';
@@ -1036,17 +1035,6 @@ function C1V3Wide({ accent, props }: C1Input) {
         <div
           style={{
             display: 'flex',
-            fontSize: fs(22),
-            fontWeight: 700,
-            marginBottom: 16,
-            color: dark ? 'rgba(255,255,255,0.66)' : '#6B7382',
-          }}
-        >
-          {eyebrow}
-        </div>
-        <div
-          style={{
-            display: 'flex',
             flexDirection: 'column',
             fontSize: fs(46),
             fontWeight: 800,
@@ -1085,7 +1073,6 @@ function C1V3({ accent, props }: C1Input) {
   const tone = v3Tone(props);
   const dark = tone === 'dark';
   const base = v3Base(props, dark);
-  const eyebrow = props.kicker ?? props.tag ?? DEFAULT_TAGS[accent];
   return (
     <div style={{ ...cardBase, background: dark ? '#07090E' : '#F3F4F6', color: dark ? '#fff' : INK }}>
       <V3Art props={props} />
@@ -1110,17 +1097,6 @@ function C1V3({ accent, props }: C1Input) {
           flexDirection: 'column',
         }}
       >
-        <div
-          style={{
-            display: 'flex',
-            fontSize: fs(V3_EYEBROW),
-            fontWeight: 700,
-            marginBottom: 26,
-            color: dark ? 'rgba(255,255,255,0.66)' : '#6B7382',
-          }}
-        >
-          {eyebrow}
-        </div>
         <div
           style={{
             display: 'flex',
@@ -1198,19 +1174,6 @@ function C1Bottom({ accent, props }: C1Input) {
                 : { marginTop: 'auto' }),
           }}
         >
-          {props.kicker ? (
-            <div
-              style={{
-                display: 'flex',
-                fontSize: fs(32),
-                fontWeight: 700,
-                color: 'rgba(255,255,255,0.88)',
-                marginBottom: 22,
-              }}
-            >
-              {props.kicker}
-            </div>
-          ) : null}
           <div
             style={{
               display: 'flex',
@@ -1302,19 +1265,6 @@ function C1Center({ accent, props }: C1Input) {
             marginBottom: 'auto',
           }}
         >
-          {props.kicker ? (
-            <div
-              style={{
-                display: 'flex',
-                fontSize: fs(32),
-                fontWeight: 700,
-                color: 'rgba(255,255,255,0.88)',
-                marginBottom: 24,
-              }}
-            >
-              {props.kicker}
-            </div>
-          ) : null}
           <div
             style={{
               display: 'flex',
@@ -1377,11 +1327,10 @@ const C1_BAND_PHOTO = 800;
 
 function C1Band({ accent, props }: C1Input) {
   const color = accentOf(accent, props);
-  const label = props.label ?? props.kicker ?? props.tag ?? DEFAULT_TAGS[accent];
   const bodyH = CARD_H - C1_BAND_PHOTO;
-  // 밴드 안 세로 예산: 상하 안전여백 72×2 + 라벨 52 + 간격 26 + (sub 62) 을 뺀 나머지가 제목 몫.
+  // 밴드 안 세로 예산: 상하 안전여백 72×2 + (sub 62) 을 뺀 나머지가 제목 몫.
   // 블록은 밴드 안에서 세로 중앙 정렬한다 — 바닥에 붙이면 제목과 sub 사이가 텅 비어 두 덩어리로 읽힌다.
-  const avail = bodyH - 144 - 52 - 26 - (props.sub ? 62 : 0);
+  const avail = bodyH - 144 - (props.sub ? 62 : 0);
   const fit = fitBlock([props.title], {
     width: BODY_W,
     height: avail,
@@ -1418,24 +1367,7 @@ function C1Band({ accent, props }: C1Input) {
         <div
           style={{
             display: 'flex',
-            alignSelf: 'flex-start',
-            alignItems: 'center',
-            border: '2px solid rgba(255,255,255,0.5)',
-            borderRadius: 999,
-            padding: '8px 22px',
-            fontSize: fs(25),
-            fontWeight: 700,
-            letterSpacing: '0.04em',
-            color: 'rgba(255,255,255,0.94)',
-          }}
-        >
-          {label}
-        </div>
-        <div
-          style={{
-            display: 'flex',
             flexDirection: 'column',
-            marginTop: 26,
             fontSize: fit.size,
             fontWeight: 800,
             letterSpacing: '-0.035em',
@@ -1514,20 +1446,6 @@ function C1Giant({ accent, props }: C1Input) {
           rightStyle={{ fontSize: fs(26), color: 'rgba(255,255,255,0.78)', letterSpacing: '0.06em' }}
         />
         <div style={{ display: 'flex', flexDirection: 'column', marginTop: 'auto' }}>
-          {props.kicker ? (
-            <div
-              style={{
-                display: 'flex',
-                fontSize: fs(30),
-                fontWeight: 700,
-                letterSpacing: '0.04em',
-                color: 'rgba(255,255,255,0.86)',
-                marginBottom: 20,
-              }}
-            >
-              {props.kicker}
-            </div>
-          ) : null}
           <div
             style={{
               display: 'flex',
