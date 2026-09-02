@@ -2,7 +2,7 @@
 
 import { useMemo, useState, type ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
-import { ExternalLink, ChevronDown, ChevronUp, Sparkles, Loader2, RefreshCw, X, Plus, Lightbulb } from 'lucide-react';
+import { ExternalLink, ChevronDown, ChevronUp, Sparkles, Loader2, RefreshCw, X, Plus, Lightbulb, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { createSupabaseBrowserClient } from '@/lib/supabase/client';
 import { formatDate, cn } from '@/lib/utils';
@@ -58,6 +58,7 @@ export function SeedCuration({
   onGenerated?: (id: string, kind: 'content' | 'tool') => void;
 }) {
   const router = useRouter();
+  const supabase = createSupabaseBrowserClient();
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [scoring, setScoring] = useState(false);
   const [gen, setGen] = useState<SeedTrack | null>(null);
@@ -93,6 +94,10 @@ export function SeedCuration({
   // 수동 적재 컴포저
   const [composerOpen, setComposerOpen] = useState(false);
   const [creating, setCreating] = useState(false);
+
+  // 한번에 비우기 — 되돌리기 어려운 일괄 처리라 2단계 확인(확인 상태 → 실행).
+  const [clearArmed, setClearArmed] = useState(false);
+  const [clearing, setClearing] = useState(false);
 
   const clearProposals = () => {
     setProposals(null);
@@ -173,6 +178,36 @@ export function SeedCuration({
       })
       .sort((a, b) => weight(b) - weight(a));
   }, [seeds, sourceFilter, bucketFilter, passesBase]);
+
+  // '한번에 비우기' 대상 = 지금 화면에 실제로 그려지는 씨앗.
+  // = 필터를 통과한 목록 + (필터 없을 때만 보이는) 채택·미분류 안전망 섹션.
+  // 필터를 걸면 그 범위만 비워지므로 "전체 삭제" 사고를 피할 수 있다.
+  const visibleIds = useMemo(() => {
+    const ids = new Set(filtered.map((s) => s.id));
+    if (!bucketFilter && !sourceFilter) for (const s of adoptedUnbucketed) ids.add(s.id);
+    return [...ids];
+  }, [filtered, adoptedUnbucketed, bucketFilter, sourceFilter]);
+
+  // 비우기 = 카드의 '숨김'과 같은 처리(status='rejected')를 화면 전체에 한 번에.
+  // 삭제가 아니라 반려라 씨앗 아카이브에 그대로 남고, 거기서 되살릴 수 있다.
+  const clearVisible = async () => {
+    if (visibleIds.length === 0) return;
+    setClearing(true);
+    setError(null);
+    const { error: err } = await supabase.from('content_seeds').update({ status: 'rejected' }).in('id', visibleIds);
+    setClearing(false);
+    setClearArmed(false);
+    if (err) {
+      setError(err.message);
+      return;
+    }
+    setSelected(new Set());
+    setPendingTrack(null);
+    setDirection('');
+    setOutlineText(null);
+    clearProposals();
+    router.refresh();
+  };
 
   // 선택된 씨앗의 대표 버킷 → 기본 추천 트랙 (제약 아님, 시각적 하이라이트만)
   const firstSelected = seeds.find((s) => selected.has(s.id));
@@ -340,6 +375,25 @@ export function SeedCuration({
           <Button size="sm" variant="outline" onClick={() => setComposerOpen((v) => !v)}>
             <Plus className="h-3.5 w-3.5" /> 수동 씨앗 추가
           </Button>
+          {/* 한번에 비우기 — 화면에 보이는 씨앗을 전부 숨김(반려). 아카이브엔 남아 되살릴 수 있다. */}
+          {visibleIds.length > 0 &&
+            (clearArmed ? (
+              <span className="inline-flex items-center gap-1.5 rounded-md border border-red-200 bg-red-50 px-2 py-1">
+                <span className="text-[11px] text-red-700">
+                  보이는 {visibleIds.length}건을 비울까요? (아카이브엔 남아요)
+                </span>
+                <Button size="sm" variant="outline" disabled={clearing} onClick={clearVisible}>
+                  {clearing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />} 비우기
+                </Button>
+                <Button size="sm" variant="ghost" disabled={clearing} onClick={() => setClearArmed(false)}>
+                  취소
+                </Button>
+              </span>
+            ) : (
+              <Button size="sm" variant="ghost" onClick={() => setClearArmed(true)} title="화면에 보이는 씨앗을 전부 숨김 처리합니다(삭제 아님)">
+                <Trash2 className="h-3.5 w-3.5" /> 작업실 비우기 ({visibleIds.length})
+              </Button>
+            ))}
           {LOCAL_AI ? (
             <Button size="sm" variant="outline" disabled={scoring} onClick={runScore}>
               {scoring ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
